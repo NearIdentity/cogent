@@ -1,0 +1,33 @@
+# The Python daemon (src/kg_daemon.py) under systemd: Type=notify, watchdog, restart. Use this OR the timer, not both.
+#   sudo cp deploy/cogent-daemon.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now cogent-daemon
+# Status: systemctl status cogent-daemon / python src/kg_daemon.py status --home /var/lib/cogent
+# Run now: systemctl kill -s USR1 cogent-daemon   (or: python src/kg_daemon.py run-now --home /var/lib/cogent)
+[Unit]
+Description=cogent: knowledge-graph update daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=cogent
+WorkingDirectory=/opt/cogent
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/cogent/pw-browsers
+# everything after -- is passed to `kg_agent.py run`
+ExecStart=/opt/cogent/cogent/bin/python src/kg_daemon.py serve --home /var/lib/cogent --at 06:00 --tz Europe/London --jitter 600 --catch-up --retries 2 -- --extractor rules
+Restart=on-failure
+RestartSec=30
+# the daemon pings systemd while it supervises a run; a wedged daemon is restarted
+WatchdogSec=300
+# SIGTERM -> the daemon asks the running agent to stop (30 s), then kills it
+KillMode=mixed
+TimeoutStopSec=90
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cogent /opt/cogent/config
+
+[Install]
+WantedBy=multi-user.target

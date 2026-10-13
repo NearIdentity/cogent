@@ -1239,7 +1239,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
-    d = sub.add_parser("daemon", parents=[common], help="run every day")
+    d = sub.add_parser("daemon", parents=[common], help="simple foreground loop: run every day (the full daemon with "
+                       "catch-up, retries, status and systemd support is src/kg_daemon.py)")
     d.add_argument("--at", default="06:00", help="local time HH:MM")
     pr = sub.add_parser("probe", parents=[common], help="run a tracker on one URL and print what it parsed")
     pr.add_argument("url")
