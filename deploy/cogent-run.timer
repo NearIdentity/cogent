@@ -1,0 +1,13 @@
+# Fires cogent-run.service every day. `Persistent=true` runs a missed pass at boot (laptop was off, server was down).
+[Unit]
+Description=cogent: daily knowledge-graph update
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+# with a time zone (systemd >= 235):  OnCalendar=*-*-* 06:00:00 Europe/London
+Persistent=true
+RandomizedDelaySec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -22,16 +22,18 @@ processing to a minimum: update detection is done by hard-coded parsers and trac
 ## Repository layout
 
 ```
-config/standards.json  config/reports.json     the document configurations (30 standards, 15 report formats)
+config/standards.json  reports.json     the document configurations (30 standards, 15 report formats)
 src/kg_ingest.py     PDF / HTML / eCFR-XML (file or URL) → networkx KG; extractors; export/save/load; assets
 src/kg_ocr.py        OCR for scanned PDF pages (RapidOCR / Tesseract engines, page → headings/paragraphs/tables)
 src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a KG
+src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
-tests/               test_agent.py, test_ocr.py + mock_site.py (a local mock of the sources); no internet needed
-requirements.txt     dependencies (optional ones are commented)      
-venv-setup.sh   uv-based virtualenv setup
+deploy/              cogent-run.{service,timer} (systemd timer), cogent-daemon.service (systemd), cogent.cron (cron)
+docs/scheduling.md   daemon vs. cron vs. systemd timer: comparison and recommendation
+tests/               test_agent.py, test_ocr.py, test_daemon.py + mock_site.py (a local mock of the sources); no internet needed
+requirements.txt     dependencies (optional ones are commented)      venv-setup.sh   uv-based virtualenv setup
 ```
 
 All commands below are run from the repository root so the default `config/…` paths resolve.
@@ -70,7 +72,7 @@ python src/kg_agent.py run --dry-run --only standard:22,report:1       # check o
 python src/kg_agent.py run                                             # stage / update everything under ./kg_agent_home
 python src/kg_agent.py status                                          # staged documents, version table, open warnings
 python src/kg_agent.py probe https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors
-python src/kg_agent.py daemon --at 06:00                               # every day at 06:00 local time
+python src/kg_daemon.py start --at 06:00 --tz Europe/London -- --extractor rules   # detached daemon; status | run-now | stop
 ```
 
 ## The configuration files
@@ -240,15 +242,42 @@ lines, figures on scanned pages are not extracted separately.
 
 ## Scheduling
 
-The agent is **not** scheduled by itself. `daemon --at HH:MM` (default `06:00`, local time; `kg_agent.py` → `daemon()` /
-`_next_run()`) is a foreground loop that sleeps until the next time and calls `run`; it does not survive a restart and does
-not catch up on missed runs. For something sturdier use cron or a systemd timer:
+`kg_agent.py run` is one pass; something has to call it every day. Three options are provided (comparison and
+recommendation in [`docs/scheduling.md`](docs/scheduling.md)):
 
-```
-0 6 * * *  cd /path/to/cogent && ./cogent/bin/python src/kg_agent.py run >> kg_agent_home/logs/cron.log 2>&1
+| | files | in short |
+|---|---|---|
+| **systemd timer** | `deploy/cogent-run.service`, `cogent-run.timer` | least code on Linux: catch-up (`Persistent=true`), jitter, retry, timeout, limits, journald. **Recommended where systemd exists** |
+| **cron** | `deploy/cogent.cron` | everywhere, one line; no catch-up, retry or status (add `flock`, anacron / `@reboot`) |
+| **Python daemon** | `src/kg_daemon.py`, `deploy/cogent-daemon.service` | portable and app-aware (catch-up, retries, `status`, hooks); needs a supervisor to be dependable |
+
+Pick **one** scheduler. The agent's run lock and idempotent updates make an accidental double run harmless.
+
+### `kg_daemon.py`
+
+```bash
+python src/kg_daemon.py start   --at 06:00,18:00 --tz Europe/London --jitter 300 -- --extractor hybrid   # detach, log to <home>/logs/daemon.log
+python src/kg_daemon.py serve   --at 06:00                      # foreground: for systemd, Docker, tmux
+python src/kg_daemon.py status                                  # next run, last run + exit, failures, open warnings (exit 0 = running)
+python src/kg_daemon.py run-now                                 # SIGUSR1 to the daemon, or one run here if none is running
+python src/kg_daemon.py stop | restart
 ```
 
-A second run while one is active stops with an "another run is active" error (lock file).
+Everything after `--` is passed to `kg_agent.py run` (so `--no-auto-apply`, `--only …`, `--ocr …` work as usual).
+
+* **Schedule** – `--at HH:MM[,HH:MM]` in `--tz` (DST-correct), optional `--jitter` seconds (stable per slot).
+* **Catch-up** – a slot missed while the daemon was down runs at start (`--no-catch-up` skips it, but never fires it later);
+  a fresh install waits for the next slot unless `--run-on-start`.
+* **Retries** – a failed run is retried after `--retry-delay` seconds, doubling, up to `--retries` times, never past the next slot.
+* **Supervision** – the agent runs as a subprocess in its own process group, with `--run-timeout`; on stop it gets SIGTERM,
+  then SIGKILL after `--stop-grace`. A crash or hang in the agent cannot take the daemon down.
+* **Signals** – `SIGTERM`/`SIGINT` stop gracefully, `SIGUSR1` runs now, `SIGHUP` reopens the log after rotation.
+* **One daemon per `--home`** – a PID file held with `flock` (no stale locks). State is in `<home>/daemon/state.json`.
+* **Hooks** – `--on-failure CMD` (when a run failed for good) and `--on-warnings CMD` (a run left paywall / review warnings);
+  the command gets `COGENT_EXIT`, `COGENT_REASON`, `COGENT_WARNINGS`, `COGENT_FAILURES`, `COGENT_REPORT`, `COGENT_HOME`.
+* **systemd** – `serve` speaks `sd_notify` (`READY=1`, `STATUS=`, `WATCHDOG=1`), so `Type=notify` + `WatchdogSec=` work.
+* POSIX only (fork, flock, signals). The older `kg_agent.py daemon --at HH:MM` is a minimal foreground loop kept for
+  convenience.
 
 ## Environment variables
 
@@ -264,13 +293,15 @@ A second run while one is active stops with an "another run is active" error (lo
 ## Tests
 
 ```bash
-python -m pytest tests          # 19 tests, no internet: they run against tests/mock_site.py
+python -m pytest tests          # 32 tests, no internet: they run against tests/mock_site.py
 ```
 
 They cover a three-day simulation of the agent (bootstrap, quiet day, new RG revision / DOE edition / eCFR amendment /
 Federal Register rule), configuration propagation, archiving, audit log and manual-edit detection, dry-run, identifier
 parsing and edition normalisation, version tracking, paywall warnings, report/standard cross-references, and OCR (fake
-engines, mixed documents, tables, columns, scan fingerprints, and RapidOCR when installed).
+engines, mixed documents, tables, columns, scan fingerprints, and RapidOCR when installed), and the daemon (schedule
+maths across a DST change, catch-up, retry backoff, hooks, PID lock, supervision / timeout, real `serve` and `start`/`stop`
+processes with signals).
 
 ## Status and limits
 
