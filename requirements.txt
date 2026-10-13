@@ -1,0 +1,23 @@
+langgraph
+networkx
+pymupdf
+beautifulsoup4
+lxml
+
+# optional OCR for scanned PDFs (or install the Tesseract program instead)
+rapidocr-onnxruntime
+
+# optional, for kg_show.py
+pyvis        # bundles vis-network so the HTML works offline
+matplotlib   # static PNG output
+playwright   # headless-browser download of URLs (then: playwright install chromium)
+pymupdf-layout   # layout-aware PDF parsing (AGPL-3.0 or Artifex commercial licence)
+pymupdf4llm
+
+# KG update agent (kg_agent.py)
+pydantic
+langchain-core
+langchain-ollama   # optional: --llm narration / local Ollama
+# tests (python -m pytest tests)
+pytest
+reportlab

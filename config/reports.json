@@ -1,0 +1,740 @@
+{
+  "meta": {
+    "table": "Section 2 (technical reports and documents)",
+    "count": 15,
+    "notes": "standards_to_comply_with_ids refer to the \"id\" field in the standards JSON; the mapping is an inference. Ranges such as \"#22 to #25\" are expanded. #30 (ASME NQA-1) was split out of #28, which originally bundled Appendix B, NQA-1 and RG 1.28; every report that cites #28 also cites #30."
+  },
+  "reports": [
+    {
+      "id": 1,
+      "report": "Licensing basis report (LMP / RIPB)",
+      "standards_to_comply_with_text": "#22 NEI 18-04, #23 RG 1.233, #24 RG 1.253 / NEI 21-07, #27 RG 1.232; #1 Part 50 or #6 Part 53",
+      "standards_to_comply_with_ids": [
+        1,
+        6,
+        22,
+        23,
+        24,
+        27
+      ],
+      "template_or_format_guide": "NEI 18-04",
+      "template_links": [
+        {
+          "text": "NEI 18-04",
+          "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS copy)",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "NEI 18-04",
+            "edition": "1",
+            "label": "NEI 18-04 Rev. 1",
+            "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/1/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:39:30Z",
+              "text_sha": "d76a67be1171",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "report": "Licensing basis event selection and Frequency-Consequence evaluation",
+      "standards_to_comply_with_text": "#22 NEI 18-04, #23 RG 1.233, #24 RG 1.253 / NEI 21-07, #25 RA-S-1.4 (for the PRA behind frequencies)",
+      "standards_to_comply_with_ids": [
+        22,
+        23,
+        24,
+        25
+      ],
+      "template_or_format_guide": "NEI 18-04; SAR Chapter 3 in RG 1.253",
+      "template_links": [
+        {
+          "text": "RG 1.253",
+          "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; drafts https://www.nrc.gov/documents-reports/documents-for-comment#rg",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/documents-reports/documents-for-comment#rg"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.253",
+            "label": "RG 1.253",
+            "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/2/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:27Z",
+              "text_sha": "cee905efd9d8",
+              "editions": {
+                "RG 1.253": "0",
+                "NEI 21-07": "1"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.253": {
+              "edition": "0",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "report": "Deterministic safety analysis reports",
+      "standards_to_comply_with_text": "#1 Part 50, #5 Part 100 (dose limits), #24 RG 1.253; DOE route: #8 Part 830, #11 DOE O 420.1D, #14 DOE-STD-1271",
+      "standards_to_comply_with_ids": [
+        1,
+        5,
+        8,
+        11,
+        14,
+        24
+      ],
+      "template_or_format_guide": "SAR Chapter 4 (Integrated Evaluations) in RG 1.253",
+      "template_links": [],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/3/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "report": "SSC classification report with applicable codes and quality standards",
+      "standards_to_comply_with_text": "#22 NEI 18-04, #23 RG 1.233, #3 50.69 (parallel method), #27 RG 1.232, #28 QA, #30 NQA-1, #20 ASCE 43-19, #21 QME-1, #16 NE-STD-1020",
+      "standards_to_comply_with_ids": [
+        3,
+        16,
+        20,
+        21,
+        22,
+        23,
+        27,
+        28,
+        30
+      ],
+      "template_or_format_guide": "NEI 18-04; SAR Chapters 5 to 7 in RG 1.253; 10 CFR 50.69 as a parallel method",
+      "template_links": [
+        {
+          "text": "10 CFR 50.69",
+          "url": "https://www.ecfr.gov/current/title-10/section-50.69"
+        }
+      ],
+      "format_of_data": "PDF (NEI 18-04, RG 1.253); HTML (eCFR for 50.69)",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project; 50.69: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project",
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/4/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/section-50.69",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:34Z",
+              "text_sha": "0fd98e0c77ee",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "report": "Defense-in-depth adequacy evaluation",
+      "standards_to_comply_with_text": "#22 NEI 18-04, #23 RG 1.233, #27 RG 1.232",
+      "standards_to_comply_with_ids": [
+        22,
+        23,
+        27
+      ],
+      "template_or_format_guide": "NEI 18-04",
+      "template_links": [],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/5/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 6,
+      "report": "PRA documentation and integration into licensing decisions",
+      "standards_to_comply_with_text": "#25 RA-S-1.4 and RG 1.247, #26 RG 1.200 (50.69 and LWR-style use), #22 NEI 18-04, #3 50.69",
+      "standards_to_comply_with_ids": [
+        3,
+        22,
+        25,
+        26
+      ],
+      "template_or_format_guide": "ASME/ANS RA-S-1.4-2021, RG 1.247",
+      "template_links": [
+        {
+          "text": "ASME/ANS RA-S-1.4-2021",
+          "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard"
+        },
+        {
+          "text": "RG 1.247",
+          "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf"
+        }
+      ],
+      "format_of_data": "HTML (NRC page); PDF (RG 1.247)",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard (trial guide, extended in 2024; watch for a final RG)",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RA-S 1.4",
+            "edition": "2021",
+            "label": "RA-S-1.4-2021",
+            "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard"
+          },
+          {
+            "identity": "RG 1.247",
+            "label": "RG 1.247",
+            "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/6/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:40:40Z",
+              "text_sha": "40f443a3b19c",
+              "editions": {
+                "RA-S 1.4": "2021"
+              }
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:52Z",
+              "text_sha": "8294182197db",
+              "editions": {
+                "RA-S 1.4": "2021"
+              }
+            }
+          ],
+          "editions": {
+            "RA-S 1.4": {
+              "edition": "2021",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "report": "Licensing documents for NRC and DOE (SAR-type submittals)",
+      "standards_to_comply_with_text": "#1 Part 50 or #2 Part 52 or #6 Part 53, #4 Part 73, #5 Part 100, #24 RG 1.253 / NEI 21-07, #29 RG 1.206 and NUREG-1537, #28 QA, #30 NQA-1, #22, #23, #27, #20, #21",
+      "standards_to_comply_with_ids": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        20,
+        21,
+        22,
+        23,
+        24,
+        27,
+        28,
+        29,
+        30
+      ],
+      "template_or_format_guide": "RG 1.253 (12-chapter SAR), NEI 21-07; LWR-oriented RG 1.206; NUREG-1537 Part 1",
+      "template_links": [
+        {
+          "text": "NEI 21-07",
+          "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf"
+        },
+        {
+          "text": "RG 1.206",
+          "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf"
+        },
+        {
+          "text": "NUREG-1537 Part 1",
+          "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf"
+        }
+      ],
+      "format_of_data": "PDF (RG 1.253, NEI 21-07, RG 1.206, NUREG-1537); mostly narrative content outlines, not forms",
+      "update_tracking": "RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; NUREG-1537 index https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "NEI 21-07",
+            "label": "NEI 21-07",
+            "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf"
+          },
+          {
+            "identity": "RG 1.206",
+            "label": "RG 1.206",
+            "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf"
+          },
+          {
+            "identity": "NUREG 1537",
+            "label": "NUREG-1537",
+            "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/7/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:06Z",
+              "text_sha": "66b2feed3dcb",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:38Z",
+              "text_sha": "18388d9899ba",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:39Z",
+              "text_sha": "194f225fb3a9",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 8,
+      "report": "DOE authorization documents (NSDA, PDSA, DSA, TSR, startup plan)",
+      "standards_to_comply_with_text": "#8 Part 830, #9 Part 835, #10 Part 851, #11 DOE O 420.1D, #13 DOE O 5480.30, #14 DOE-STD-1271, #15 NE-STD-1027, #16 NE-STD-1020, #17 DOE-STD-1237, #18 DOE-STD-1104 and 3009, #19 DOE/EH-0545",
+      "standards_to_comply_with_ids": [
+        8,
+        9,
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "template_or_format_guide": "DOE-STD-1271-2025; DOE-STD-1237-2021",
+      "template_links": [
+        {
+          "text": "DOE-STD-1271-2025",
+          "url": "https://id.energy.gov/Home/DownloadDocument/5633"
+        },
+        {
+          "text": "DOE-STD-1237-2021",
+          "url": "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021"
+        }
+      ],
+      "format_of_data": "PDF (DOE standards)",
+      "update_tracking": "https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1271",
+            "edition": "2025",
+            "label": "DOE-STD-1271-2025",
+            "url": "https://id.energy.gov/Home/DownloadDocument/5633"
+          },
+          {
+            "identity": "DOE-STD 1237",
+            "edition": "2021",
+            "label": "DOE-STD-1237-2021",
+            "url": "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/8/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://id.energy.gov/Home/DownloadDocument/5633",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:38:05Z",
+              "text_sha": "7a2e4e1c7786",
+              "editions": {
+                "DOE-STD 1271": "2025"
+              }
+            },
+            {
+              "url": "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:39:05Z",
+              "text_sha": "0b80f8519b62",
+              "editions": {}
+            }
+          ],
+          "editions": {
+            "DOE-STD 1271": {
+              "edition": "2025",
+              "source": "document"
+            },
+            "DOE-STD 1237": {
+              "edition": "2021",
+              "source": "configuration"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "report": "Technical reports (general), including documentation of review panels",
+      "standards_to_comply_with_text": "Depends on subject; at minimum #28 QA (with #30 NQA-1) and whichever of #22 to #25 govern the topic",
+      "standards_to_comply_with_ids": [
+        22,
+        23,
+        24,
+        25,
+        28,
+        30
+      ],
+      "template_or_format_guide": "No standard template",
+      "template_links": [],
+      "format_of_data": "None",
+      "update_tracking": "None",
+      "update_tracking_urls": [],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/9/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 10,
+      "report": "QA implementation documents",
+      "standards_to_comply_with_text": "#28 Appendix B, NQA-1 (#30), RG 1.28; DOE route: #8 Part 830",
+      "standards_to_comply_with_ids": [
+        8,
+        28,
+        30
+      ],
+      "template_or_format_guide": "RG 1.28, NQA-1, Appendix B; industry QA program description template NEI 11-04 (draft on NRC site)",
+      "template_links": [
+        {
+          "text": "RG 1.28",
+          "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf"
+        },
+        {
+          "text": "draft on NRC site",
+          "url": "https://www.nrc.gov/docs/ML1117/ML111720261.pdf"
+        }
+      ],
+      "format_of_data": "PDF (RG 1.28; NEI 11-04 is a draft on the NRC site)",
+      "update_tracking": "RG 1.28 on https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; NEI 11-04 (a draft on the NRC site, so check the NEI website https://www.nei.org for a final version)",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nei.org"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.28",
+            "label": "RG 1.28",
+            "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/10/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:36Z",
+              "text_sha": "c249ea23f1c0",
+              "editions": {
+                "RG 1.28": "6"
+              }
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML1117/ML111720261.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:42:06Z",
+              "text_sha": "735e27c42fd6",
+              "editions": {
+                "NQA 1": "2009",
+                "RG 1.28": "4"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.28": {
+              "edition": "6",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "report": "License amendment requests",
+      "standards_to_comply_with_text": "#1 Part 50 (50.90 to 50.92), #24 RG 1.253 (updating SAR content), #3 50.69 where categorization changes",
+      "standards_to_comply_with_ids": [
+        1,
+        3,
+        24
+      ],
+      "template_or_format_guide": "No template; content set by 10 CFR 50.90 to 50.92",
+      "template_links": [],
+      "format_of_data": "HTML (eCFR)",
+      "update_tracking": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/11/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 12,
+      "report": "Exemption requests with RIPB justification",
+      "standards_to_comply_with_text": "#1 Part 50 (50.12) or #2 Part 52 (52.7), #22 NEI 18-04 (RIPB justification), #6 Part 53 where applicable",
+      "standards_to_comply_with_ids": [
+        1,
+        2,
+        6,
+        22
+      ],
+      "template_or_format_guide": "No template; 10 CFR 50.12",
+      "template_links": [],
+      "format_of_data": "HTML (eCFR)",
+      "update_tracking": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/reports/12/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 13,
+      "report": "Technical specifications input",
+      "standards_to_comply_with_text": "#1 Part 50 (50.36), #24 RG 1.253 (Chapter 8); DOE route: #8 Part 830 and #14 DOE-STD-1271 (TSR)",
+      "standards_to_comply_with_ids": [
+        1,
+        8,
+        14,
+        24
+      ],
+      "template_or_format_guide": "SAR Chapter 8 (Plant Programs); DOE equivalent is the TSR",
+      "template_links": [],
+      "format_of_data": "PDF (RG 1.253; DOE-STD-1271)",
+      "update_tracking": "RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; https://www.energy.gov/ehss/technical-standards-current",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.energy.gov/ehss/technical-standards-current"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/13/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 14,
+      "report": "Training plans",
+      "standards_to_comply_with_text": "#12 DOE O 426.2 (DOE route), #1 Part 50 (operator training) for NRC route",
+      "standards_to_comply_with_ids": [
+        1,
+        12
+      ],
+      "template_or_format_guide": "DOE O 426.2 for DOE; no template",
+      "template_links": [],
+      "format_of_data": "PDF (DOE order)",
+      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library",
+      "update_tracking_urls": [
+        "https://www.energy.gov/management/active-directives-library",
+        "https://www.energy.gov/management/archived-directives-library"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/14/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 15,
+      "report": "Seismic and equipment qualification inputs",
+      "standards_to_comply_with_text": "#20 ASCE/SEI 43-19, #21 QME-1, #19 DOE/EH-0545, #16 NE-STD-1020, #28 QA, #30 NQA-1",
+      "standards_to_comply_with_ids": [
+        16,
+        19,
+        20,
+        21,
+        28,
+        30
+      ],
+      "template_or_format_guide": "ASCE/SEI 43-19, ASME QME-1, DOE/EH-0545",
+      "template_links": [],
+      "format_of_data": "HTML or paywalled PDF (publishers); PDF (DOE/EH-0545)",
+      "update_tracking": "Publisher pages in rows 20 and 21 of Section 1; https://www.energy.gov/ehss/technical-standards-current for DOE/EH-0545",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current"
+      ],
+      "version_tracking": {
+        "status": "no_documents",
+        "latest": [],
+        "staged": {
+          "kg": "staging/reports/15/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [],
+          "editions": {}
+        }
+      }
+    }
+  ]
+}

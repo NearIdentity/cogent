@@ -1,0 +1,1628 @@
+{
+  "meta": {
+    "table": "Section 1 (standards, regulations and guidance)",
+    "count": 29
+  },
+  "standards": [
+    {
+      "id": 1,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 50",
+      "description": "Licensing of production and utilization facilities (construction permit, operating license). Appendix B covers QA.",
+      "relevance_to_nuclear_power_generation": "Main route for advanced-reactor licensing today.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-50"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/1/kg.json",
+          "kg_built": "2026-10-12T20:42:39Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-50",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:26Z",
+              "text_sha": "07079a095466",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 52",
+      "description": "Standard design certification, combined licenses, early site permits, manufacturing licenses.",
+      "relevance_to_nuclear_power_generation": "One-step combined-license route; relevant to factory-built designs.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-52"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=52; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=52",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 52",
+            "edition": "2026-05-15",
+            "label": "eCFR as of 2026-05-15",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=52",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=52"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/2/kg.json",
+          "kg_built": "2026-10-12T20:42:39Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-52",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:30Z",
+              "text_sha": "adedfed56fec",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR 50.69",
+      "description": "Risk-informed categorization and treatment of SSCs, using PRA and an expert panel.",
+      "relevance_to_nuclear_power_generation": "It parallels SSC classification in the LMP.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/section-50.69"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export; guidance RG 1.201 is a PDF",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission; guidance RG 1.201: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1201---1220",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1201---1220"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/3/kg.json",
+          "kg_built": "2026-10-12T20:42:39Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/section-50.69",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:34Z",
+              "text_sha": "0fd98e0c77ee",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 73",
+      "description": "Physical protection of plants and materials, including cybersecurity.",
+      "relevance_to_nuclear_power_generation": "Security design interacts with the licensing basis.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-73"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=73; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=73",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 73",
+            "edition": "2026-06-16",
+            "label": "eCFR as of 2026-06-16",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=73",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=73"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/4/kg.json",
+          "kg_built": "2026-10-12T20:42:39Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-73",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:35Z",
+              "text_sha": "0b08ba24cc99",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 100",
+      "description": "Reactor site criteria (exclusion area, population distance, seismic and geologic siting).",
+      "relevance_to_nuclear_power_generation": "Sets siting and dose limits that accident analyses are judged against.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-100"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=100; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=100",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 100",
+            "edition": "2026-06-16",
+            "label": "eCFR as of 2026-06-16",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=100",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=100"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/5/kg.json",
+          "kg_built": "2026-10-12T20:42:39Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-100",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:41Z",
+              "text_sha": "431998462aaf",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 6,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 53",
+      "description": "NRC's risk-informed, technology-inclusive framework for advanced reactors. Final rule published March 30, 2026, effective April 29, 2026; optional versus Parts 50 and 52.",
+      "relevance_to_nuclear_power_generation": "May become a licensing path.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/part-53"
+        },
+        {
+          "text": "Final rule",
+          "url": "https://www.federalregister.gov/documents/2026/03/30/2026-06048/risk-informed-technology-inclusive-regulatory-framework-for-advanced-reactors"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export; the Federal Register rule is HTML and PDF",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=53; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission; final rule: https://www.federalregister.gov/documents/2026/03/30/2026-06048/risk-informed-technology-inclusive-regulatory-framework-for-advanced-reactors",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=53",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+        "https://www.federalregister.gov/documents/2026/03/30/2026-06048/risk-informed-technology-inclusive-regulatory-framework-for-advanced-reactors"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 53",
+            "edition": "2026-05-15",
+            "label": "eCFR as of 2026-05-15",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=53",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=53"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/6/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/part-53",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:42Z",
+              "text_sha": "19f6a4bc5451",
+              "as_of": "2026-10-08",
+              "editions": {}
+            },
+            {
+              "url": "https://www.federalregister.gov/documents/2026/03/30/2026-06048/risk-informed-technology-inclusive-regulatory-framework-for-advanced-reactors",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:37:44Z",
+              "text_sha": "322edc991a16",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 7,
+      "group": "1A",
+      "group_title": "NRC regulations",
+      "document": "10 CFR Part 810",
+      "description": "DOE authorization of foreign transfers of nuclear technology (the \"U.S. Person\" requirement).",
+      "relevance_to_nuclear_power_generation": "Hiring and export-control constraint, not a licensing-basis input.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-810"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=810; rulemakings: https://www.federalregister.gov/agencies/energy-department",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=810",
+        "https://www.federalregister.gov/agencies/energy-department"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 810",
+            "edition": "2026-06-16",
+            "label": "eCFR as of 2026-06-16",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=810",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=810"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/7/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-810",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:46Z",
+              "text_sha": "2fa5beaaea1d",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 8,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "10 CFR Part 830",
+      "description": "DOE nuclear safety management: QA, safety basis (DSA), technical safety requirements.",
+      "relevance_to_nuclear_power_generation": "Legal basis for DOE authorization of reactors and fuel facilities.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-830"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=830; rulemakings: https://www.federalregister.gov/agencies/energy-department",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=830",
+        "https://www.federalregister.gov/agencies/energy-department"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 830",
+            "edition": "2024-06-05",
+            "label": "eCFR as of 2024-06-05",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=830",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=830"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/8/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-830",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:48Z",
+              "text_sha": "bde36788185a",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 9,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "10 CFR Part 835",
+      "description": "Occupational radiation protection at DOE facilities.",
+      "relevance_to_nuclear_power_generation": "Worker dose limits and programs on DOE sites.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-835"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=835; rulemakings: https://www.federalregister.gov/agencies/energy-department",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=835",
+        "https://www.federalregister.gov/agencies/energy-department"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 835",
+            "edition": "2024-06-05",
+            "label": "eCFR as of 2024-06-05",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=835",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=835"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/9/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-835",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:49Z",
+              "text_sha": "85f6167f12ae",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 10,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "10 CFR Part 851",
+      "description": "DOE worker safety and health program.",
+      "relevance_to_nuclear_power_generation": "Industrial safety program on DOE sites.",
+      "links": [
+        {
+          "text": "eCFR",
+          "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-851"
+        }
+      ],
+      "format_of_data": "HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=851; rulemakings: https://www.federalregister.gov/agencies/energy-department",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=851",
+        "https://www.federalregister.gov/agencies/energy-department"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "eCFR title 10 part 851",
+            "edition": "2024-12-27",
+            "label": "eCFR as of 2024-12-27",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=851",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=851"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/10/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.ecfr.gov/current/title-10/chapter-III/part-851",
+              "kind": "xml",
+              "local": false,
+              "fetched": "2026-10-12T20:37:54Z",
+              "text_sha": "cf707b6c50ef",
+              "as_of": "2026-10-08",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 11,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE O 420.1D, Facility Safety",
+      "description": "Nuclear safety design criteria, fire protection, criticality safety, natural phenomena hazards. Rev. D issued Aug. 5, 2026, superseding 420.1C.",
+      "relevance_to_nuclear_power_generation": "Design requirements for DOE-authorized reactors.",
+      "links": [
+        {
+          "text": "420.1D",
+          "url": "https://www.energy.gov/documents/doe-o-420-1-dfacility-safety2026-07-23pdf"
+        },
+        {
+          "text": "420.1C Chg 3",
+          "url": "https://www.directives.doe.gov/directives-documents/400-series/0420.1-BOrder-C-chg3-ltdchg"
+        }
+      ],
+      "format_of_data": "PDF (DOE order; 420.1C link also PDF, inferred from the directives portal)",
+      "update_tracking": "Active vs archived orders: https://www.energy.gov/management/active-directives-library and https://www.energy.gov/management/archived-directives-library; safety directives page: https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/management/active-directives-library",
+        "https://www.energy.gov/management/archived-directives-library",
+        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-O 420.1",
+            "edition": "D",
+            "label": "DOE O 420.1D"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/11/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.energy.gov/documents/doe-o-420-1-dfacility-safety2026-07-23pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:37:55Z",
+              "text_sha": "aa9dc84590bd",
+              "editions": {
+                "DOE-O 420.1": "D"
+              }
+            },
+            {
+              "url": "https://www.directives.doe.gov/directives-documents/400-series/0420.1-BOrder-C-chg3-ltdchg",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:38:02Z",
+              "text_sha": "9441cde56bc5",
+              "editions": {}
+            }
+          ],
+          "editions": {
+            "DOE-O 420.1": {
+              "edition": "D",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE O 426.2",
+      "description": "Personnel selection, training, qualification and certification for DOE nuclear facilities.",
+      "relevance_to_nuclear_power_generation": "Basis for operator and technical staff training plans.",
+      "links": [
+        {
+          "text": "Chg 1",
+          "url": "https://www.directives.doe.gov/directives-documents/400-series/0426.2-BOrder-chg1-admchg"
+        }
+      ],
+      "format_of_data": "PDF (inferred; directives portal)",
+      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library, https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/management/active-directives-library",
+        "https://www.energy.gov/management/archived-directives-library",
+        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-O 426.2",
+            "label": "DOE O 426.2"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/12/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.directives.doe.gov/directives-documents/400-series/0426.2-BOrder-chg1-admchg",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:38:03Z",
+              "text_sha": "9441cde56bc5",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 13,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE O 5480.30",
+      "description": "Nuclear reactor safety design criteria for DOE reactors.",
+      "relevance_to_nuclear_power_generation": "Reactor design criteria on the DOE route.",
+      "links": [
+        {
+          "text": "Chg 1",
+          "url": "https://www.directives.doe.gov/directives-documents/5400-series/5480.30-BOrder-Chg1"
+        }
+      ],
+      "format_of_data": "PDF (inferred; directives portal)",
+      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library, https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/management/active-directives-library",
+        "https://www.energy.gov/management/archived-directives-library",
+        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-O 5480.30",
+            "label": "DOE O 5480.30"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/13/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.directives.doe.gov/directives-documents/5400-series/5480.30-BOrder-Chg1",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:38:04Z",
+              "text_sha": "9441cde56bc5",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 14,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE-STD-1271-2025, Authorization Pathway for Nuclear Facilities",
+      "description": "August 2025 stage-gate process for DOE Office of Nuclear Energy authorization (NSDA, PDSA, DSA/TSR, startup plan, 45-day reviews).",
+      "relevance_to_nuclear_power_generation": "Core DOE reactor-authorization process; cross-references most DOE items below.",
+      "links": [
+        {
+          "text": "PDF",
+          "url": "https://id.energy.gov/Home/DownloadDocument/5633"
+        }
+      ],
+      "format_of_data": "PDF (download endpoint, inferred from a matching public copy)",
+      "update_tracking": "DOE standards (current vs archives): https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives; secondary tracker: https://nuclearinnovationalliance.org/review-recent-doe-updates-its-reactor-authorization-process",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives",
+        "https://nuclearinnovationalliance.org/review-recent-doe-updates-its-reactor-authorization-process"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1271",
+            "edition": "2025",
+            "label": "DOE-STD-1271-2025"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/14/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://id.energy.gov/Home/DownloadDocument/5633",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:38:05Z",
+              "text_sha": "7a2e4e1c7786",
+              "editions": {
+                "DOE-STD 1271": "2025"
+              }
+            }
+          ],
+          "editions": {
+            "DOE-STD 1271": {
+              "edition": "2025",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 15,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE-STD-1027 series: now NE-STD-1027-2025, Hazard Categorization of DOE Nuclear Facilities",
+      "description": "Methodology for Hazard Category 1, 2, 3 or below, as required by Part 830. DOE-STD-1027-2018 is the predecessor.",
+      "relevance_to_nuclear_power_generation": "The category sets how rigorous the safety basis must be.",
+      "links": [
+        {
+          "text": "NE-STD-1027-2025",
+          "url": "https://id.energy.gov/Home/DownloadDocument/5632"
+        },
+        {
+          "text": "DOE-STD-1027-2018",
+          "url": "https://www.standards.doe.gov/standards-documents/1000/1027-astd-2018/@@images/file"
+        }
+      ],
+      "format_of_data": "PDF (inferred; download endpoint and standards site)",
+      "update_tracking": "https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives (the 2018 edition is the predecessor; the 2025 NE- edition is on https://id.energy.gov/Home/DownloadDocument/5632)",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives",
+        "https://id.energy.gov/Home/DownloadDocument/5632"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1027",
+            "edition": "2025",
+            "label": "DOE-STD-1027-2025",
+            "url": "https://id.energy.gov/Home/DownloadDocument/5632"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/15/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://id.energy.gov/Home/DownloadDocument/5632",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:38:12Z",
+              "text_sha": "eb0b30bebb58",
+              "editions": {
+                "DOE-STD 1027": "2025"
+              }
+            },
+            {
+              "url": "https://www.standards.doe.gov/standards-documents/1000/1027-astd-2018/@@images/file",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:38:52Z",
+              "text_sha": "0b80f8519b62",
+              "editions": {}
+            }
+          ],
+          "editions": {
+            "DOE-STD 1027": {
+              "edition": "2025",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 16,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "NE-STD-1020-2025, Natural Phenomena Hazards Analysis and Design Criteria",
+      "description": "Seismic, wind, flood, lightning and volcanic criteria for DOE facilities (August 2025; Change Notice 1, November 2025).",
+      "relevance_to_nuclear_power_generation": "Defines design-basis natural hazards used in SSC classification.",
+      "links": [
+        {
+          "text": "PDF",
+          "url": "https://id.energy.gov/Home/DownloadDocument/5631"
+        }
+      ],
+      "format_of_data": "PDF (inferred; download endpoint)",
+      "update_tracking": "https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives; check for change notices after Change Notice 1 (Nov. 2025)",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1020",
+            "edition": "2025",
+            "label": "DOE-STD-1020-2025"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/16/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://id.energy.gov/Home/DownloadDocument/5631",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:38:52Z",
+              "text_sha": "1887f3264189",
+              "editions": {
+                "DOE-STD 1020": "2025"
+              }
+            }
+          ],
+          "editions": {
+            "DOE-STD 1020": {
+              "edition": "2025",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 17,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE-STD-1237-2021, Documented Safety Analysis for DOE Reactor Facilities",
+      "description": "Content and format for reactor DSAs.",
+      "relevance_to_nuclear_power_generation": "DOE counterpart of an FSAR.",
+      "links": [
+        {
+          "text": "DOE standards",
+          "url": "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021"
+        }
+      ],
+      "format_of_data": "PDF on the DOE standards site; the link redirected to an HTML program page",
+      "update_tracking": "https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1237",
+            "edition": "2021",
+            "label": "DOE-STD-1237-2021"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/17/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:39:05Z",
+              "text_sha": "0b80f8519b62",
+              "editions": {}
+            }
+          ],
+          "editions": {
+            "DOE-STD 1237": {
+              "edition": "2021",
+              "source": "configuration"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 18,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE-STD-1104-2016 and DOE-STD-3009-2014",
+      "description": "1104: review and approval of safety basis documents. 3009: DSAs for non-reactor facilities.",
+      "relevance_to_nuclear_power_generation": "Both are cross-referenced by DOE-STD-1271-2025; 3009 matters for fuel facilities.",
+      "links": [
+        {
+          "text": "3009-2014 (NRC copy)",
+          "url": "https://www.nrc.gov/docs/ML1801/ML18019A922.pdf"
+        },
+        {
+          "text": "DOE Technical Standards Program",
+          "url": "https://www.energy.gov/ehss/doe-technical-standards-program"
+        }
+      ],
+      "format_of_data": "PDF (NRC copy of 3009); HTML program page for 1104",
+      "update_tracking": "https://www.energy.gov/ehss/technical-standards-current, https://www.energy.gov/ehss/technical-standards-archives",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "DOE-STD 1104",
+            "edition": "2016",
+            "label": "DOE-STD-1104-2016"
+          },
+          {
+            "identity": "DOE-STD 3009",
+            "edition": "2014",
+            "label": "DOE-STD-3009-2014"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/18/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML1801/ML18019A922.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:39:05Z",
+              "text_sha": "b06898895fc7",
+              "editions": {
+                "DOE-STD 3009": "2014"
+              }
+            },
+            {
+              "url": "https://www.energy.gov/ehss/doe-technical-standards-program",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:39:20Z",
+              "text_sha": "0b80f8519b62",
+              "editions": {}
+            }
+          ],
+          "editions": {
+            "DOE-STD 1104": {
+              "edition": "2016",
+              "source": "configuration"
+            },
+            "DOE-STD 3009": {
+              "edition": "2014",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 19,
+      "group": "1B",
+      "group_title": "DOE regulations, orders and standards",
+      "document": "DOE/EH-0545, Seismic Evaluation Procedure for Equipment in DOE Facilities (1997)",
+      "description": "Procedure for qualifying existing equipment seismically using earthquake experience data.",
+      "relevance_to_nuclear_power_generation": "Seismic adequacy evidence for SSCs.",
+      "links": [
+        {
+          "text": "DOE",
+          "url": "https://www.energy.gov/ehss/doeeh-0545-seismic-evaluation-procedure-equipment-us-department-energy-facilities-1997"
+        }
+      ],
+      "format_of_data": "HTML landing page; the report is a 1997 PDF (not opened)",
+      "update_tracking": "Static 1997 document; check https://www.energy.gov/ehss/technical-standards-current and https://www.energy.gov/ehss/technical-standards-archives. NRC document on updating its piping rules: https://www.nrc.gov/docs/ML2105/ML21050A148.pdf",
+      "update_tracking_urls": [
+        "https://www.energy.gov/ehss/technical-standards-current",
+        "https://www.energy.gov/ehss/technical-standards-archives",
+        "https://www.nrc.gov/docs/ML2105/ML21050A148.pdf"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [],
+        "staged": {
+          "kg": "staging/standards/19/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.energy.gov/ehss/doeeh-0545-seismic-evaluation-procedure-equipment-us-department-energy-facilities-1997",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:39:20Z",
+              "text_sha": "051f3258ffb3",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 20,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "ASCE/SEI 43-19, Seismic Design Criteria for SSCs in Nuclear Facilities",
+      "description": "Seismic design categories and performance goals.",
+      "relevance_to_nuclear_power_generation": "Defines the seismic design basis.",
+      "links": [
+        {
+          "text": "ASCE",
+          "url": "https://ascelibrary.org/doi/book/10.1061/9780784415405"
+        },
+        {
+          "text": "ANSI",
+          "url": "https://webstore.ansi.org/standards/asce/ascesei432019"
+        }
+      ],
+      "format_of_data": "HTML landing page (paywalled); sold as PDF and print",
+      "update_tracking": "Edition year is in the name (2019). https://ascelibrary.org/doi/book/10.1061/9780784415405 and https://webstore.ansi.org/standards/asce/ascesei432019",
+      "update_tracking_urls": [
+        "https://ascelibrary.org/doi/book/10.1061/9780784415405",
+        "https://webstore.ansi.org/standards/asce/ascesei432019"
+      ],
+      "version_tracking": {
+        "status": "no_local_copy",
+        "latest": [
+          {
+            "identity": "ASCE 43",
+            "edition": "19",
+            "label": "ASCE/SEI 43-19"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/20/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://webstore.ansi.org/standards/asce/ascesei432019",
+              "kind": "html",
+              "role": "store page",
+              "local": false,
+              "fetched": "2026-10-12T20:39:24Z",
+              "text_sha": "e8c6a4118a12",
+              "editions": {
+                "ASCE 43": "2019"
+              }
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 21,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "ASME QME-1, Qualification of Active Mechanical Equipment",
+      "description": "Qualification of pumps, valves and similar active equipment, including seismic and environmental.",
+      "relevance_to_nuclear_power_generation": "Needed to qualify safety-related equipment for the licensing basis.",
+      "links": [
+        {
+          "text": "ASME",
+          "url": "https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities"
+        },
+        {
+          "text": "QME-1-2025 (ANSI)",
+          "url": "https://webstore.ansi.org/standards/asme/asmeqme2025"
+        }
+      ],
+      "format_of_data": "HTML landing page (paywalled); sold as PDF and print",
+      "update_tracking": "Edition year is in the name. https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities, https://webstore.ansi.org/standards/asme/asmeqme2023 (2023 edition listed); NRC acceptance: RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors (RG 1.100 Rev. 3 references QME-1: https://www.nrc.gov/docs/ml0913/ml091320468.pdf)",
+      "update_tracking_urls": [
+        "https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities",
+        "https://webstore.ansi.org/standards/asme/asmeqme2023",
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/docs/ml0913/ml091320468.pdf"
+      ],
+      "version_tracking": {
+        "status": "no_local_copy",
+        "latest": [
+          {
+            "identity": "QME 1",
+            "edition": "2025",
+            "label": "QME-1-2025",
+            "url": "https://webstore.ansi.org/standards/asme/asmeqme2025",
+            "detected": "2026-10-12T20:37:26Z",
+            "source": "https://webstore.ansi.org/standards/asme/asmeqme2023"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/21/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities",
+              "kind": "html",
+              "role": "store page",
+              "local": false,
+              "fetched": "2026-10-12T20:39:27Z",
+              "text_sha": "65e824e01aa0",
+              "editions": {}
+            },
+            {
+              "url": "https://webstore.ansi.org/standards/asme/asmeqme2025",
+              "kind": "html",
+              "role": "store page",
+              "local": false,
+              "fetched": "2026-10-12T20:39:27Z",
+              "text_sha": "b03295294faa",
+              "editions": {
+                "QME 1": "2025"
+              }
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 22,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NEI 18-04 Rev. 1 (Licensing Modernization Project)",
+      "description": "Risk-informed, performance-based method to select licensing basis events, classify SSCs and evaluate defense in depth.",
+      "relevance_to_nuclear_power_generation": "Essential for licensing.",
+      "links": [
+        {
+          "text": "NRC copy",
+          "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf"
+        },
+        {
+          "text": "NRC LMP page",
+          "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS copy); HTML index page",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project (NRC lists the endorsed revision)",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "NEI 18-04",
+            "edition": "1",
+            "label": "NEI 18-04 Rev. 1"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/22/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:39:30Z",
+              "text_sha": "d76a67be1171",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/industry-led-licensing-modernization-project",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:39:49Z",
+              "text_sha": "766a3c9e379e",
+              "editions": {
+                "NEI 18-04": "1"
+              }
+            }
+          ],
+          "editions": {
+            "NEI 18-04": {
+              "edition": "1",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 23,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NRC RG 1.233",
+      "description": "NRC endorsement of NEI 18-04.",
+      "relevance_to_nuclear_power_generation": "Regulatory acceptance basis for the LMP approach.",
+      "links": [
+        {
+          "text": "RG 1.233 Rev. 0",
+          "url": "https://www.nrc.gov/docs/ML2009/ML20091L698.pdf"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1221---1240 (lists RG 1.233 as Rev. 0, issued 06/2020); drafts: https://www.nrc.gov/documents-reports/documents-for-comment#rg",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1221---1240",
+        "https://www.nrc.gov/documents-reports/documents-for-comment#rg"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.233",
+            "edition": "0",
+            "label": "RG 1.233 Rev. 0",
+            "url": "https://www.nrc.gov/docs/ML2009/ML20091L698.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/23/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML2009/ML20091L698.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:01Z",
+              "text_sha": "92f26770a40e",
+              "editions": {
+                "RG 1.233": "0"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.233": {
+              "edition": "0",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 24,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NEI 21-07 Rev. 1 and NRC RG 1.253",
+      "description": "Content and format guide for non-LWR safety analysis reports using the LMP; RG 1.253 endorses Rev. 1 with clarifications (12-chapter SAR).",
+      "relevance_to_nuclear_power_generation": "Closest thing to a SAR template.",
+      "links": [
+        {
+          "text": "NEI 21-07 Rev. 0",
+          "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf"
+        },
+        {
+          "text": "RG 1.253",
+          "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf"
+        }
+      ],
+      "format_of_data": "PDF (both, NRC ADAMS)",
+      "update_tracking": "RG list: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors (RG 1.253 is Rev. 0; its range page URL I did not verify); drafts: https://www.nrc.gov/documents-reports/documents-for-comment#rg",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/documents-reports/documents-for-comment#rg"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.253",
+            "label": "RG 1.253",
+            "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf"
+          },
+          {
+            "identity": "NEI 21-07",
+            "edition": "1",
+            "label": "NEI 21-07 Rev. 1",
+            "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/24/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:06Z",
+              "text_sha": "66b2feed3dcb",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:27Z",
+              "text_sha": "cee905efd9d8",
+              "editions": {
+                "RG 1.253": "0",
+                "NEI 21-07": "1"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.253": {
+              "edition": "0",
+              "source": "document"
+            },
+            "NEI 21-07": {
+              "edition": "1",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 25,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "ASME/ANS RA-S-1.4-2021, PRA Standard for Advanced Non-LWRs (with RG 1.247 trial, NEI 20-09)",
+      "description": "PRA technical requirements for advanced non-LWRs; NRC trial RG 1.247 endorses it.",
+      "relevance_to_nuclear_power_generation": "Governing PRA standard.",
+      "links": [
+        {
+          "text": "NRC page",
+          "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard"
+        },
+        {
+          "text": "RG 1.247",
+          "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf"
+        }
+      ],
+      "format_of_data": "HTML (NRC page); PDF (RG 1.247)",
+      "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard (trial RG 1.247 status); https://www.asme.org/codes-standards/find-codes-standards/probabilistic-risk-assessment-standard-for-advanced-non-light-water-reactor-nuclear-power-plants; https://www.ans.org/news/article-2768/the-pra-standard-for-advanced-nonlwrs/",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard",
+        "https://www.asme.org/codes-standards/find-codes-standards/probabilistic-risk-assessment-standard-for-advanced-non-light-water-reactor-nuclear-power-plants",
+        "https://www.ans.org/news/article-2768/the-pra-standard-for-advanced-nonlwrs/"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.247",
+            "label": "RG 1.247",
+            "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf"
+          },
+          {
+            "identity": "NEI 20-09",
+            "label": "NEI 20-09"
+          },
+          {
+            "identity": "RA-S 1.4",
+            "edition": "2021",
+            "label": "RA-S-1.4-2021"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/25/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:40:40Z",
+              "text_sha": "40f443a3b19c",
+              "editions": {
+                "RA-S 1.4": "2021"
+              }
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:52Z",
+              "text_sha": "8294182197db",
+              "editions": {
+                "RA-S 1.4": "2021"
+              }
+            }
+          ],
+          "editions": {
+            "RA-S 1.4": {
+              "edition": "2021",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 26,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NRC RG 1.200 (Rev. 3)",
+      "description": "PRA acceptability for risk-informed activities, used for 50.69 and LWR-style PRAs.",
+      "relevance_to_nuclear_power_generation": "Used when a PRA supports categorization.",
+      "links": [
+        {
+          "text": "RG 1.200 Rev. 3",
+          "url": "https://www.nrc.gov/docs/ML2023/ML20238B871.pdf"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "RG list: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; NRC technical guidance program: https://www.nrc.gov/about-nrc/regulatory/risk-informed/technical-guidance-program",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/about-nrc/regulatory/risk-informed/technical-guidance-program"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.200",
+            "edition": "3",
+            "label": "RG 1.200 Rev. 3",
+            "url": "https://www.nrc.gov/docs/ML2023/ML20238B871.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/26/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML2023/ML20238B871.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:40:53Z",
+              "text_sha": "eee51ba5335d",
+              "editions": {
+                "RG 1.200": "3"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.200": {
+              "edition": "3",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 27,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NRC RG 1.232",
+      "description": "Guidance for developing principal design criteria for non-LWRs.",
+      "relevance_to_nuclear_power_generation": "Ties design criteria to SSC safety functions.",
+      "links": [
+        {
+          "text": "RG 1.232",
+          "url": "https://www.nrc.gov/docs/ML1808/ML18081A306.pdf"
+        }
+      ],
+      "format_of_data": "PDF (NRC ADAMS)",
+      "update_tracking": "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1221---1240 (lists RG 1.232 as Rev. 0, issued 04/2018); drafts: https://www.nrc.gov/documents-reports/documents-for-comment#rg",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1221---1240",
+        "https://www.nrc.gov/documents-reports/documents-for-comment#rg"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.232",
+            "edition": "0",
+            "label": "RG 1.232 Rev. 0",
+            "url": "https://www.nrc.gov/docs/ML1808/ML18081A306.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/27/kg.json",
+          "kg_built": "2026-10-12T20:42:40Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML1808/ML18081A306.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:30Z",
+              "text_sha": "7f878d5dbed2",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    },
+    {
+      "id": 28,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "10 CFR 50 Appendix B, ASME NQA-1, NRC RG 1.28 (Rev. 6)",
+      "description": "QA criteria, the QA standard, and the NRC guide on acceptable QA programs.",
+      "relevance_to_nuclear_power_generation": "Essential for QA implementation.",
+      "links": [
+        {
+          "text": "Appendix B",
+          "url": "https://www.nrc.gov/reading-rm/doc-collections/cfr/part050/part050-appb"
+        },
+        {
+          "text": "RG 1.28 Rev. 6",
+          "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf"
+        }
+      ],
+      "format_of_data": "HTML (Appendix B on NRC site); PDF (RG 1.28)",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission (Appendix B); RG list: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; NQA-1 committee: https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000",
+      "update_tracking_urls": [
+        "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+        "https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.28",
+            "edition": "6",
+            "label": "RG 1.28 Rev. 6",
+            "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf"
+          },
+          {
+            "identity": "NQA 1",
+            "label": "NQA-1"
+          },
+          {
+            "identity": "eCFR title 10 part 50",
+            "edition": "2026-09-22",
+            "label": "eCFR as of 2026-09-22",
+            "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+            "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/28/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/reading-rm/doc-collections/cfr/part050/part050-appb",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:41:31Z",
+              "text_sha": "e5fe9549fc50",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:36Z",
+              "text_sha": "c249ea23f1c0",
+              "editions": {
+                "RG 1.28": "6"
+              }
+            }
+          ],
+          "editions": {
+            "RG 1.28": {
+              "edition": "6",
+              "source": "document"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 29,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "NRC RG 1.206 and NUREG-1537",
+      "description": "RG 1.206: SAR format for nuclear power plants (LWR-oriented). NUREG-1537: format and content for non-power reactor applications.",
+      "relevance_to_nuclear_power_generation": "Format guides that are fallbacks where RG 1.253 does not cover something.",
+      "links": [
+        {
+          "text": "RG 1.206",
+          "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf"
+        },
+        {
+          "text": "NUREG-1537 Part 1",
+          "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf"
+        },
+        {
+          "text": "Non-power reactor guidance index",
+          "url": "https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm"
+        }
+      ],
+      "format_of_data": "PDF (RG 1.206, NUREG-1537 Part 1); HTML index page",
+      "update_tracking": "RG 1.206: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1201---1220; non-power reactor guidance index: https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm",
+      "update_tracking_urls": [
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors/regulatory-guides-1201---1220",
+        "https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm"
+      ],
+      "version_tracking": {
+        "status": "current",
+        "latest": [
+          {
+            "identity": "RG 1.206",
+            "edition": "1",
+            "label": "RG 1.206 Rev. 1",
+            "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf"
+          },
+          {
+            "identity": "NUREG 1537",
+            "label": "NUREG-1537",
+            "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf"
+          }
+        ],
+        "staged": {
+          "kg": "staging/standards/29/kg.json",
+          "kg_built": "2026-10-12T20:42:41Z",
+          "documents": [
+            {
+              "url": "https://www.nrc.gov/docs/ML0706/ML070630003.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:38Z",
+              "text_sha": "18388d9899ba",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf",
+              "kind": "pdf",
+              "local": false,
+              "fetched": "2026-10-12T20:41:39Z",
+              "text_sha": "194f225fb3a9",
+              "editions": {}
+            },
+            {
+              "url": "https://www.nrc.gov/reactors/non-power/program-management/regs-guides-comm",
+              "kind": "html",
+              "local": false,
+              "fetched": "2026-10-12T20:41:54Z",
+              "text_sha": "245322349d97",
+              "editions": {}
+            }
+          ],
+          "editions": {}
+        }
+      }
+    }
+  ]
+}
