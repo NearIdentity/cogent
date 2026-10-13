@@ -3,4 +3,9 @@ __pycache__/
 /data/
 /kg*/
 /venv/
-/cogent/ # Virtual environment files; cf. venv-setup.sh
+/.venv/\
+.pytest_cache/
+*.egg-info/
+
+# Virtual environment files; cf. venv-setup.sh
+/cogent/

@@ -28,6 +28,7 @@ src/kg_ocr.py        OCR for scanned PDF pages (RapidOCR / Tesseract engines, pa
 src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a KG
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
+src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
 deploy/              cogent-run.{service,timer} (systemd timer), cogent-daemon.service (systemd), cogent.cron (cron)
@@ -200,6 +201,17 @@ warnings appear at the top of each report section, in the log, and in `state/ale
 * **LOCAL COPY OUTDATED** – the local copy's own title page states an older edition than the latest known one;
 * (info) *local copy not identified*, *store page changed*.
 
+Import and stage a purchased copy with one command (copies it into the right folder, skips identical files,
+optionally stages immediately and prints the entry's remaining warnings):
+
+```bash
+python src/kg_agent.py add-local standard:30 ~/Downloads/NQA-1-2026.pdf --stage
+python src/kg_agent.py add-local standard:25 ASCE43-24.pdf --replace --stage   # new edition: old copy set aside in .superseded/
+python src/kg_agent.py local                                                   # list local copies and the edition each states
+```
+`--move` moves instead of copying. Accepted: `.pdf .html .htm .xml`; scanned PDFs are OCR'd. The daily run also stages
+anything you drop into the folder by hand. The MCP server stays read-only, so copies are added on the host, not remotely.
+
 ## Version tracking in the configuration
 
 After every run each entry of both JSON files carries a `version_tracking` block (rewritten only when it changes, and the
@@ -279,6 +291,31 @@ Everything after `--` is passed to `kg_agent.py run` (so `--no-auto-apply`, `--o
 * POSIX only (fork, flock, signals). The older `kg_agent.py daemon --at HH:MM` is a minimal foreground loop kept for
   convenience.
 
+## MCP server (serve the KGs to AI agents)
+
+`src/kg_mcp.py` exposes the staged graphs plus meta-data (capture times, latest-vs-on-board editions, warnings,
+disclaimers) over MCP streamable HTTP with bearer-token authentication:
+
+```bash
+python src/kg_mcp.py token create --name claude
+python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host kg.example.com
+```
+Add `--oauth-issuer https://kg.example.com` for OAuth 2.1 (claude.ai custom connectors). Remote-URL options, Claude Code / API / Desktop instructions and the authentication notes are in [docs/mcp.md](docs/mcp.md).
+
+## Combined graph (which reports depend on which standards)
+
+The last stage of every run derives `<home>/staging/combined/{kg.json,dependents.json,meta.json}` from the per-entry graphs and
+the configuration (`src/kg_combine.py`). It is rebuilt only when inputs change, can be deleted at any time, and holds
+entry-level relations only (no document text, so paywalled content is never merged).
+
+* `complies_with`, `overlaps_with` – **curated** (`basis: config`), from the JSON configuration.
+* `cites` – **inferred** (`basis: text`, with `count`, `identifiers`): an entry's text cites an identifier (e.g. `RG 1.233`)
+  that is another entry's own identity. Treat it as a hint.
+* `dependents.json` lists per entry `depends_on`, `declared_dependents`, `overlaps`, `cited_by`, `cites` and, for standards,
+  `affects_reports` (`declared`, `via_overlap`, `inferred`).
+* Alerts for a standard now end with *"Reports affected: report:9 (declared)…"* and carry `details.affects_reports`.
+* MCP: tool `get_dependents(entry)`; the graph tools accept `ref="combined"`; resource `kg://combined/graph`.
+
 ## Environment variables
 
 | variable | effect |
@@ -293,10 +330,15 @@ Everything after `--` is passed to `kg_agent.py run` (so `--no-auto-apply`, `--o
 ## Tests
 
 ```bash
-python -m pytest tests          # 32 tests, no internet: they run against tests/mock_site.py
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py
 ```
 
-They cover a three-day simulation of the agent (bootstrap, quiet day, new RG revision / DOE edition / eCFR amendment /
+`tests/test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid
+report→standard references, symmetric overlaps, valid `version_tracking`) rather than specific entries, so editing the
+configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;
+`COGENT_STRICT_CONFIG=1` turns dangling report→standard references from warnings into failures.
+
+The rest cover a three-day simulation of the agent (bootstrap, quiet day, new RG revision / DOE edition / eCFR amendment /
 Federal Register rule), configuration propagation, archiving, audit log and manual-edit detection, dry-run, identifier
 parsing and edition normalisation, version tracking, paywall warnings, report/standard cross-references, and OCR (fake
 engines, mixed documents, tables, columns, scan fingerprints, and RapidOCR when installed), and the daemon (schedule
