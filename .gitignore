@@ -3,4 +3,4 @@ __pycache__/
 /data/
 /kg*/
 /venv/
-/cogent/
+/cogent/ # Virtual environment files; cf. venv-setup.sh
