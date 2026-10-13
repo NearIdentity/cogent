@@ -1,0 +1,8 @@
+# crontab -e   (one line per job; cron has a minimal environment, so use absolute paths)
+# CRON_TZ is honoured by cronie (RHEL/Fedora/Arch) but NOT by Debian/Ubuntu's cron: there it is the machine's time zone.
+MAILTO=you@example.org
+# 06:00 every day. flock -n: skip this run if the previous one is still going (the agent also has its own lock).
+0 6 * * *  cd /opt/cogent && flock -n /var/lock/cogent.lock /opt/cogent/cogent/bin/python src/kg_agent.py run --home /var/lib/cogent >> /var/lib/cogent/logs/cron.log 2>&1
+
+# Cron does not run what was missed while the machine was off. Either install anacron, or add a boot-time catch-up:
+# @reboot  sleep 120 && cd /opt/cogent && /opt/cogent/cogent/bin/python src/kg_daemon.py run-now --home /var/lib/cogent
