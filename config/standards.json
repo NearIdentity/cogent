@@ -1,7 +1,7 @@
 {
   "meta": {
     "table": "Section 1 (standards, regulations and guidance)",
-    "count": 29
+    "count": 30
   },
   "standards": [
     {
@@ -11,6 +11,13 @@
       "document": "10 CFR Part 50",
       "description": "Licensing of production and utilization facilities (construction permit, operating license). Appendix B covers QA.",
       "relevance_to_nuclear_power_generation": "Main route for advanced-reactor licensing today.",
+      "overlaps_with": [
+        {
+          "id": 28,
+          "scope": "10 CFR 50 Appendix B (Quality Assurance Criteria for Nuclear Power Plants and Fuel Reprocessing Plants)",
+          "note": "Appendix B is part of Part 50, so its text is already in this entry's KG. Entry 28 also covers NRC RG 1.28, and reports cite it as a unit, so it stays a separate entry."
+        }
+      ],
       "links": [
         {
           "text": "eCFR",
@@ -1056,11 +1063,18 @@
           "url": "https://webstore.ansi.org/standards/asme/asmeqme2025"
         }
       ],
+      "previous_versions": [
+        {
+          "edition": "2023",
+          "text": "QME-1-2023 (ANSI, predecessor)",
+          "url": "https://webstore.ansi.org/standards/asme/asmeqme2023"
+        }
+      ],
       "format_of_data": "HTML landing page (paywalled); sold as PDF and print",
       "update_tracking": "Edition year is in the name. https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities, https://webstore.ansi.org/standards/asme/asmeqme2023 (2023 edition listed); NRC acceptance: RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors (RG 1.100 Rev. 3 references QME-1: https://www.nrc.gov/docs/ml0913/ml091320468.pdf)",
       "update_tracking_urls": [
         "https://www.asme.org/codes-standards/find-codes-standards/qualification-of-active-mechanical-equipment-used-in-nuclear-facilities",
-        "https://webstore.ansi.org/standards/asme/asmeqme2023",
+        "https://webstore.ansi.org/standards/asme/asmeqme2025",
         "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
         "https://www.nrc.gov/docs/ml0913/ml091320468.pdf"
       ],
@@ -1301,8 +1315,9 @@
       "group": "1C",
       "group_title": "Consensus standards and NRC guidance",
       "document": "ASME/ANS RA-S-1.4-2021, PRA Standard for Advanced Non-LWRs (with RG 1.247 trial, NEI 20-09)",
-      "description": "PRA technical requirements for advanced non-LWRs; NRC trial RG 1.247 endorses it.",
+      "description": "PRA technical requirements for advanced non-LWRs; NRC trial RG 1.247 endorses it. The standard itself is sold by ASME; ASME's listing shows the 2021 edition (supersedes the trial-use RA-S-1.4-2013) as in effect, and no later edition was found as of Oct. 2026.",
       "relevance_to_nuclear_power_generation": "Governing PRA standard.",
+      "paywalled": true,
       "links": [
         {
           "text": "NRC page",
@@ -1311,9 +1326,13 @@
         {
           "text": "RG 1.247",
           "url": "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf"
+        },
+        {
+          "text": "ASME/ANS RA-S-1.4-2021 (ASME, purchase)",
+          "url": "https://www.asme.org/codes-standards/find-codes-standards/probabilistic-risk-assessment-standard-for-advanced-non-light-water-reactor-nuclear-power-plants"
         }
       ],
-      "format_of_data": "HTML (NRC page); PDF (RG 1.247)",
+      "format_of_data": "HTML (NRC page); PDF (RG 1.247); the RA-S-1.4 standard itself is paywalled (ASME landing page, sold as PDF and print). Status taken from search-engine listings; the ASME page was not opened directly",
       "update_tracking": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard (trial RG 1.247 status); https://www.asme.org/codes-standards/find-codes-standards/probabilistic-risk-assessment-standard-for-advanced-non-light-water-reactor-nuclear-power-plants; https://www.ans.org/news/article-2768/the-pra-standard-for-advanced-nonlwrs/",
       "update_tracking_urls": [
         "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard",
@@ -1475,9 +1494,16 @@
       "id": 28,
       "group": "1C",
       "group_title": "Consensus standards and NRC guidance",
-      "document": "10 CFR 50 Appendix B, ASME NQA-1, NRC RG 1.28 (Rev. 6)",
-      "description": "QA criteria, the QA standard, and the NRC guide on acceptable QA programs.",
+      "document": "10 CFR 50 Appendix B and NRC RG 1.28 (Rev. 6)",
+      "description": "QA criteria for design and construction (Appendix B, 18 criteria) and the NRC guide on acceptable QA programs. RG 1.28 Rev. 6 (2023) endorses ASME NQA-1-2017, -2019 and -2022 with exceptions and clarifications, not NQA-1-2024 or -2026 (see entry 30 for NQA-1). Appendix B is also part of 10 CFR Part 50 (entry 1); it is kept as its own entry because reports cite the QA set (Appendix B + RG 1.28 + NQA-1) as a unit.",
       "relevance_to_nuclear_power_generation": "Essential for QA implementation.",
+      "overlaps_with": [
+        {
+          "id": 1,
+          "scope": "10 CFR Part 50 (contains Appendix B)",
+          "note": "The Appendix B half of this entry duplicates text that is part of entry 1 (10 CFR Part 50). Kept separate because reports cite 'QA' (Appendix B + RG 1.28) as one item; ASME NQA-1 is entry 30."
+        }
+      ],
       "links": [
         {
           "text": "Appendix B",
@@ -1489,12 +1515,12 @@
         }
       ],
       "format_of_data": "HTML (Appendix B on NRC site); PDF (RG 1.28)",
-      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50; rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission (Appendix B); RG list: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors; NQA-1 committee: https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000",
+      "update_tracking": "eCFR version history: https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50 (Appendix B amendments appear as Part 50 changes); rulemakings: https://www.federalregister.gov/agencies/nuclear-regulatory-commission; RG list: https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors (watch for RG 1.28 Rev. 7 endorsing a newer NQA-1); NRC QA safety-evaluation page: https://www.nrc.gov/reactors/new-reactors/how-we-regulate/oversight/quality-assurance/qual-assure-safety",
       "update_tracking_urls": [
         "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
         "https://www.federalregister.gov/agencies/nuclear-regulatory-commission",
         "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
-        "https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000"
+        "https://www.nrc.gov/reactors/new-reactors/how-we-regulate/oversight/quality-assurance/qual-assure-safety"
       ],
       "version_tracking": {
         "status": "current",
@@ -1623,6 +1649,41 @@
           "editions": {}
         }
       }
+    },
+    {
+      "id": 30,
+      "group": "1C",
+      "group_title": "Consensus standards and NRC guidance",
+      "document": "ASME NQA-1-2026, Quality Assurance Requirements for Nuclear Facility Applications",
+      "description": "QA requirements for the whole nuclear-facility life cycle: Part I (basic requirements 1 to 18, matching the 18 criteria of 10 CFR 50 Appendix B), Part II (requirements for specific work activities), Part III (guidance). Stated applicable to large LWRs, SMRs and advanced reactors. 2026 edition listed Aug. 2026 as the latest; NQA-1-2024 (July 2024) is the predecessor. NRC RG 1.28 Rev. 6 endorses only NQA-1-2017, -2019 and -2022.",
+      "relevance_to_nuclear_power_generation": "Essential for QA implementation (the consensus standard behind Appendix B and 10 CFR 830 QA programs). The edition an NRC licensee may cite is the one endorsed in RG 1.28, currently older than the latest published edition.",
+      "paywalled": true,
+      "links": [
+        {
+          "text": "ASME",
+          "url": "https://www.asme.org/codes-standards/find-codes-standards/quality-assurance-requirements-for-nuclear-facility-applications"
+        },
+        {
+          "text": "NQA-1-2026 (ANSI)",
+          "url": "https://webstore.ansi.org/standards/asme/asmenqa2026"
+        }
+      ],
+      "previous_versions": [
+        {
+          "edition": "2024",
+          "text": "NQA-1-2024 (ANSI, predecessor)",
+          "url": "https://webstore.ansi.org/standards/asme/asmenqa2024"
+        }
+      ],
+      "format_of_data": "HTML landing pages (paywalled); sold as PDF and print (ASME lists about $415). Editions and status taken from search-engine listings (vendor stores, ANSI/ASME titles); the ASME and ANSI pages were not opened directly",
+      "update_tracking": "Edition year is in the name. Publisher pages: https://www.asme.org/codes-standards/find-codes-standards/quality-assurance-requirements-for-nuclear-facility-applications and https://webstore.ansi.org/standards/asme/asmenqa2026 (a later edition will get a new page, e.g. .../asmenqa2028); committee page: https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000. NRC acceptance: RG list https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors (RG 1.28 Rev. 6 endorses -2017/-2019/-2022; watch for Rev. 7) and https://www.nrc.gov/reactors/new-reactors/how-we-regulate/oversight/quality-assurance/qual-assure-safety",
+      "update_tracking_urls": [
+        "https://www.asme.org/codes-standards/find-codes-standards/quality-assurance-requirements-for-nuclear-facility-applications",
+        "https://webstore.ansi.org/standards/asme/asmenqa2026",
+        "https://cstools.asme.org/csconnect/CommitteePages.cfm?Committee=O10500000",
+        "https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors",
+        "https://www.nrc.gov/reactors/new-reactors/how-we-regulate/oversight/quality-assurance/qual-assure-safety"
+      ]
     }
   ]
 }
