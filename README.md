@@ -1,4 +1,6 @@
-# cogent: documents → knowledge graphs, kept up to date
+# `cogent`: Documents → Knowledge Graphs, kept up to date
+
+This agent fetches and stages the contents of regulatory and reporting frameworks used by a hypothetical Licensing Engineer in the nuclear reactor space.
 
 All Python code lives in `src/` and the tests in `tests/` (same level); run the commands below from the repository root so the default `config/…` paths resolve.
 
@@ -14,7 +16,7 @@ All Python code lives in `src/` and the tests in `tests/` (same level); run the 
 ## Quick start
 
 ```bash
-pip install -r requirements.txt && playwright install chromium     # browser only needed for bot-blocking sites
+uv pip install -r requirements.txt && playwright install chromium     # browser only needed for bot-blocking sites; also cf. venv-setup.sh
 python src/kg_agent.py run   --standards config/standards.json --reports config/reports.json --home kg_agent_home
 python src/kg_agent.py run   --dry-run --only standard:22,report:1      # check only, print the report
 python src/kg_agent.py daemon --at 06:00                               # or cron: 0 6 * * *  python src/kg_agent.py run ...
