@@ -18,6 +18,8 @@ from typing import Any, Optional
 
 import networkx as nx
 
+from kg_models import PAYWALL_HOSTS
+
 KINDS = {"standard": "standards", "report": "reports"}
 TEXT_LIMIT = 1200           # characters of node text returned unless full text is requested
 
@@ -76,7 +78,10 @@ class NotFound(KeyError):
 
 class Store:
     def __init__(self, home: Path, standards: Optional[Path] = None, reports: Optional[Path] = None,
-                 stale_after_days: float = 3.0):
+                 stale_after_days: float = 3.0, paywalled_assets: str = "watermark"):
+        if paywalled_assets not in ("watermark", "block", "allow"):
+            raise ValueError("paywalled_assets must be watermark, block or allow")
+        self.paywalled_assets = paywalled_assets
         self.home = Path(home)
         self.standards = Path(standards) if standards else None
         self.reports = Path(reports) if reports else None
@@ -410,3 +415,115 @@ class Store:
 
     def combined_meta_exists(self) -> bool:
         return (self.home / "staging" / "combined" / "meta.json").exists()
+
+    # ------------------------------------------------------ figures / tables
+    def _doc_state(self, docid: str) -> dict[str, Any]:
+        if not docid.isalnum():
+            raise NotFound(f"bad document id {docid!r}")
+        return _read_json(self.home / "staging" / "documents" / docid / "state.json", {}) or {}
+
+    def _entry_docs(self, ref: str) -> list[str]:
+        if ":" not in ref:
+            return [ref]
+        meta = _read_json(self._entry_dir(ref) / "meta.json")
+        if meta is None:
+            raise NotFound(f"no staged entry {ref!r}")
+        return [d["docid"] for d in meta.get("documents", [])]
+
+    def _doc_entries(self, docid: str) -> list[str]:
+        out = []
+        for key in self._config():
+            try:
+                if docid in self._entry_docs(key):
+                    out.append(key)
+            except NotFound:
+                pass
+        return out
+
+    def doc_paywall(self, docid: str) -> dict[str, Any]:
+        """Is this document's content copyrighted / paywalled material? (a purchased local copy, or a publisher's store host)"""
+        st = self._doc_state(docid)
+        url = st.get("url", "")
+        host = (url.split("/")[2].lower() if "//" in url and not url.startswith("file://") else "")
+        local = url.startswith("file://")
+        store = bool(host) and any(host == x or host.endswith("." + x) for x in PAYWALL_HOSTS)
+        entries = self._doc_entries(docid)
+        cfg = self._config()
+        names = [cfg[k].get("document") or cfg[k].get("report") for k in entries if k in cfg]
+        return {"paywalled": local or store, "reason": "purchased local copy" if local else "publisher store host" if store else None,
+                "entries": entries, "holder": names[0] if names else None, "url": url if not local else "local:" + url.rsplit("/", 1)[-1]}
+
+    def _asset_warnings(self, docid: str, pw: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        if pw["paywalled"]:
+            from kg_assets import notice
+            out.append(notice(pw["holder"]))
+            out.append(f"Paywalled source ({pw['reason']}). Server policy for such assets: {self.paywalled_assets}.")
+        for k in pw["entries"]:
+            out += [a["message"] for a in self.alerts(k)
+                    if a.get("kind") in ("no_local_copy", "new_edition_for_purchase", "local_copy_outdated")]
+        return list(dict.fromkeys(out))
+
+    def _manifest(self, docid: str) -> tuple[Path, dict[str, Any]]:
+        base = self.home / "staging" / "documents" / docid / "assets"
+        cands = sorted(base.glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not cands:
+            raise NotFound(f"no exported figures/tables for document {docid}")
+        return cands[0].parent, _read_json(cands[0], {}) or {}
+
+    def list_assets(self, ref: str, kind: Optional[str] = None) -> dict[str, Any]:
+        docs = []
+        for docid in self._entry_docs(ref):
+            pw = self.doc_paywall(docid)
+            try:
+                _, man = self._manifest(docid)
+            except NotFound:
+                continue
+            items = [{"asset_id": f"{docid}/{a['id']}", "kind": a["kind"], "page": a.get("page"), "caption": a.get("caption"),
+                      **{k: a[k] for k in ("rows", "cols", "bytes") if k in a},
+                      "available": not (pw["paywalled"] and self.paywalled_assets == "block")}
+                     for a in man.get("assets", []) if not kind or a["kind"] == kind]
+            docs.append({"document_id": docid, "source": pw["url"], "paywalled": pw["paywalled"],
+                         "warnings": self._asset_warnings(docid, pw), "assets": items})
+        if not docs:
+            raise NotFound(f"no exported figures or tables for {ref!r} (the agent exports them when run with assets enabled)")
+        return {"ref": ref, "paywalled_assets_policy": self.paywalled_assets, "documents": docs}
+
+    def _asset(self, ref: str, asset_id: str, kind: str) -> tuple[Path, dict[str, Any], dict[str, Any], str]:
+        docid, _, aid = asset_id.partition("/")
+        if not aid or not docid.isalnum() or not aid.replace("_", "").replace("-", "").isalnum():
+            raise NotFound(f"bad asset id {asset_id!r}; use '<document_id>/<id>' from list_assets")
+        if docid not in self._entry_docs(ref):
+            raise NotFound(f"asset {asset_id!r} does not belong to {ref!r}")
+        root, man = self._manifest(docid)
+        item = next((a for a in man.get("assets", []) if a["id"] == aid and a["kind"] == kind), None)
+        if item is None:
+            raise NotFound(f"no {kind} {asset_id!r}")
+        path = (root / item["file"]).resolve()
+        if root.resolve() not in path.parents or not path.is_file():
+            raise NotFound(f"asset file for {asset_id!r} is missing")
+        pw = self.doc_paywall(docid)
+        if pw["paywalled"] and self.paywalled_assets == "block":
+            raise NotFound(f"{kind} {asset_id!r} comes from paywalled content and the server is configured not to serve it")
+        return path, item, pw, docid
+
+    def figure(self, ref: str, asset_id: str, max_px: int = 1600) -> dict[str, Any]:
+        """A figure as PNG bytes; watermarked and bannered when it comes from paywalled content."""
+        import kg_assets as A
+        path, item, pw, docid = self._asset(ref, asset_id, "figure")
+        png, (w, h) = A.to_png(path.read_bytes(), max(200, min(max_px, 4000)))
+        marked = pw["paywalled"] and self.paywalled_assets != "allow"
+        if marked:
+            png = A.watermark(png, A.notice(pw["holder"]))
+        png = A.fit_bytes(png)
+        return {"png": png, "info": {"asset_id": asset_id, "kind": "figure", "page": item.get("page"), "caption": item.get("caption"),
+                                     "width": w, "height": h, "watermarked": marked, "paywalled": pw["paywalled"],
+                                     "warnings": self._asset_warnings(docid, pw)}}
+
+    def table_csv(self, ref: str, asset_id: str, max_rows: int = 500) -> dict[str, Any]:
+        path, item, pw, docid = self._asset(ref, asset_id, "table")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        total = max(0, len(lines))
+        return {"asset_id": asset_id, "kind": "table", "page": item.get("page"), "caption": item.get("caption"),
+                "rows_total": total, "truncated": total > max_rows, "csv": "\n".join(lines[:max_rows]),
+                "paywalled": pw["paywalled"], "warnings": self._asset_warnings(docid, pw)}

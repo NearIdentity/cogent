@@ -29,7 +29,9 @@ from typing import Any, Callable, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+import base64
+
+from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kg_store import GENERAL_DISCLAIMERS, NotFound, Store  # noqa: E402
@@ -40,7 +42,7 @@ INSTRUCTIONS = """\
 Serves knowledge graphs (KGs) built from nuclear-industry standards, regulations and report templates,
 with provenance. Workflow: get_overview -> list_entries -> get_entry_metadata(entry) (capture time, whether
 the on-board content is the latest available edition, warnings) -> get_dependents (report<->standard impact, from the combined graph) / graph_summary / get_outline /
-search_graph -> get_node / get_neighbors / get_table for details.
+search_graph -> get_node / get_neighbors / get_table for details; list_assets / get_figure / get_table_csv for extracted\nfigures and tables (paywalled content is watermarked and carries warnings: always relay them).
 `ref='combined'` is the derived entry-level graph. `entry` is a key such as 'standard:22' or 'report:3'; a 16-hex document id also works wherever `ref` is asked.
 Every graph result carries a `provenance` block: ALWAYS check it and relay stale-capture, 'not the latest
 edition', paywall and OCR caveats to the user; never present extracted text as authoritative.
@@ -182,7 +184,7 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
             required_scopes=["kg:read"], revocation_options=RevocationOptions(enabled=True),
             client_registration_options=ClientRegistrationOptions(enabled=True, valid_scopes=["kg:read"], default_scopes=["kg:read"])))
     mcp = FastMCP("cogent-kg", instructions=INSTRUCTIONS, host=host, port=port, stateless_http=stateless, json_response=True, **auth_kw,
-                  transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts,
+                  transport_security=TransportSecuritySettings(enable_dns_rebinding_protection="*" not in (public_hosts or []), allowed_hosts=hosts,
                                                                allowed_origins=["*"]))
 
     def provenance(ref: str) -> dict[str, Any]:
@@ -295,6 +297,30 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
 
     @mcp.tool(annotations=RO)
     @_tool_errors
+    def list_assets(ref: str, kind: Optional[Literal["figure", "table"]] = None) -> dict[str, Any]:
+        """Figures (PNG) and tables (CSV) exported from the parsed documents of an entry (or one document id), with page,
+        caption and size. Documents from paywalled / purchased content carry `warnings`, and their figures are served
+        watermarked as reference-only copies."""
+        return wrap(ref, store.list_assets(ref, kind))
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_figure(ref: str, asset_id: str, max_px: int = 1600) -> CallToolResult:
+        """One figure as an image (long edge <= max_px). Figures from paywalled content are re-rendered with a diagonal
+        'reference only' watermark and a copyright banner; read the accompanying JSON `warnings` and relay them."""
+        r = store.figure(ref, asset_id, max_px)
+        return CallToolResult(content=[
+            TextContent(type="text", text=json.dumps({**r["info"], "provenance": provenance(ref)})),
+            ImageContent(type="image", data=base64.b64encode(r["png"]).decode(), mimeType="image/png")])
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_table_csv(ref: str, asset_id: str, max_rows: int = 500) -> dict[str, Any]:
+        """One extracted table as CSV text (first max_rows lines). `warnings`/`paywalled` flag copyrighted content."""
+        return wrap(ref, store.table_csv(ref, asset_id, max_rows))
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
     def export_graph(ref: str, max_nodes: int = 2000) -> dict[str, Any]:
         """The graph as node-link JSON (networkx format), truncated to max_nodes."""
         return wrap(ref, {"graph": store.export(ref, max_nodes)})
@@ -310,6 +336,22 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
             return json.dumps({"provenance": provenance("combined"), "graph": store.export("combined")})
         except NotFound as exc:
             raise ValueError(str(exc.args[0])) from None
+
+    @mcp.resource("kg://figure/{docid}/{asset}", mime_type="image/png")
+    def r_figure(docid: str, asset: str) -> bytes:
+        try:
+            return store.figure(docid, f"{docid}/{asset}")["png"]
+        except NotFound as exc:
+            raise ValueError(str(exc.args[0])) from None
+
+    @mcp.resource("kg://table/{docid}/{asset}", mime_type="text/csv")
+    def r_table(docid: str, asset: str) -> str:
+        try:
+            r = store.table_csv(docid, f"{docid}/{asset}")
+        except NotFound as exc:
+            raise ValueError(str(exc.args[0])) from None
+        head = "".join(f"# WARNING: {w}\n" for w in r["warnings"]) if r["paywalled"] else ""
+        return head + r["csv"]
 
     @mcp.resource("kg://disclaimers", mime_type="text/plain")
     def r_disclaimers() -> str:
@@ -377,10 +419,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     s.add_argument("--host", default="127.0.0.1", help="bind address (keep 127.0.0.1 behind a proxy/tunnel)")
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--public-host", action="append", default=[], metavar="HOST",
-                   help="public host name(s) clients use (Host-header allow-list); repeatable")
+                   help="public host name(s) clients use (Host-header allow-list); repeatable. '*' turns the Host check off "
+                   "(for tunnels with random names such as *.trycloudflare.com; authentication still applies)")
     s.add_argument("--stale-after", type=float, default=3.0, help="days before captures are flagged stale")
     s.add_argument("--oauth-issuer", metavar="URL", help="enable OAuth 2.1 (claude.ai custom connectors); the public https "
                    "base URL, e.g. https://kg.example.com")
+    s.add_argument("--paywalled-assets", choices=["watermark", "block", "allow"], default="watermark",
+                   help="figures from paywalled/purchased content: watermark (default), block, or allow unmarked")
     s.add_argument("--no-auth", action="store_true", help="disable authentication (loopback binds only)")
     s.add_argument("--stateful", action="store_true", help="keep per-client sessions (default: stateless)")
 
@@ -415,7 +460,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         ap.error("--no-auth is only allowed on a loopback bind")
     if not a.no_auth and not tokens.any_configured():
         ap.error("no access token configured: run 'kg_mcp.py token create --name <client>' or set COGENT_MCP_TOKEN")
-    store = Store(a.home, a.standards, a.reports, a.stale_after)
+    store = Store(a.home, a.standards, a.reports, a.stale_after, a.paywalled_assets)
     app = build_app(store, None if a.no_auth else tokens, issuer_url=None if a.no_auth else a.oauth_issuer,
                     oauth_path=a.home / "mcp" / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host,
                     stateless=not a.stateful)

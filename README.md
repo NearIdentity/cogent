@@ -28,6 +28,7 @@ src/kg_ocr.py        OCR for scanned PDF pages (RapidOCR / Tesseract engines, pa
 src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a KG
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
+src/kg_assets.py     PNG conversion, downscaling and copyright watermark for figures served over MCP
 src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
@@ -300,7 +301,7 @@ disclaimers) over MCP streamable HTTP with bearer-token authentication:
 python src/kg_mcp.py token create --name claude
 python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host kg.example.com
 ```
-Add `--oauth-issuer https://kg.example.com` for OAuth 2.1 (claude.ai custom connectors). Remote-URL options, Claude Code / API / Desktop instructions and the authentication notes are in [docs/mcp.md](docs/mcp.md).
+The server also serves the exported figures/tables (`list_assets`, `get_figure`, `get_table_csv`); figures from paywalled content are watermarked and carry warnings (`--paywalled-assets watermark|block|allow`). For a quick public demo without any hosting see `deploy/demo-tunnel.sh` (Cloudflare quick tunnel; docs/mcp.md). Add `--oauth-issuer https://kg.example.com` for OAuth 2.1 (claude.ai custom connectors). Remote-URL options, Claude Code / API / Desktop instructions and the authentication notes are in [docs/mcp.md](docs/mcp.md).
 
 ## Combined graph (which reports depend on which standards)
 

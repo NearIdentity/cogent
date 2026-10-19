@@ -29,11 +29,12 @@ HTTP), `uvicorn`/Starlette, `networkx`; for the public URL Caddy, `cloudflared` 
 | `get_overview` | counts, version-status histogram, open warnings, last agent run, disclaimers |
 | `list_entries(kind?, query?)` | standards/reports with graph availability, build time, version status |
 | `get_entry_metadata(entry)` | per-document capture times, latest vs on-board editions, warnings, disclaimers |
+| `list_assets(ref, kind?)`, `get_figure(ref, asset_id, max_px?)`, `get_table_csv(ref, asset_id, max_rows?)` | figures (PNG image content) and tables (CSV) exported from the parsed documents; `asset_id` is `<document_id>/<id>` from `list_assets` |
 | `get_dependents(entry)` | reports that depend on a standard / standards a report depends on (curated vs inferred), and what is affected if it changes |
 | `get_warnings(entry?)`, `get_disclaimers(entry?)` | alerts / applicable disclaimers |
 | `graph_summary`, `get_outline`, `search_graph`, `get_node`, `get_neighbors`, `get_subgraph`, `get_table`, `export_graph` | navigate a graph (`ref` = `standard:22`, `report:3` or a document id) |
 
-Graph tools also accept `ref="combined"` (the derived entry-level graph). Resources: `kg://combined/graph`, `kg://catalog`, `kg://disclaimers`, `kg://{standard|report}/{id}/metadata`, `kg://{standard|report}/{id}/graph`.
+Graph tools also accept `ref="combined"` (the derived entry-level graph). Resources: `kg://figure/{docid}/{asset}`, `kg://table/{docid}/{asset}`, `kg://combined/graph`, `kg://catalog`, `kg://disclaimers`, `kg://{standard|report}/{id}/metadata`, `kg://{standard|report}/{id}/graph`.
 
 ## 2. Run it locally
 
@@ -60,8 +61,88 @@ returns 421).
 | **Docker** | `deploy/docker-compose.mcp.yml` (server + Caddy) | |
 | ngrok | `ngrok http 8765` | handy for tests |
 
+**Quickest free demo:** a Cloudflare quick tunnel from your own machine, see [Demo with a Cloudflare quick tunnel](#demo-with-a-cloudflare-quick-tunnel) below.
+
 Run as a service: `deploy/cogent-mcp.service` (systemd; token via `EnvironmentFile`).
 Example: `python src/kg_mcp.py --home kg_agent_home serve --public-host kg.example.com` → URL `https://kg.example.com/mcp`.
+
+### Demo with a Cloudflare quick tunnel
+
+The simplest free way to put the server on the Internet for a demo: no account, no card, no hosting. `cloudflared`
+connects your machine to Cloudflare, which gives you a public `https://<random>.trycloudflare.com` address. It lasts
+only while `cloudflared` runs, the name changes every time, and Cloudflare gives quick tunnels no uptime guarantee: for
+demos and tests, not for production.
+
+**1. Install `cloudflared` (Ubuntu)** – pick one:
+```bash
+# A. .deb package (use arm64 instead of amd64 on ARM machines)
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
+
+# B. Cloudflare's apt repository (updates arrive with apt upgrade)
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install cloudflared
+
+# C. From source (Go; Ubuntu's golang-go may be too old: see the 'go' line in go.mod, or install Go from go.dev/dl)
+sudo apt-get install -y git make build-essential
+git clone https://github.com/cloudflare/cloudflared.git && cd cloudflared
+make cloudflared                      # or: go build -o cloudflared ./cmd/cloudflared
+sudo install -m 0755 cloudflared /usr/local/bin/cloudflared
+
+cloudflared --version
+```
+Prefer `git clone` + `go build` to `go install …@latest` (the repository's `go.mod` has `replace` directives, which make
+`go install pkg@version` refuse). For a stable build, `git checkout` a release tag first. These commands are the standard
+ones and were not re-verified against Cloudflare's current docs; if one fails, see the cloudflared downloads page on
+developers.cloudflare.com.
+
+**2a. One command** – `deploy/demo-tunnel.sh [--oauth] [agent-home] [port]` starts the server, opens the tunnel, creates a
+throw-away token (expires after 1 day), prints the URL and a ready-to-paste `claude mcp add` line, and on Ctrl+C stops
+everything and revokes the token:
+```bash
+python src/kg_agent.py run            # once, if kg_agent_home has no staged graphs yet (needs internet)
+deploy/demo-tunnel.sh
+```
+
+**2b. By hand** (two terminals):
+```bash
+# terminal 1
+python src/kg_mcp.py --home kg_agent_home token create --name demo          # printed once
+python src/kg_mcp.py --home kg_agent_home serve --public-host '*'
+# terminal 2
+cloudflared tunnel --url http://127.0.0.1:8765        # prints https://<random>.trycloudflare.com
+```
+`--public-host '*'` switches off the Host-header allow-list, which cannot know the random tunnel name; the token check
+still applies. If you use `--port N`, tunnel to `http://127.0.0.1:N`.
+
+**3. Check and connect**
+```bash
+curl https://<random>.trycloudflare.com/healthz              # {"status":"ok",...}
+curl -i -X POST https://<random>.trycloudflare.com/mcp       # 401 without a token
+claude mcp add --transport http cogent-kg https://<random>.trycloudflare.com/mcp --header "Authorization: Bearer <token>"
+```
+The Claude API MCP connector (section 5) also works, since the tunnel is public HTTPS.
+
+**4. Clean up** – Ctrl+C stops the tunnel and the URL dies at once. Revoke the token if you made it by hand
+(`token revoke --name demo`).
+
+**Limits and troubleshooting**
+* *Claude web/mobile (claude.ai).* Custom connectors there expect OAuth rather than a pasted bearer token (see section 4),
+  so start with `deploy/demo-tunnel.sh --oauth`. It opens the tunnel **first** (the tunnel does not need the server to be
+  running), reads the random URL, then starts the server with `--oauth-issuer <that URL>`. In claude.ai: Settings →
+  Connectors → Add custom connector → `<URL>/mcp`; the sign-in page asks for the access token the script printed. By hand:
+  start `cloudflared tunnel --url http://127.0.0.1:8765`, note the URL, then `serve --public-host '*' --oauth-issuer <URL>`.
+  Every restart changes the URL, so the connector must be re-added. Custom-connector availability depends on your Claude
+  plan, and this flow was tested against the server's own OAuth test client, not against claude.ai itself.
+* `421 Misdirected Request` / "Invalid Host header": the server was started without `--public-host '*'` (or the exact host).
+* `401`: missing, wrong or expired token (`token list` shows status).
+* The tunnel prints a new address on every start; re-register the client after a restart.
+* Demo viewers can read whatever the home contains. Do not stage purchased standards for a public demo unless your
+  licence allows it; use `--paywalled-assets block` if in doubt.
+* Other free options for a link that must stay up without your machine (Render free web service, etc.) spin down when idle
+  and have small quotas; check their current terms.
 
 ## 4. Authentication — is there a simple way?
 
@@ -136,6 +217,18 @@ async with streamablehttp_client(URL, headers={"Authorization": f"Bearer {TOKEN}
     async with ClientSession(r, w) as s:
         await s.initialize(); print(await s.call_tool("get_overview", {}))
 ```
+
+### Figures and tables from paywalled content
+A document counts as paywalled when it is a **purchased local copy** (`file://`) or comes from a publisher store host
+(`kg_models.PAYWALL_HOSTS`). For those, asset answers carry `paywalled: true` and `warnings` (copyright notice, the server
+policy, and the entry's open alerts such as *new edition for purchase* or *local copy outdated*). **Figures are never served
+as the original bytes**: they are re-rendered as PNG with a diagonal "REFERENCE ONLY © COPYRIGHTED" watermark and a banner
+("Copyrighted material of the publisher of …; reproduced for reference only; not for redistribution, publication or
+reliance in place of the original standard"). SVG figures are rasterised first. CSV resources start with `# WARNING:` lines.
+`serve --paywalled-assets watermark|block|allow` sets the policy (default `watermark`; `block` refuses paywalled assets and
+marks them `available: false` in `list_assets`; `allow` serves them unmarked, only if your licence permits). Public content
+is served unchanged. Tables and text nodes of paywalled documents inside the graph tools are *not* watermarked; use `block`
+or do not stage purchased copies on a server you expose if your licence forbids redistribution.
 
 ## 6. Security notes
 Read-only tools; refs are validated (no path traversal); body size limited by the SDK; Host-header allow-list; rate
