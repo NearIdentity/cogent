@@ -1,0 +1,13 @@
+services:
+  mcp:
+    image: python:3.12-slim
+    working_dir: /app
+    command: sh -c "pip install -q 'mcp<2' uvicorn networkx && python src/kg_mcp.py --home /data serve --host 0.0.0.0 --public-host kg.example.com"
+    volumes: ["./:/app:ro", "./kg_agent_home:/data"]
+    environment: [COGENT_MCP_TOKEN]
+    expose: ["8765"]
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    volumes: ["./deploy/Caddyfile.docker:/etc/caddy/Caddyfile:ro", "caddy_data:/data"]
+volumes: {caddy_data: {}}

@@ -120,16 +120,25 @@ def test_identity_tools():
     assert T.FAMILIES["DOE-O"].rank("E") > T.FAMILIES["DOE-O"].rank("D")
 
 
-def test_nqa_and_paywall_config():
+def test_nqa_identity_and_paywall_inference():
     ids = {i.label: i.edition for i in T.parse_identities("ASME NQA-1-2026, NQA-1-2024 and NQA-1b-2011")}
     assert ids == {"NQA 1": "2026"}
-    import json as _j
     from kg_models import DocEntry
-    cfg = _j.loads((Path(__file__).resolve().parents[1] / "config" / "standards.json").read_text())["standards"]
-    es = {x["id"]: DocEntry.from_raw("standard", x) for x in cfg}
-    assert es[30].paywalled and es[25].paywalled and es[20].paywalled and es[21].paywalled and not es[28].paywalled
-    assert [i.label for i in T.entry_identities(es[28])] == ["RG 1.28", "CFR 50"]      # NQA-1 now lives in entry 30
-    assert len({x["id"] for x in cfg}) == len(cfg) == 30
+    raw = lambda **kw: {"id": 1, "document": "X", "links": [], **kw}
+    assert DocEntry.from_raw("standard", raw(format_of_data="Paywalled PDF")).paywalled
+    assert DocEntry.from_raw("standard", raw(links=[{"text": "t", "url": "https://store.asme.org/x"}])).paywalled
+    assert not DocEntry.from_raw("standard", raw(links=[{"text": "t", "url": "https://www.nrc.gov/x.pdf"}])).paywalled
+    assert DocEntry.from_raw("standard", raw(paywalled=False, format_of_data="paywalled")).paywalled is False   # explicit wins
+    assert [i.label for i in T.entry_identities(DocEntry.from_raw("standard", raw(document="NRC RG 1.28 and 10 CFR 50")))] == ["RG 1.28", "CFR 50"]
+
+
+def test_overlap_annotation_becomes_kg_edge():
+    from kg_models import DocEntry
+    a = DocEntry.from_raw("standard", {"id": 28, "document": "A", "links": [], "overlaps_with": [{"id": 1, "note": "x"}]})
+    assert a.overlaps == [1]
+    g = T.merge_graphs([], a, {1: "Standard one"})
+    assert ("entry:standard:28", "entry:standard:1", "overlaps_with") in list(g.edges(keys=True))
+    assert g.nodes["entry:standard:1"]["label"] == "Standard one"
 
 
 def test_json_diff():
@@ -247,23 +256,88 @@ def test_version_tracking_block(env):
     assert vt["staged"]["documents"][0]["url"].endswith("rg1233_rev1.pdf")
 
 
-def test_overlap_annotation_becomes_kg_edge():
-    import json as _j
-    from kg_models import DocEntry
-    cfg = {x["id"]: x for x in _j.loads((Path(__file__).resolve().parents[1] / "config" / "standards.json").read_text())["standards"]}
-    e28 = DocEntry.from_raw("standard", cfg[28])
-    assert e28.overlaps == [1] and DocEntry.from_raw("standard", cfg[1]).overlaps == [28]
-    g = T.merge_graphs([], e28, {1: cfg[1]["document"]})
-    assert ("entry:standard:28", "entry:standard:1", "overlaps_with") in [(u, v, k) for u, v, k in g.edges(keys=True)]
-    assert "previous_versions" in cfg[30] and all("predecessor" not in l["text"] for l in cfg[30]["links"])
+def test_add_local_copy_of_paywalled_standard(tmp_path):
+    from mock_site import make_pdf
+    kg_ingest.set_pdf_engine("basic")
+    sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+    sp.write_text(json.dumps({"standards": [{"id": 7, "document": "ASCE/SEI 43-19", "format_of_data": "paywalled PDF",
+                                             "links": [], "update_tracking_urls": []}]}))
+    rp.write_text(json.dumps({"reports": []}))
+    s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+    old, new = tmp_path / "asce43-19.pdf", tmp_path / "asce43-24.pdf"
+    old.write_bytes(make_pdf("ASCE/SEI 43-19 Seismic Design Criteria", "Edition 2019 text."))
+    new.write_bytes(make_pdf("ASCE/SEI 43-24 Seismic Design Criteria", "Edition 2024 text."))
+
+    res = kg_agent.add_local(s, "standard:7", [old], stage=True)
+    assert res["added"] == ["asce43-19.pdf"] and not any(a["kind"] == "no_local_copy" for a in res["alerts"])
+    assert list((s.home / "staging/standards/7").glob("kg.json"))
+    assert kg_agent.add_local(s, "standard:7", [old])["skipped_identical"] == ["asce43-19.pdf"]
+    with pytest.raises(ValueError):
+        kg_agent.add_local(s, "standard:7", [tmp_path / "x.txt"])
+    # a new edition replaces the old one (old kept aside, not staged)
+    res = kg_agent.add_local(s, "standard:7", [new], replace=True, stage=True)
+    folder = s.home / "local/standards/7"
+    assert res["superseded"] == ["asce43-19.pdf"] and [p.name for p in folder.iterdir() if p.is_file()] == ["asce43-24.pdf"]
+    assert list((folder / ".superseded").glob("*/asce43-19.pdf"))
+    meta = json.loads((s.home / "staging/standards/7/meta.json").read_text())
+    assert len(meta["documents"]) == 1
+    with pytest.raises(ValueError):
+        kg_agent.add_local(s, "standard:99", [new])
 
 
-def test_reports_reference_existing_standards_and_qa_set():
-    import json as _j
-    root = Path(__file__).resolve().parents[1] / "config"
-    std = {x["id"] for x in _j.loads((root / "standards.json").read_text())["standards"]}
-    for r in _j.loads((root / "reports.json").read_text())["reports"]:
-        assert set(r["standards_to_comply_with_ids"]) <= std, r["id"]
-        if 28 in r["standards_to_comply_with_ids"]:          # entry 30 (NQA-1) was split out of entry 28
-            assert 30 in r["standards_to_comply_with_ids"], r["id"]
-            assert "#30" in r["standards_to_comply_with_text"], r["id"]
+def test_combined_graph_and_alert_impact(env):
+    import kg_combine
+    site, s, sp, rp = env
+    kg_agent.run_once(s)
+    home = s.home
+    d = home / "staging/combined"
+    dep = json.loads((d / "dependents.json").read_text())
+    # report 1 declares compliance with standards 1 and 2; report 2 with 3
+    assert dep["report:1"]["depends_on"] == ["standard:1", "standard:2"]
+    assert dep["standard:2"]["declared_dependents"] == ["report:1"]
+    assert dep["standard:2"]["affects_reports"]["declared"] == ["report:1"]
+    assert dep["standard:3"]["affects_reports"]["declared"] == ["report:2"]
+    g = kg_agent.load_graph_file(d / "kg.json")
+    rels = {(u, v, k) for u, v, k in g.edges(keys=True)}
+    assert ("entry:report:1", "entry:standard:2", "complies_with") in rels
+    assert all(a.get("basis") in ("config", "text") for *_, a in g.edges(data=True))
+    assert all("text" not in a for _, a in g.nodes(data=True))          # no document text is merged
+    # report 1 reuses the RG 1.233 PDF and cites 'RG 1.233' -> inferred 'cites' edge to standard 2
+    assert ("entry:report:1", "entry:standard:2", "cites") in rels
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["run_id"] and not meta["entries_without_graph"]
+    built = meta["built"]
+    kg_agent.run_once(s)                                                  # unchanged inputs -> not rewritten
+    assert json.loads((d / "meta.json").read_text())["built"] == built
+    # curated vs inferred are distinguishable in the store/MCP layer
+    import kg_store
+    st = kg_store.Store(home, sp, rp)
+    r = st.dependents("standard:2")
+    assert [x["entry"] for x in r["declared_dependents"]] == ["report:1"] and r["combined"]["derived"]
+    assert st.graph_summary("combined")["nodes"] == 5
+    # an alert on a standard names the reports it affects
+    rt = kg_agent.Runtime(s)
+    rt.dependents = dep
+    assert "report:1" in json.dumps(dep["standard:1"]["affects_reports"])
+
+
+def test_alert_names_affected_reports(tmp_path, monkeypatch):
+    site = Site()
+    try:
+        b = site.base
+        kg_ingest.set_pdf_engine("basic")
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps({"standards": [{"id": 5, "document": "ASCE/SEI 43-19", "format_of_data": "paywalled PDF",
+                                                 "links": [{"text": "store", "url": f"{b}/store/asce43.html"}],
+                                                 "update_tracking_urls": [f"{b}/index/asce.html"]}]}))
+        rp.write_text(json.dumps({"reports": [{"id": 9, "report": "Seismic report", "standards_to_comply_with_ids": [5],
+                                               "template_links": [], "update_tracking_urls": []}]}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        kg_agent.run_once(s)
+        site.day = 3
+        st = kg_agent.run_once(s)
+        msgs = [a["message"] for a in st["alerts"] if a["entry"] == "standard:5"]
+        assert msgs and all("Reports affected: report:9 (declared)" in m for m in msgs), msgs
+        assert "report:9" in (s.home / "logs/report.md").read_text()
+    finally:
+        site.close()

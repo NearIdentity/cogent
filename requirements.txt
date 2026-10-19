@@ -21,3 +21,9 @@ langchain-ollama   # optional: --llm narration / local Ollama
 # tests (python -m pytest tests)
 pytest
 reportlab
+
+# MCP server (kg_mcp.py) -- docs/mcp.md
+mcp>=1.12,<2
+uvicorn
+httpx
+Pillow>=10.1   # watermarking of paywalled figures served over MCP

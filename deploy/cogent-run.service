@@ -1,0 +1,32 @@
+# One update pass (use together with cogent-run.timer). Install:
+#   sudo cp deploy/cogent-run.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now cogent-run.timer
+# Adjust the paths and the user. Run it by hand:  sudo systemctl start cogent-run.service
+[Unit]
+Description=cogent: stage and update the knowledge graphs (one pass)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cogent
+WorkingDirectory=/opt/cogent
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/cogent/pw-browsers
+ExecStart=/opt/cogent/cogent/bin/python src/kg_agent.py run --home /var/lib/cogent
+# a hung download must not block tomorrow's run
+TimeoutStartSec=4h
+# retry a failed pass (max 3 starts per day); a successful one is not repeated
+Restart=on-failure
+RestartSec=15min
+StartLimitIntervalSec=1d
+StartLimitBurst=3
+# be a good neighbour and a small target
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=6G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cogent /opt/cogent/config
+# notification on failure, e.g. a unit that sends mail: OnFailure=cogent-notify@%n.service

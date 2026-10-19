@@ -27,6 +27,7 @@ is used there, or to narrate the already-structured run results). Layout of ``--
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import logging
@@ -44,6 +45,7 @@ import networkx as nx
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+import kg_combine
 import kg_ingest
 import kg_tools as T
 from kg_models import (Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
@@ -125,6 +127,7 @@ class Runtime:
         self.alerts: dict[str, dict] = {}         # open alerts from earlier runs
         self.ctx = T.TrackerContext(min_interval=s.min_interval, ident_state=self.ident_state)
         self.ecfr_dates: dict[str, Optional[str]] = {}
+        self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
 
     # -- persistence helpers (no-ops in dry-run) --------------------------------
     def write(self, path: Path, text: str) -> None:
@@ -431,9 +434,37 @@ def make_nodes(rt: Runtime):
         persist_config(rt, touched)
         return out
 
+    # 5c ---------------------------------------------- combined graph (secondary staging)
+    def combine(state: AgentState) -> AgentState:
+        out: AgentState = {"notes": [], "errors": []}
+        try:
+            info = []
+            for e in rt.entries:
+                vt = raw_item(rt, e.key)[1].get("version_tracking") or {}
+                info.append({"key": e.key, "kind": e.kind, "name": e.name, "paywalled": e.paywalled,
+                             "complies_with": e.complies_with, "overlaps": e.overlaps,
+                             "identities": [i.label for i in T.entry_identities(e)], "version_status": vt.get("status"),
+                             "latest": [x.get("label") for x in vt.get("latest", [])],
+                             "on_board": [fmt_edition(k, v.get("edition")) for k, v in (vt.get("staged") or {}).get("editions", {}).items()]})
+            g, dep, meta = kg_combine.build(p.home, info, rt.run_id)
+            rt.dependents = dep
+            if not rt.dry and kg_combine.write(p.home, g, dep, meta, utcnow()):
+                out["notes"].append(f"combined graph rebuilt: {meta['nodes']} entries, {meta['edges']} relations")
+        except Exception as exc:                       # derived data must never fail the run
+            log.exception("combined graph failed")
+            out["errors"].append(f"combined graph: {exc}")
+        return out
+
     # 6 ---------------------------------------------------------------- alerts
     def alerts(state: AgentState) -> AgentState:
         found = compute_alerts(rt, state)
+        for a in found:                                # say what a change affects
+            aff = (rt.dependents.get(a.entry) or {}).get("affects_reports") or {}
+            if aff.get("declared") or aff.get("via_overlap") or aff.get("inferred"):
+                a.details["affects_reports"] = aff
+                bits = [f"{', '.join(aff[k])} ({lab})" for k, lab in (("declared", "declared"), ("via_overlap", "via overlapping standard"),
+                                                                       ("inferred", "cites it in text")) if aff.get(k)]
+                a.message += " Reports affected: " + "; ".join(bits) + "."
         now = utcnow()
         merged: dict[str, dict] = {}
         for a in found:
@@ -468,13 +499,13 @@ def make_nodes(rt: Runtime):
             p.lock.unlink()
         return {"report": text, "summary": summary}
 
-    return init, track, apply, sync_docs, assemble, versions, alerts, finalize
+    return init, track, apply, sync_docs, assemble, versions, combine, alerts, finalize
 
 
 def build_workflow(rt: Runtime):
     nodes = make_nodes(rt)
     wf = StateGraph(AgentState)
-    names = ("init", "track", "apply", "sync_docs", "assemble", "versions", "alerts", "finalize")
+    names = ("init", "track", "apply", "sync_docs", "assemble", "versions", "combine", "alerts", "finalize")
     for n, fn in zip(names, nodes):
         wf.add_node(n, fn)
     wf.set_entry_point("init")
@@ -1185,6 +1216,87 @@ def probe(settings: Settings, url: str) -> None:
         print("finding:", f.model_dump_json())
 
 
+def _local_target(rt: Runtime, e: DocEntry) -> Path:
+    """The directory that receives local copies of ``e`` (the one ``local_files`` reads)."""
+    if e.local_copy:
+        pat = Path(e.local_copy).expanduser()
+        if pat.is_dir() or not pat.suffix and not any(c in pat.name for c in "*?["):
+            return pat
+        raise ValueError(f"{e.key}: 'local_copy' is a file/glob ({e.local_copy}); replace the file there or point it at a directory")
+    return rt.p.local / f"{e.kind}s" / str(e.id)
+
+
+def add_local(settings: Settings, key: str, files: list[Path], move: bool = False, replace: bool = False,
+              stage: bool = False) -> dict[str, Any]:
+    """Import purchased copies of a paywalled entry into its local folder (and optionally stage them now).
+
+    ``replace`` moves the files already there to ``<dir>/.superseded/<timestamp>/`` (never deleted, and ignored by
+    the agent) so only the new edition is staged. Identical files are skipped."""
+    rt = Runtime(settings.model_copy(update={"dry_run": False}))
+    raw = {n: read_json(Path(getattr(settings, n)), {}) for n in ("standards", "reports")}
+    entries, _ = parse_entries(raw)
+    e = next((x for x in entries if x.key == key), None)
+    if e is None:
+        raise ValueError(f"unknown entry {key!r}")
+    if not e.paywalled:
+        log.warning("%s is not marked paywalled; the copy is staged in addition to its links", key)
+    rt.entries = [e]
+    dest = _local_target(rt, e)
+    for f in files:
+        f = Path(f).expanduser()
+        if not f.is_file():
+            raise ValueError(f"not a file: {f}")
+        if f.suffix.lower() not in LOCAL_SUFFIXES:
+            raise ValueError(f"{f.name}: unsupported type (use {', '.join(LOCAL_SUFFIXES)})")
+        if f.stat().st_size == 0:
+            raise ValueError(f"{f.name} is empty")
+    dest.mkdir(parents=True, exist_ok=True)
+    superseded, added, skipped = [], [], []
+    if replace:
+        old = local_files(rt, e)
+        if old:
+            stash = dest / ".superseded" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            stash.mkdir(parents=True)
+            for o in old:
+                shutil.move(str(o), stash / o.name)
+                superseded.append(o.name)
+    for f in files:
+        f = Path(f).expanduser()
+        target = dest / f.name
+        if target.exists() and hashlib.sha256(target.read_bytes()).digest() == hashlib.sha256(f.read_bytes()).digest():
+            skipped.append(f.name)
+            continue
+        if target.exists():
+            raise ValueError(f"{target} already exists with different content; use --replace or rename the file")
+        (shutil.move if move else shutil.copy2)(str(f), str(target))
+        added.append(f.name)
+    result: dict[str, Any] = {"entry": key, "folder": str(dest), "added": added, "skipped_identical": skipped,
+                              "superseded": superseded}
+    if stage:
+        st = run_once(settings.model_copy(update={"only": [key]}))
+        result["alerts"] = [a for a in st.get("alerts", []) if a["entry"] == key]
+        result["summary"] = st["summary"]
+    return result
+
+
+def list_local(settings: Settings) -> None:
+    """Which paywalled entries have local copies, and which edition each states."""
+    rt = Runtime(settings.model_copy(update={"dry_run": True}))
+    raw = {n: read_json(Path(getattr(settings, n)), {}) for n in ("standards", "reports")}
+    entries, _ = parse_entries(raw)
+    for e in entries:
+        if not e.paywalled:
+            continue
+        files = local_files(rt, e)
+        print(f"{e.key:12} {e.name[:60]}")
+        if not files:
+            print(f"    (no local copy; put it in {_local_target(rt, e)}/)")
+        for f in files:
+            st = read_json(rt.p.doc(docid_of(f"file://{f.resolve()}")) / "state.json", {})
+            eds = ", ".join(f"{k} {v}" for k, v in (st.get("identities") or {}).items() if v) or "not staged / edition unknown"
+            print(f"    {f.name}  [{eds}]")
+
+
 def status(settings: Settings) -> None:
     p = Paths(settings.home)
     print(f"{'document':18} {'kind':5} {'versions':>8} {'last changed':21} {'err':>3}  url")
@@ -1239,11 +1351,19 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
-    d = sub.add_parser("daemon", parents=[common], help="run every day")
+    d = sub.add_parser("daemon", parents=[common], help="simple foreground loop: run every day (the full daemon with "
+                       "catch-up, retries, status and systemd support is src/kg_daemon.py)")
     d.add_argument("--at", default="06:00", help="local time HH:MM")
     pr = sub.add_parser("probe", parents=[common], help="run a tracker on one URL and print what it parsed")
     pr.add_argument("url")
     sub.add_parser("status", parents=[common], help="show staged documents")
+    sub.add_parser("local", parents=[common], help="list paywalled entries and their local copies")
+    al = sub.add_parser("add-local", parents=[common], help="import purchased copies of a paywalled entry")
+    al.add_argument("entry", help="e.g. standard:30")
+    al.add_argument("files", nargs="+", type=Path)
+    al.add_argument("--move", action="store_true", help="move instead of copy")
+    al.add_argument("--replace", action="store_true", help="set aside the copies already there (kept in .superseded/)")
+    al.add_argument("--stage", action="store_true", help="stage the entry right away and show its warnings")
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -1266,6 +1386,14 @@ def main(argv: Optional[list[str]] = None) -> None:
         probe(s, a.url)
     elif a.cmd == "status":
         status(s)
+    elif a.cmd == "local":
+        list_local(s)
+    elif a.cmd == "add-local":
+        try:
+            res = add_local(s, a.entry, a.files, a.move, a.replace, a.stage)
+        except ValueError as exc:
+            raise SystemExit(f"error: {exc}")
+        print(json.dumps(res, indent=2))
 
 
 if __name__ == "__main__":
