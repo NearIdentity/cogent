@@ -26,3 +26,4 @@ reportlab
 mcp>=1.12,<2
 uvicorn
 httpx
+Pillow>=10.1   # watermarking of paywalled figures served over MCP
