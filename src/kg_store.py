@@ -390,6 +390,53 @@ class Store:
         data["total_nodes"] = g.number_of_nodes()
         return data
 
+    # ------------------------------------------------- data dictionaries / relationship maps (files written by kg_tabledb)
+    def _table_docs(self, ref: str) -> list[str]:
+        if ":" in ref:
+            meta = _read_json(self._entry_dir(ref) / "meta.json")
+            if meta is None:
+                raise NotFound(f"no staged entry {ref!r}")
+            return [d["docid"] for d in meta.get("documents", [])]
+        if not ref.isalnum():
+            raise NotFound(f"bad document id {ref!r}")
+        return [ref]
+
+    def _published(self, ref: str, filename: str, as_text: bool) -> list[dict[str, Any]]:
+        out, blocked = [], 0
+        for docid in self._table_docs(ref):
+            path = self.home / "tabledb" / docid / filename
+            if not path.exists():
+                continue
+            pw = self.doc_paywall(docid)
+            if pw["paywalled"] and self.paywalled_assets == "block":
+                blocked += 1
+                continue
+            item: dict[str, Any] = {"document_id": docid, "paywalled": pw["paywalled"],
+                                    "generated": (_read_json(self.home / "tabledb" / docid / "data_dictionary.json", {}) or {}).get("generated")}
+            if pw["paywalled"]:
+                from kg_assets import notice
+                item["copyright_notice"] = notice(pw["holder"])
+                item["warnings"] = self._asset_warnings(docid, pw)
+            item["content"] = path.read_text(encoding="utf-8") if as_text else _read_json(path)
+            out.append(item)
+        if not out:
+            why = (f"{blocked} document(s) are paywalled and the server is configured not to serve them" if blocked
+                   else "none published yet: run the table database agent (`python src/kg_tabledb.py build`, or `kg_agent.py run --tables`)")
+            raise NotFound(f"no data dictionary / relationship map for {ref!r}: {why}")
+        return out
+
+    def data_dictionary(self, ref: str, fmt: str = "json") -> dict[str, Any]:
+        """The published data dictionary of the documents of ``ref`` (an entry key or a document id): tables, columns, types, units, samples, joins."""
+        if fmt not in ("json", "markdown"):
+            raise NotFound("format must be 'json' or 'markdown'")
+        return {"ref": ref, "format": fmt, "documents": self._published(ref, "data_dictionary.md" if fmt == "markdown" else "data_dictionary.json", fmt == "markdown")}
+
+    def relationship_map(self, ref: str, fmt: str = "json") -> dict[str, Any]:
+        """The inferred joins between the tables of each document, as JSON (with scores and evidence) or a Mermaid ER diagram."""
+        if fmt not in ("json", "mermaid"):
+            raise NotFound("format must be 'json' or 'mermaid'")
+        return {"ref": ref, "format": fmt, "documents": self._published(ref, "relationships.mmd" if fmt == "mermaid" else "relationships.json", fmt == "mermaid")}
+
     # -------------------------------------------------------- combined graph
     def combined_meta(self) -> dict[str, Any]:
         meta = _read_json(self.home / "staging" / "combined" / "meta.json")

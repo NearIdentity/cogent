@@ -29,6 +29,12 @@ src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a 
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
 src/kg_assets.py     PNG conversion, downscaling and copyright watermark for figures served over MCP
+src/kg_llm.py, kg_llmjoin.py, kg_units.py, kg_tableservice.py  Ollama chat client; LLM join inference + judge; unit deduction; per-session tailoring
+src/kg_tabledb.py    table database agent: tables -> PostgreSQL + pgvector (typed rows, embeddings, joins, dictionaries) + read-side queries
+src/kg_tables.py     table model: CSV frame, type inference, KG context, embedding text (numbers excluded)
+src/kg_relmap.py     join inference between a document's tables; data dictionary / relationship map (JSON, Markdown, Mermaid)
+src/kg_embed.py      embedders: Ollama (/api/embed) and a deterministic hash embedder
+src/kg_tableservice.py  MCP query front-end of the table database (ref resolution, paywall policy, provenance, lexical fallback)
 src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
@@ -372,6 +378,17 @@ Figure export notes: images are sniffed by content (PNG, JPEG, GIF, BMP, TIFF, W
 with a BOM, comment or DOCTYPE first); raster formats are converted to PNG (PyMuPDF, then Pillow) and a format that cannot be
 converted keeps its own extension. Content that is not an image (e.g. an HTML error page served for an `<img src>`) is not
 written and is listed under `skipped` in the figure manifest. No `.bin` files are produced.
+
+## Table database (design values from the tables of the standards)
+
+`src/kg_tabledb.py` runs after the KG agent (`python src/kg_agent.py run --tables`, or on its own) and loads every extracted table CSV into PostgreSQL +
+pgvector: one typed database table per CSV with an `_embedding vector(DIM)` column (same Ollama model and dimension everywhere; whole rows are embedded by default, `--row-mode text` leaves numbers out),
+join columns inferred between the tables of a document (names + values + KG relations, optionally also proposed by an Ollama LLM and checked by an LLM judge, `--llm-joins`),
+units of numeric columns deduced from headers, table metadata and KG nodes (strict / broad / off), published as data dictionaries and relationship maps
+(`<home>/tabledb/<docid>/`). The MCP server gets `list_tables`, `describe_table`, `search_tables`, `lookup_values`, `query_table`, `join_tables`,
+`get_data_dictionary`, `get_relationship_map`, `evaluate_joins`, `explain_units`, session tools (`set_session_preferences` …) so that each session or
+each call can pick the join approach, unit mode and retrieval mode (and optionally `run_sql`), with paywall warnings and a disclaimer on every answer.
+Setup, schema, embedding recipe, design alternatives and limits: [docs/tabledb.md](docs/tabledb.md).
 
 ## Environment variables
 

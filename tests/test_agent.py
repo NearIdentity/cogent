@@ -541,3 +541,51 @@ def test_orphans_not_archived_when_configuration_is_invalid(env):
     st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
     assert any("validation errors" in w for w in st["forced_warnings"]) and not (s.home / "archive/orphans").exists()
     assert any(o["status"] == "orphaned" for o in json.loads((s.home / "state/orphans.json").read_text()).values())
+
+
+def test_table_database_stage_runs_after_staging_and_never_fails_the_run(env, pg_server, pg_schema):
+    """kg_agent.py run --tables: builds the table database as the last stage; a problem there is reported, not raised."""
+    site, s, sp, rp = env
+    on = kg_agent.Settings(**{**s.model_dump(), "tables": True, "tabledb_dsn": pg_server, "tabledb_schema": pg_schema, "embedder": "hash"})
+    st = kg_agent.run_once(on)
+    td = st["summary"]["tabledb"]
+    assert td["errors"] == [] and td["sources"] == 0 and "no staged tables" in " ".join(td["warnings"])        # the mock site serves text-only PDFs
+    assert "### Table database" in st["report"] and (s.home / "logs/tabledb.jsonl").exists()
+    assert json.loads((s.home / "logs/runs.jsonl").read_text().splitlines()[-1])["summary"]["tabledb"]["sources"] == 0
+    # unreachable database: the staging run still succeeds, the problem is an error in the report
+    bad = kg_agent.Settings(**{**s.model_dump(), "tables": True, "tabledb_dsn": "postgresql://nobody@127.0.0.1:9/x", "embedder": "hash"})
+    st = kg_agent.run_once(bad)
+    assert st["summary"]["docs_unchanged"] == 3 and "table database stage failed" in st["summary"]["tabledb"]["error"] and st["summary"]["errors"] >= 1
+    # no DSN configured at all
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "tables": True}))
+    assert "no DSN" in st["summary"]["tabledb"]["error"]
+    # off by default / skipped in a dry run
+    assert kg_agent.run_once(s)["summary"]["tabledb"] is None
+    assert kg_agent.run_once(kg_agent.Settings(**{**on.model_dump(), "dry_run": True}))["summary"]["tabledb"] == {"skipped": "dry run"}
+
+
+def test_full_pipeline_html_tables_to_database(tmp_path, pg_server, pg_schema):
+    """Staging agent -> exported tables -> table database -> data dictionary, on a page served by the mock site."""
+    import kg_tabledb
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"standards": [{"id": 1, "document": "Seismic Design Criteria", "links": [{"text": "html", "url": f"{site.base}/docs/seismic_tables.html"}],
+                              "update_tracking_urls": []}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0, tables=True, tabledb_dsn=pg_server,
+                              tabledb_schema=pg_schema, embedder="hash")
+        td = kg_agent.run_once(s)["summary"]["tabledb"]
+        assert td["errors"] == [] and td["loaded"] == 2 and td["joins"] == 1
+        dd = json.loads(next((s.home / "tabledb").glob("*/data_dictionary.json")).read_text())
+        assert [t["caption"][:9] for t in dd["tables"]] == ["Table 3-1", "Table 4-1"]
+        td2 = kg_agent.run_once(s)["summary"]["tabledb"]                                    # nothing changed anywhere: nothing reloaded
+        assert td2["loaded"] == 0 and td2["unchanged"] == 2
+        forced = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))["summary"]["tabledb"]
+        assert forced["loaded"] == 2                                                         # --force reaches the table stage too
+        st = kg_tabledb.status(s.home, pg_server, pg_schema)
+        assert st["tables"] == 2 and st["rows"] == 8 and st["joins"] == 1
+    finally:
+        site.close()

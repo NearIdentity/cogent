@@ -15,6 +15,7 @@ The server is read-only: it never changes the agent home.
 from __future__ import annotations
 
 import argparse
+import base64
 import functools
 import hashlib
 import hmac
@@ -23,18 +24,18 @@ import logging
 import os
 import secrets
 import sys
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-import base64
-
 from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kg_store import GENERAL_DISCLAIMERS, NotFound, Store  # noqa: E402
+from kg_tableservice import TableService  # noqa: E402
 
 log = logging.getLogger("kg_mcp")
 
@@ -46,6 +47,15 @@ search_graph -> get_node / get_neighbors / get_table for details; list_assets / 
 `ref='combined'` is the derived entry-level graph. `entry` is a key such as 'standard:22' or 'report:3'; a 16-hex document id also works wherever `ref` is asked.
 Every graph result carries a `provenance` block: ALWAYS check it and relay stale-capture, 'not the latest
 edition', paywall and OCR caveats to the user; never present extracted text as authoritative.
+"""
+
+TABLE_INSTRUCTIONS = """\
+Table database (design values, parameters, limits, coefficients that live in tables of the standards): when the user asks for a NUMBER or a
+row-type fact ("allowable stress for A572", "damping for welded steel"), do not search the graph text: call lookup_values(question) (by meaning),
+then query_table / describe_table for exact filters, columns and units, and join_tables when the answer spans two tables of one document.
+get_data_dictionary / get_relationship_map explain a document's tables. Always relay `warnings`, `paywalled`, inferred-unit notes and the disclaimer;
+quote the source document, page and caption. Tailor deduction per task: set_session_preferences (or `profile`/`approach`/`units` on a call);
+use strict for compliance-grade answers, exploratory/broad to brainstorm. Prompts: find_design_value, strict_design_lookup.
 """
 
 
@@ -172,7 +182,7 @@ def _tool_errors(fn: Callable) -> Callable:
 
 
 def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, public_hosts: Optional[list[str]] = None,
-                  stateless: bool = True, oauth: Any = None, issuer_url: Optional[str] = None) -> FastMCP:
+                  stateless: bool = True, oauth: Any = None, issuer_url: Optional[str] = None, tables: Any = None) -> FastMCP:
     hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
     for h in public_hosts or []:
         hosts += [h, f"{h}:*"]
@@ -183,7 +193,7 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
             issuer_url=issuer_url, resource_server_url=issuer_url.rstrip("/") + "/mcp", validate_token_resource=False,
             required_scopes=["kg:read"], revocation_options=RevocationOptions(enabled=True),
             client_registration_options=ClientRegistrationOptions(enabled=True, valid_scopes=["kg:read"], default_scopes=["kg:read"])))
-    mcp = FastMCP("cogent-kg", instructions=INSTRUCTIONS, host=host, port=port, stateless_http=stateless, json_response=True, **auth_kw,
+    mcp = FastMCP("cogent-kg", instructions=INSTRUCTIONS + ("\n" + TABLE_INSTRUCTIONS if tables is not None and tables.has_db else ""), host=host, port=port, stateless_http=stateless, json_response=True, **auth_kw,
                   transport_security=TransportSecuritySettings(enable_dns_rebinding_protection="*" not in (public_hosts or []), allowed_hosts=hosts,
                                                                allowed_origins=["*"]))
 
@@ -319,6 +329,225 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
         """One extracted table as CSV text (first max_rows lines). `warnings`/`paywalled` flag copyrighted content."""
         return wrap(ref, store.table_csv(ref, asset_id, max_rows))
 
+    # ---- tailoring: per session, per task / prompt ---------------------------------------------------------------------
+    svc = tables if tables is not None else TableService(store, None)           # file-based tools work without a database
+
+    def skey(ctx: Context, session_id: Optional[str]) -> str:
+        """Session = the MCP session when the server is stateful, else the authenticated token + the client's own ``session_id``."""
+        who, sid = "anonymous", None
+        try:
+            req = ctx.request_context.request
+            if req is not None:
+                sid = req.headers.get("mcp-session-id")
+                who = getattr(req.state, "token_name", None) or who
+        except Exception:                                                        # noqa: BLE001
+            pass
+        try:
+            from mcp.server.auth.middleware.auth_context import get_access_token
+            at = get_access_token()
+            if at is not None:
+                who = at.subject or at.client_id or who
+        except Exception:                                                        # noqa: BLE001
+            pass
+        return f"{who}:{session_id or sid or 'default'}"
+
+    def prefs_for(ctx: Context, session_id: Optional[str], profile: Optional[str], **overrides: Any):
+        return svc.resolve(skey(ctx, session_id), profile, **overrides)
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def list_profiles() -> dict[str, Any]:
+        """The named tailoring profiles (fast, balanced, strict, exploratory, llm) and what the options mean: join `approach`
+        (deterministic | llm | hybrid | consensus), `units` (strict = narrow | broad = diverse | off), `retrieval` (semantic | lexical | hybrid)."""
+        return svc.profiles()
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_tool_errors
+    def set_session_preferences(ctx: Context, profile: Optional[str] = None, approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None,
+                                min_score: Optional[float] = None, include_rejected: Optional[bool] = None, min_agreement: Optional[float] = None,
+                                units: Optional[Literal["strict", "broad", "off"]] = None, retrieval: Optional[Literal["semantic", "lexical", "hybrid"]] = None,
+                                session_id: Optional[str] = None) -> dict[str, Any]:
+        """Set how join inference, unit deduction and retrieval behave for the rest of this session (saved server-side for 8 hours, in memory).
+        Start from a `profile` and/or set options individually; every later tool call can still override them (arguments of the call, or a
+        `profile` named in the call). Pass a stable `session_id` if several conversations share one token. Does not change any stored data."""
+        return svc.set_session(skey(ctx, session_id), profile, approach=approach, min_score=min_score, include_rejected=include_rejected,
+                               min_agreement=min_agreement, units=units, retrieval=retrieval)
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_session_preferences(ctx: Context, session_id: Optional[str] = None) -> dict[str, Any]:
+        """The effective preferences of this session and what the session saved."""
+        key = skey(ctx, session_id)
+        return {"session": key, "saved": svc.sessions.get(key), "effective": asdict(svc.resolve(key)), "server_default_profile": svc.default_profile}
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_tool_errors
+    def reset_session_preferences(ctx: Context, session_id: Optional[str] = None) -> dict[str, Any]:
+        """Forget this session's saved preferences (back to the server default profile)."""
+        return svc.reset_session(skey(ctx, session_id))
+
+    # ---- data dictionaries, relationship maps, join evaluation (published files; no database needed) ----------------------
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_data_dictionary(ctx: Context, ref: str, format: Literal["json", "markdown"] = "json", units: Optional[Literal["strict", "broad", "off"]] = None,
+                            approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None, min_score: Optional[float] = None,
+                            include_rejected: Optional[bool] = None, profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+        """Data dictionary of the tables extracted from the documents of an entry ('standard:22') or one document id: every table (caption,
+        page, section), its columns (original header, type, unit with provenance, distinct values, key candidate, samples) and the columns it can be
+        joined on. `units` and the join options follow the session / profile unless given here (units=broad adds inferred units with
+        alternatives; approach=consensus keeps only joins confirmed by both methods and the judge). Machine-inferred; check against the source."""
+        p = prefs_for(ctx, session_id, profile, units=units, approach=approach, min_score=min_score, include_rejected=include_rejected)
+        return wrap(ref, svc.data_dictionary(ref, format, p))
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_relationship_map(ctx: Context, ref: str, format: Literal["json", "mermaid"] = "json", approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None,
+                             min_score: Optional[float] = None, include_rejected: Optional[bool] = None, min_agreement: Optional[float] = None,
+                             profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+        """Inferred joins between the tables of each document: matching columns, cardinality, score and evidence (names, shared values, KG, LLM
+        rationale, judge verdict), as JSON or a Mermaid ER diagram. Choose the approach per task: deterministic (heuristics only), llm, hybrid
+        (default), consensus (strictest); include_rejected adds what the judge rejected, flagged."""
+        p = prefs_for(ctx, session_id, profile, approach=approach, min_score=min_score, include_rejected=include_rejected, min_agreement=min_agreement)
+        return wrap(ref, svc.relationship_map(ref, format, p))
+
+    @mcp.tool(annotations=RO)
+    @_tool_errors
+    def get_join_evaluation(ref: str, format: Literal["json", "markdown"] = "json") -> dict[str, Any]:
+        """The LLM-as-judge evaluation of the join candidates of each document: every candidate (deterministic, LLM-suggested or both) with the
+        judge's votes, reasons and problems, agreement between methods and the consistency statistics. The judge is a model, not ground truth."""
+        return wrap(ref, svc.join_evaluation(ref, format))
+
+    @mcp.resource("kg://tables/{docid}/dictionary", mime_type="text/markdown")
+    def r_dictionary(docid: str) -> str:
+        try:
+            return "\n\n".join(d["content"] for d in svc.data_dictionary(docid, "markdown", svc.resolve("resource"))["documents"])
+        except NotFound as exc:
+            raise ValueError(str(exc.args[0])) from None
+
+    @mcp.resource("kg://tables/{docid}/relationships", mime_type="text/plain")
+    def r_relationships(docid: str) -> str:
+        try:
+            return "\n\n".join(d["content"] for d in svc.relationship_map(docid, "mermaid", svc.resolve("resource"))["documents"])
+        except NotFound as exc:
+            raise ValueError(str(exc.args[0])) from None
+
+    @mcp.resource("kg://tables/{docid}/join-evaluation", mime_type="text/markdown")
+    def r_join_eval(docid: str) -> str:
+        try:
+            return "\n\n".join(d["content"] for d in svc.join_evaluation(docid, "markdown")["documents"])
+        except NotFound as exc:
+            raise ValueError(str(exc.args[0])) from None
+
+    # ---- per-task prompts: ready-made workflows that carry the right options ---------------------------------------------
+    @mcp.prompt(name="find_design_value", description="Look up a design value / parameter in the standards' tables, with sources and units.")
+    def p_find_value(question: str, ref: str = "") -> str:
+        scope = f" in {ref}" if ref else ""
+        return (f"Find the design value asked for{scope}: {question}\n\n1. Call lookup_values(question, retrieval='hybrid'{', ref=' + repr(ref) if ref else ''}) and read the top rows with their table captions.\n"
+                "2. Confirm the exact row with query_table (exact filters on the row labels) and quote the ORIGINAL cell text, never a rounded number.\n"
+                "3. State the unit and where it came from (units='strict' unless the table has no explicit unit; then try units='broad' and say it is inferred, with the alternatives).\n"
+                "4. Always report the source document, page and table caption, and relay every warning (paywalled content, new editions) and the extraction disclaimer.")
+
+    @mcp.prompt(name="strict_design_lookup", description="Conservative lookup: narrow units, strict joins, no inferred values presented as fact.")
+    def p_strict(question: str, ref: str = "") -> str:
+        return (f"Answer using ONLY well-supported evidence{' from ' + ref if ref else ''}: {question}\n\nFirst call set_session_preferences(profile='strict'). Then lookup_values and query_table. "
+                "If a unit is not explicit or declared (units='strict' returns none), say the unit is not stated rather than guessing. Use join_tables only when the relationship is "
+                "'consensus'. Cite document, page and caption; relay all warnings.")
+
+    @mcp.prompt(name="explore_table_relationships", description="Review how the tables of a document relate, including disputed and rejected join candidates.")
+    def p_explore(ref: str) -> str:
+        return (f"Explore the relationships between the tables of {ref}.\n\n1. get_relationship_map(ref, profile='exploratory', format='mermaid') for the overview.\n"
+                "2. get_join_evaluation(ref) and list candidates with status 'disputed', 'rejected' or 'uncertain' with the judge's reasons.\n"
+                "3. Compare approach='deterministic' with approach='llm': which joins does only one method find? Say how consistent the LLM runs and the judge were.\n"
+                "4. Recommend which joins to trust; remember the judge is a model, not ground truth.")
+
+    @mcp.prompt(name="audit_units", description="Check where the units of a table's numeric columns come from and where strict and broad deduction disagree.")
+    def p_units(table_id: str) -> str:
+        return (f"Audit the units of table {table_id}.\n\nCall explain_units(table_id) and for each numeric column report the strict answer, the broad answer, the evidence and the alternatives. "
+                "Flag columns where the unit is only inferred or where declarations conflict, and say which source text to check.")
+
+    # ---- query front-end of the table database (PostgreSQL + pgvector), registered when the server has a database ---------
+    if tables is not None and tables.has_db:
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def list_tables(ref: Optional[str] = None, query: Optional[str] = None, limit: int = 50) -> dict[str, Any]:
+            """Tables loaded in the table database (extracted from the documents' figures-and-tables export): caption, page, section,
+            size and source document. `ref` limits to an entry or document; `query` filters by caption / section / text."""
+            return tables.list_tables(ref, query, limit)
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def describe_table(ctx: Context, table_id: str, sample_rows: int = 5, units: Optional[Literal["strict", "broad", "off"]] = None,
+                           profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+            """One table: caption, section, notes, KG entities, every column (header, type, unit with provenance, distinct values, range) and sample
+            rows. `units`: strict (narrow: explicit / declared only), broad (also inferred, with alternatives and confidence) or off."""
+            return tables.describe_table(table_id, sample_rows, prefs_for(ctx, session_id, profile, units=units))
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def explain_units(ctx: Context, table_id: str, column: Optional[str] = None, profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+            """Why a numeric column has the unit it has: every hypothesis (header, cells, caption / notes declarations, section text, KG entities, the
+            document's dominant unit, the customary unit of the quantity) with its evidence, and what strict / broad / off answer."""
+            return tables.explain_units(table_id, column, prefs_for(ctx, session_id, profile))
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def search_tables(ctx: Context, question: str, ref: Optional[str] = None, k: int = 5, retrieval: Optional[Literal["semantic", "lexical", "hybrid"]] = None,
+                          profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+            """Find the tables relevant to a question (semantic search over table captions, sections, columns and notes). `retrieval`: semantic,
+            lexical (exact words / codes) or hybrid (both, fused)."""
+            return tables.search_tables(question, ref, k, prefs_for(ctx, session_id, profile, retrieval=retrieval))
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def lookup_values(ctx: Context, question: str, ref: Optional[str] = None, table_ids: Optional[list[str]] = None, k: int = 10, candidate_tables: int = 5,
+                          retrieval: Optional[Literal["semantic", "lexical", "hybrid"]] = None, units: Optional[Literal["strict", "broad", "off"]] = None,
+                          profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+            """Look up design values / parameters in the tables: finds the best tables, then the best rows (rows are embedded whole, numbers included),
+            and returns them with their original cell text, source document, page, caption and the units of the numeric columns (per `units`: strict
+            = narrow, broad = diverse with inference notes, off). Use query_table for exact filters."""
+            return tables.lookup_values(question, ref, table_ids, k, candidate_tables, prefs_for(ctx, session_id, profile, retrieval=retrieval, units=units))
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def query_table(ctx: Context, table_id: str, where: Optional[list[dict[str, Any]]] = None, columns: Optional[list[str]] = None, order_by: Optional[str] = None,
+                        descending: bool = False, limit: int = 20, units: Optional[Literal["strict", "broad", "off"]] = None, profile: Optional[str] = None,
+                        session_id: Optional[str] = None) -> dict[str, Any]:
+            """Exact filtering of one table. `where` = [{"column": "Damping (%)", "op": ">=", "value": 5}]; ops: = != < <= > >= like in between
+            ([low, high]) is_null not_null. Columns may be named by original header or database name. Numeric columns compare numerically; the answer
+            lists the units of the numeric columns per `units`."""
+            return tables.query_table(table_id, where, columns, order_by, descending, limit, prefs_for(ctx, session_id, profile, units=units))
+
+        @mcp.tool(annotations=RO)
+        @_tool_errors
+        def join_tables(ctx: Context, left_table: str, right_table: str, left_column: Optional[str] = None, right_column: Optional[str] = None, limit: int = 20,
+                        approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None, min_score: Optional[float] = None,
+                        include_rejected: Optional[bool] = None, profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+            """Join two tables of one document. Without columns the inferred relationship is used, chosen by `approach` (deterministic | llm |
+            hybrid | consensus) and `min_score`; the answer says how the join was established (methods, score, evidence)."""
+            return tables.join_tables(left_table, right_table, left_column, right_column, limit,
+                                      prefs_for(ctx, session_id, profile, approach=approach, min_score=min_score, include_rejected=include_rejected))
+
+        if tables.llm_model:
+            @mcp.tool(annotations=RO)
+            @_tool_errors
+            def evaluate_joins(ctx: Context, ref: str, approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None, llm_samples: int = 2, judge_runs: int = 3,
+                               max_pairs: int = 20, suggester_model: Optional[str] = None, judge_model: Optional[str] = None, max_seconds: Optional[float] = None,
+                               min_score: Optional[float] = None, include_rejected: Optional[bool] = None, profile: Optional[str] = None,
+                               session_id: Optional[str] = None) -> dict[str, Any]:
+                """Run LLM join inference + LLM-as-judge NOW for the documents of `ref` (at most 3 documents; seconds to minutes) with parameters of your
+                choice: number of independent suggestion runs, judge votes, table pairs, models. Returns the relationships for the approach plus the
+                evaluation statistics (self-consistency of the LLM, judge consistency, agreement with the deterministic joins). Not stored."""
+                return tables.evaluate_joins(ref, prefs_for(ctx, session_id, profile, approach=approach, min_score=min_score, include_rejected=include_rejected),
+                                             llm_samples, judge_runs, max_pairs, suggester_model, judge_model, max_seconds)
+
+        if tables.allow_sql:
+            @mcp.tool(annotations=RO)
+            @_tool_errors
+            def run_sql(query: str, limit: int = 100) -> dict[str, Any]:
+                """A single read-only SELECT against the table database (schema kgtables: kgt_tables, kgt_columns, kgt_joins and one table
+                per extracted table). Only enabled by the operator."""
+                return tables.run_sql(query, limit)
+
     @mcp.tool(annotations=RO)
     @_tool_errors
     def export_graph(ref: str, max_nodes: int = 2000) -> dict[str, Any]:
@@ -426,6 +655,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "base URL, e.g. https://kg.example.com")
     s.add_argument("--paywalled-assets", choices=["watermark", "block", "allow"], default="watermark",
                    help="figures from paywalled/purchased content: watermark (default), block, or allow unmarked")
+    s.add_argument("--tabledb-dsn", default=os.environ.get("COGENT_TABLEDB_DSN"), help="PostgreSQL DSN of the table database (enables list_tables, "
+                   "lookup_values, query_table, ...); use a read-only role. Env: COGENT_TABLEDB_DSN")
+    s.add_argument("--tabledb-schema", default="kgtables")
+    s.add_argument("--embedder", choices=["ollama", "hash", "none"], default=os.environ.get("COGENT_EMBEDDER", "ollama"),
+                   help="embedder for questions (must be the one the database was built with); 'none' = lexical search only")
+    s.add_argument("--embed-model", default=None)
+    s.add_argument("--ollama-host", default=None)
+    s.add_argument("--embed-dim", type=int, default=None, help="dimension for --embedder hash")
+    s.add_argument("--llm-model", default=os.environ.get("COGENT_LLM_MODEL"), help="Ollama model that enables evaluate_joins (LLM join inference + judge on request)")
+    s.add_argument("--judge-model", default=None, help="Ollama model for the judge (default: the --llm-model)")
+    s.add_argument("--llm-max-seconds", type=float, default=180.0, help="time budget of one evaluate_joins call (cap 600)")
+    s.add_argument("--default-profile", default="balanced", help="tailoring profile of sessions that set none: fast | balanced | strict | exploratory | llm")
+    s.add_argument("--allow-sql", action="store_true", help="also expose run_sql (read-only SELECT); use a SELECT-only database role")
     s.add_argument("--no-auth", action="store_true", help="disable authentication (loopback binds only)")
     s.add_argument("--stateful", action="store_true", help="keep per-client sessions (default: stateless)")
 
@@ -461,7 +703,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not a.no_auth and not tokens.any_configured():
         ap.error("no access token configured: run 'kg_mcp.py token create --name <client>' or set COGENT_MCP_TOKEN")
     store = Store(a.home, a.standards, a.reports, a.stale_after, a.paywalled_assets)
-    app = build_app(store, None if a.no_auth else tokens, issuer_url=None if a.no_auth else a.oauth_issuer,
+    emb = None
+    if a.tabledb_dsn and a.embedder != "none":
+        from kg_embed import get_embedder
+        emb = get_embedder(a.embedder, a.embed_model, a.ollama_host, a.embed_dim)
+    tables = TableService(store, a.tabledb_dsn, a.tabledb_schema, emb, a.allow_sql, a.llm_model, a.judge_model, a.ollama_host, a.llm_max_seconds,
+                          a.default_profile)
+    app = build_app(store, None if a.no_auth else tokens, tables=tables, issuer_url=None if a.no_auth else a.oauth_issuer,
                     oauth_path=a.home / "mcp" / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host,
                     stateless=not a.stateful)
     mode = "OFF" if a.no_auth else f"OAuth 2.1 + bearer token (issuer {a.oauth_issuer})" if a.oauth_issuer else "bearer token"

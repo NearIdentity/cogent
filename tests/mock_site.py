@@ -77,6 +77,9 @@ class Site:
     # ---------------------------------------------------------------- routes
     def route(self, path: str, q: dict):
         d = self.day
+        if path == "/docs/seismic_tables.html":
+            from conftest import DOC_A
+            return DOC_A.encode(), "text/html"
         if path == "/docs/scanned.pdf":
             return make_scan("Scanned Standard", "Seismic design text that exists only as a picture."), "application/pdf"
         if path == "/docs/rg1233_rev0.pdf":

@@ -27,3 +27,6 @@ mcp>=1.12,<2
 uvicorn
 httpx
 Pillow>=10.1   # watermarking of paywalled figures served over MCP
+
+# table database (kg_tabledb.py, kg_tableservice.py) -- docs/tabledb.md
+psycopg[binary]>=3.1   # PostgreSQL driver; the database needs the pgvector extension; embeddings come from Ollama (e.g. ollama pull nomic-embed-text)

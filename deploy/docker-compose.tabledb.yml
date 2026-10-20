@@ -1,0 +1,17 @@
+# PostgreSQL 16 with the pgvector extension for the table database (kg_tabledb.py).
+#   docker compose -f deploy/docker-compose.tabledb.yml up -d
+#   export COGENT_TABLEDB_DSN=postgresql://cogent:change-me@127.0.0.1:5432/cogent
+#   python src/kg_tabledb.py build            # or: python src/kg_agent.py run --tables
+services:
+  tabledb:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cogent
+      POSTGRES_PASSWORD: change-me          # change it
+      POSTGRES_DB: cogent
+    ports: ["127.0.0.1:5432:5432"]          # loopback only
+    volumes:
+      - tabledb_data:/var/lib/postgresql/data
+      - ./deploy/tabledb-readonly-role.sql:/docker-entrypoint-initdb.d/10-readonly-role.sql:ro
+volumes:
+  tabledb_data: {}
