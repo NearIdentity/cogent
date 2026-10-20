@@ -172,11 +172,42 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    configuration changes, document KGs created / updated (with diffs), entry KGs rebuilt, tracker findings, pending
    review, errors, trackers that keep failing. Optionally a local LLM (`--llm`) narrates the structured results at the top.
 
-Subcommands: `run [--dry-run]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
+Subcommands: `run [--dry-run] [--force]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
 check a tracker against a live page), `status`. Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
 `--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
+
+### Forced update (`run --force`)
+
+A normal run is conditional: tracking pages and documents are fetched with `If-None-Match` / `If-Modified-Since`, and a
+document whose text fingerprint is unchanged is skipped. `python src/kg_agent.py run --force` refreshes everything from the
+sources instead:
+
+* every tracking page is re-read in full (no conditional request) and re-evaluated, so the newest edition on offer is
+  found; as usual a `new_edition` finding is applied to the configuration (confidence ≥ 0.8, unless `--no-auto-apply`)
+  *before* the documents are read, so **the latest edition is the one that gets read**;
+* every source document (remote URL, eCFR XML, purchased local copy) is downloaded again and re-parsed, **even when
+  nothing changed**, and its KG is rebuilt; entry KGs and the combined graph are rebuilt as well;
+* an unchanged source is recorded as **`refreshed`** (not `updated`): no new version is counted and nothing is
+  archived. If the text changed, or the rebuilt KG differs (e.g. after a parser improvement), it is `updated` as in a normal
+  run, the old KG is archived and the diff is recorded.
+
+Scope it with `--only standard:22,report:1`; combine with `--dry-run` to see what would be re-read without writing
+anything. The flag applies to that run only (it is not sticky). Be considerate: it re-downloads every source once
+(`--min-interval` still spaces requests per host). For the daemon, `kg_daemon.py … -- --force` would force *every* scheduled
+run; usually a one-off `run --force` is what you want.
+
+Logging and reporting of forced updates:
+
+| where | what |
+|---|---|
+| `logs/forced.jsonl` | one JSON line per re-read: `kind` = `document` (url, docid, entries, `result` created / updated / refreshed / error, text sha before → after, archive path), `tracker` (url, tracker, result, findings) and a closing `run` record with the summary; written only for forced runs and never in a dry run |
+| `logs/report.md` | the run header says **(FORCED UPDATE)**; a *Forced update* section lists every document (result, sha before → after, detail) and every tracking page (result, findings), plus the entry KGs rebuilt |
+| `logs/runs.jsonl` | the run summary carries `forced`, `docs_refreshed`, `entries_refreshed` |
+| `staging/documents/<id>/state.json`, `state/trackers.json` | `last_forced`, `forced_runs` (and `last_forced_result` for documents) per source |
+| `status` | a `forced` column with the date of the last forced re-read of each document |
+| MCP | `get_entry_metadata` shows `last_forced_reread`, `forced_rereads`, `last_forced_result` per document; `get_overview` shows `agent_last_forced_run` |
 
 ### What the agent writes (`--home`)
 
@@ -186,7 +217,7 @@ staging/documents/<id>/{state.json,kg.json,assets/}    one per unique URL (asset
 staging/{standards,reports}/<n>/{kg.json,meta.json}    the KG of each entry
 archive/documents/<id>/<ts>_<sha>/   archive/entries/<key>/<ts>/    superseded versions
 local/{standards,reports}/<id>/      purchased copies you drop in (folders are created for paywalled entries)
-state/{trackers,identities,pending,alerts,config_hashes}.json       logs/{report.md,runs.jsonl}
+state/{trackers,identities,pending,alerts,config_hashes}.json       logs/{report.md,runs.jsonl,forced.jsonl}
 ```
 
 ## Paywalled documents (warnings)

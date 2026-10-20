@@ -403,6 +403,7 @@ class TrackerOutcome:
 class TrackerContext:
     min_interval: float = 1.0
     browser_fallback: bool = True
+    force: bool = False                      # forced update: no conditional requests, re-read every page
     ident_state: dict[str, dict[str, dict]] = field(default_factory=dict)  # entry key -> label -> {edition,...}
 
 
@@ -557,7 +558,8 @@ class PageIdentityTracker(Tracker):
         return True
 
     def check(self, url, prev, watchers, ctx):
-        r = fetch(url, prev.etag if prev else "", prev.last_modified if prev else "",
+        use_prev = bool(prev) and not ctx.force            # a forced update never sends If-None-Match / If-Modified-Since
+        r = fetch(url, prev.etag if use_prev else "", prev.last_modified if use_prev else "",
                   min_interval=ctx.min_interval, browser_fallback=ctx.browser_fallback)
         if r.not_modified:
             st = self._new_state(url, prev)

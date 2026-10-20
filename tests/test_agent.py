@@ -341,3 +341,75 @@ def test_alert_names_affected_reports(tmp_path, monkeypatch):
         assert "report:9" in (s.home / "logs/report.md").read_text()
     finally:
         site.close()
+
+
+def test_forced_update(env):
+    """--force: unconditional re-read of every tracker page and source, rebuilt KGs, logged and reported."""
+    site, s, sp, rp = env
+    home = s.home
+    kg_agent.run_once(s)                                           # bootstrap
+    st = kg_agent.run_once(s)                                      # normal run: everything unchanged (304 / same text)
+    assert st["summary"]["docs_unchanged"] == 3 and not st["summary"]["forced"]
+    assert not (home / "logs/forced.jsonl").exists()
+    kg_file = next(home.glob("staging/standards/2/kg.json"))
+    before = kg_file.read_text()
+    n_archive = len(list(home.glob("archive/**/kg.json")))
+    site.hits.clear()
+
+    f = kg_agent.Settings(**{**s.model_dump(), "force": True})
+    st = kg_agent.run_once(f)
+    sm = st["summary"]
+    assert sm["forced"] and sm["docs_refreshed"] == 3 and sm["docs_unchanged"] == 0 and sm["docs_updated"] == 0, st["report"]
+    assert sm["entries_refreshed"] >= 3 and sm["errors"] == 0
+    # every tracking page and document was fetched again (no conditional request was answered with 304)
+    assert any(h.startswith("/index/rg.html") for h in site.hits) and any(h.endswith("rg1233_rev0.pdf") for h in site.hits)
+    # nothing really changed -> no new archive copies, no new KG version
+    assert len(list(home.glob("archive/**/kg.json"))) == n_archive
+    assert json.loads(next(home.glob("staging/documents/*/state.json")).read_text())["versions"] == 1
+    # audit trail
+    recs = [json.loads(l) for l in (home / "logs/forced.jsonl").read_text().splitlines()]
+    docs = [r for r in recs if r["kind"] == "document"]
+    assert len(docs) == 3 and {r["result"] for r in docs} == {"refreshed"} and all(r["text_sha_before_after"][0] == r["text_sha_before_after"][1] for r in docs)
+    assert any(r["kind"] == "tracker" for r in recs) and recs[-1]["kind"] == "run" and recs[-1]["summary"]["forced"]
+    for state_file in home.glob("staging/documents/*/state.json"):
+        d = json.loads(state_file.read_text())
+        assert d["last_forced"] and d["forced_runs"] == 1 and d["last_forced_result"] == "refreshed"
+    assert all(t["last_forced"] and t["forced_runs"] == 1 for t in json.loads((home / "state/trackers.json").read_text()).values())
+    # report + runs.jsonl
+    rep = (home / "logs/report.md").read_text()
+    assert "(FORCED UPDATE)" in rep and "### Forced update: 3 source document(s)" in rep and "refreshed" in rep
+    assert json.loads((home / "logs/runs.jsonl").read_text().splitlines()[-1])["summary"]["forced"] is True
+    import kg_store
+    meta = kg_store.Store(home, sp, rp).entry_metadata("standard:2")
+    assert meta["documents"][0]["forced_rereads"] == 1 and meta["documents"][0]["last_forced_result"] == "refreshed"
+    assert kg_store.Store(home, sp, rp).overview()["agent_last_forced_run"]["summary"]["docs_refreshed"] == 3
+
+    # a forced run also picks up the latest edition when one is available (and reads it)
+    site.day = 3
+    st = kg_agent.run_once(f)
+    cfg = json.loads(sp.read_text())["standards"]
+    assert cfg[1]["links"][0]["url"].endswith("rg1233_rev1.pdf")
+    new = [a for a in st["doc_actions"] if a["url"].endswith("rg1233_rev1.pdf")]
+    assert new and new[0]["action"] == "created" and new[0]["forced"]
+    assert any(a["action"] == "updated" and a["forced"] and "source text changed" in a["detail"] for a in st["doc_actions"])   # eCFR section
+    assert json.loads(next(home.glob("staging/documents/*/state.json")).read_text())["forced_runs"] >= 1
+
+
+def test_forced_dry_run_writes_nothing(env):
+    site, s, sp, rp = env
+    kg_agent.run_once(s)
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True, "dry_run": True}))
+    assert st["summary"]["docs_refreshed"] == 3 and "FORCED UPDATE" in st["report"]
+    assert not (s.home / "logs/forced.jsonl").exists()
+    assert all(json.loads(p.read_text()).get("forced_runs", 0) == 0 for p in s.home.glob("staging/documents/*/state.json"))
+
+
+def test_force_flag_on_the_command_line(env, capsys):
+    site, s, sp, rp = env
+    base = ["--home", str(s.home), "--standards", str(sp), "--reports", str(rp), "--min-interval", "0"]
+    kg_agent.main(["run", *base])
+    kg_agent.main(["run", "--force", *base])
+    out = capsys.readouterr().out
+    assert "'forced': True" in out and "'docs_refreshed': 3" in out
+    kg_agent.main(["run", *base])                                   # the flag is per run, not sticky
+    assert "'forced': False" in capsys.readouterr().out

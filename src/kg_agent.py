@@ -76,6 +76,8 @@ class Settings(BaseModel):
     keep_archive: int = 0               # versions kept per document (0 = keep all)
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
+    force: bool = False                 # forced update: re-read every source directly (no conditional requests,
+                                        # no "unchanged" short-cut), rebuild the KGs, and log it all
 
 
 class Paths:
@@ -91,6 +93,7 @@ class Paths:
         self.logs = self.home / "logs"
         self.report = self.logs / "report.md"
         self.runs = self.logs / "runs.jsonl"
+        self.forced = self.logs / "forced.jsonl"       # one line per source re-read by a forced update
         self.lock = self.home / ".lock"
 
     def doc(self, docid: str) -> Path:
@@ -125,7 +128,7 @@ class Runtime:
         self.ident_state: dict[str, dict[str, dict]] = {}
         self.pending: list[dict] = []
         self.alerts: dict[str, dict] = {}         # open alerts from earlier runs
-        self.ctx = T.TrackerContext(min_interval=s.min_interval, ident_state=self.ident_state)
+        self.ctx = T.TrackerContext(min_interval=s.min_interval, ident_state=self.ident_state, force=s.force)
         self.ecfr_dates: dict[str, Optional[str]] = {}
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
 
@@ -247,6 +250,7 @@ class AgentState(TypedDict, total=False):
     errors: Annotated[list[str], operator.add]
     alerts: list[dict]
     versions: list[dict]
+    forced: bool
     report: str
     summary: dict
 
@@ -261,7 +265,9 @@ def make_nodes(rt: Runtime):
 
     # 1 ---------------------------------------------------------------- init
     def init(state: AgentState) -> AgentState:
-        out: AgentState = {"notes": [], "config_changes": [], "errors": []}
+        out: AgentState = {"notes": [], "config_changes": [], "errors": [], "forced": s.force}
+        if s.force:
+            out["notes"].append("FORCED UPDATE: every tracking page and source document is re-read directly (no conditional requests); document and entry KGs are rebuilt even if nothing changed")
         if not rt.dry:
             p.home.mkdir(parents=True, exist_ok=True)
             if p.lock.exists():
@@ -324,11 +330,19 @@ def make_nodes(rt: Runtime):
             except Exception as exc:                      # a broken tracker must not stop the run
                 log.exception("tracker %s failed on %s", tr.name, url)
                 res = tr._error(url, rt.tracker_state.get(url), f"{type(exc).__name__}: {exc}")
+            if s.force:
+                res.state.last_forced, res.state.forced_runs = utcnow(), res.state.forced_runs + 1
             rt.tracker_state[url] = res.state
             out["tracker_log"].append({"url": url, "tracker": tr.name, "changed": res.changed,
                                        "summary": res.summary, "error": res.error,
-                                       "watchers": [e.key for e in ents],
+                                       "watchers": [e.key for e in ents], "forced": s.force,
+                                       "findings": [f"{f.type}:{f.identity}" + (f" {f.old}->{f.new}" if f.new else "") for f in res.findings if f.type != "baseline"],
                                        "stale": res.state.consecutive_errors >= s.stale_after})
+            if s.force:
+                _log_forced(rt, {"kind": "tracker", "url": url, "tracker": tr.name, "entries": [e.key for e in ents],
+                                 "result": "error" if res.error else "changed" if res.changed else "unchanged",
+                                 "detail": res.error or res.summary,
+                                 "findings": out["tracker_log"][-1]["findings"]})
             if res.error:
                 out["errors"].append(f"tracker {url}: {res.error}")
             out["findings"] += [f.model_dump() for f in res.findings]
@@ -391,6 +405,9 @@ def make_nodes(rt: Runtime):
             except Exception as exc:
                 log.exception("sync failed for %s", url)
                 act = DocAction(url=url, entries=keys, action="error", detail=f"{type(exc).__name__}: {exc}")
+            if s.force:
+                act.forced = True
+                _stamp_forced(rt, act)
             if act.action == "error":
                 out["errors"].append(f"document {url}: {act.detail}")
             out["doc_actions"].append(act.model_dump())
@@ -493,6 +510,8 @@ def make_nodes(rt: Runtime):
         narrative = narrate(rt, state, summary)
         text = render_report(rt, state, summary, narrative)
         rt.append(p.report, text)
+        if s.force:
+            _log_forced(rt, {"kind": "run", "summary": summary})
         rt.append(p.runs, json.dumps({"run_id": rt.run_id, "started": rt.started, "finished": utcnow(),
                                       "summary": summary}) + "\n")
         if not rt.dry and p.lock.exists():
@@ -648,7 +667,7 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
             rt.write_json(ddir / "state.json", st.model_dump())
             return DocAction(url=url, entries=keys, action="error", detail="eCFR titles API unavailable"), fetch_url, None
         fetch_url = T.ecfr_api_url(url, date) or url
-    same = st.fetch_url == fetch_url
+    same = st.fetch_url == fetch_url and not s.force      # forced update: never send If-None-Match / If-Modified-Since
     r = T.fetch(fetch_url, st.etag if same else "", st.last_modified if same else "",
                 min_interval=s.min_interval, accept="application/pdf,text/html,application/xml,*/*;q=0.8")
 
@@ -665,6 +684,29 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
 
 
 
+def _kg_changed(diff: dict[str, Any]) -> bool:
+    """Does a ``kg_diff`` show any difference between two KG versions?"""
+    return bool(diff.get("nodes", [0, 0])[0] != diff.get("nodes", [0, 0])[1] or diff.get("edges", [0, 0])[0] != diff.get("edges", [0, 0])[1]
+                or any(diff.get(k) for k in ("sections_added", "sections_removed", "sections_modified"))
+                or diff.get("entities_added") or diff.get("entities_removed"))
+
+
+def _log_forced(rt: Runtime, rec: dict[str, Any]) -> None:
+    """Append one record to ``logs/forced.jsonl`` (audit trail of forced re-reads; nothing is written in a dry run)."""
+    rt.append(rt.p.forced, json.dumps({"run_id": rt.run_id, "ts": utcnow(), "dry_run": rt.dry, **rec}, ensure_ascii=False) + "\n")
+
+
+def _stamp_forced(rt: Runtime, act: DocAction) -> None:
+    """Record a forced re-read in the document's state file and in the forced log."""
+    ddir = rt.p.doc(docid_of(act.url))
+    if (ddir / "state.json").exists():
+        st = DocState(**read_json(ddir / "state.json", {"url": act.url}))
+        st.last_forced, st.forced_runs, st.last_forced_result = utcnow(), st.forced_runs + 1, act.action
+        rt.write_json(ddir / "state.json", st.model_dump())
+    _log_forced(rt, {"kind": "document", "url": act.url, "docid": docid_of(act.url), "entries": act.entries, "result": act.action,
+                     "detail": act.detail, "text_sha_before_after": act.shas, "archived": act.archived})
+
+
 def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     s, p = rt.s, rt.p
     docid = docid_of(url)
@@ -672,6 +714,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     st = DocState(**read_json(ddir / "state.json", {"url": url})) if (ddir / "state.json").exists() else DocState(url=url)
     kg_path = ddir / "kg.json"
     now = utcnow()
+    forced = s.force
 
     if url.startswith("file://"):                      # purchased / local copy of a paywalled document
         path = Path(unquote(urlparse(url).path))
@@ -687,7 +730,8 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     raw_sha, text_sha = T.fingerprint(r.data, kind)
     st.etag, st.last_modified, st.fetch_url, st.content_kind = r.etag, r.last_modified, fetch_url, kind
     st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
-    if kg_path.exists() and st.text_sha == text_sha:
+    same_text = kg_path.exists() and st.text_sha == text_sha
+    if same_text and not forced:
         reissued = raw_sha != st.raw_sha
         st.raw_sha = raw_sha
         rt.write_json(ddir / "state.json", st.model_dump())
@@ -697,8 +741,9 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     # ---- (re)build the document KG
     old = load_graph_file(kg_path) if kg_path.exists() else None
     if rt.dry:
-        return DocAction(url=url, entries=keys, action="created" if old is None else "updated",
-                         detail="dry run: would rebuild the KG")
+        return DocAction(url=url, entries=keys, forced=forced, shas=[st.text_sha[:12], text_sha[:12]],
+                         action="created" if old is None else "refreshed" if (forced and same_text) else "updated",
+                         detail="dry run: would rebuild the KG" + (" (forced re-read)" if forced else ""))
     kg_ingest.clear_prefetched()
     kg_ingest.prefetch(fetch_url, r.data)
     try:
@@ -716,21 +761,33 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     st.ocr_pages = list(g.graph.get("ocr_pages", []))
     st.identities = doc_identities(g, Path(unquote(urlparse(url).path)).name if url.startswith("file://") else "")
     diff = T.kg_diff(old, g)
+    # a forced re-read of identical text only counts as a new version when the rebuilt KG differs (e.g. parser changes)
+    changed_kg = old is None or not same_text or _kg_changed(diff)
+    old_sha = st.text_sha
 
     archived = None
-    if old is not None:
+    if old is not None and changed_kg:
         archived = _archive(rt, "documents", docid, [kg_path, ddir / "state.json"],
                             f"{now.replace(':', '').replace('-', '')}_{st.text_sha[:8]}")
     rt.save_graph(g, kg_path)
     st.raw_sha, st.text_sha = raw_sha, text_sha
     st.first_seen = st.first_seen or now
-    st.last_changed = st.kg_built = now
-    st.kg_nodes, st.kg_edges, st.versions = g.number_of_nodes(), g.number_of_edges(), st.versions + 1
+    st.kg_built = now
+    if changed_kg:
+        st.last_changed, st.versions = now, st.versions + 1
+    st.kg_nodes, st.kg_edges = g.number_of_nodes(), g.number_of_edges()
     rt.write_json(ddir / "state.json", st.model_dump())
     _prune_archive(rt, "documents", docid)
     ocr = f"; OCR on page(s) {st.ocr_pages} ({g.graph.get('ocr_engine')})" if st.ocr_pages else ""
-    return DocAction(url=url, entries=keys, action="created" if old is None else "updated",
-                     detail=f"{kind}, {g.number_of_nodes()} nodes / {g.number_of_edges()} edges{ocr}",
+    if forced and old is not None and not changed_kg:
+        return DocAction(url=url, entries=keys, action="refreshed", forced=True, shas=[old_sha[:12], text_sha[:12]], diff=diff,
+                         detail=f"forced re-read: content identical; KG rebuilt ({g.number_of_nodes()} nodes / {g.number_of_edges()} edges){ocr}")
+    why = ""
+    if forced and old is not None:
+        why = "forced re-read: " + ("source text changed; " if old_sha != text_sha else "text identical but the rebuilt KG differs; ")
+    return DocAction(url=url, entries=keys, action="created" if old is None else "updated", forced=forced,
+                     shas=[old_sha[:12], text_sha[:12]] if forced else [],
+                     detail=f"{why}{kind}, {g.number_of_nodes()} nodes / {g.number_of_edges()} edges{ocr}",
                      diff=diff, archived=archived)
 
 
@@ -774,12 +831,20 @@ def _assemble_one(rt: Runtime, e: DocEntry, names: dict[int, str], changed_urls:
             sig_parts.append([url, g.graph.get("text_sha", "")])
     sig = T._sha(json.dumps([e.name, e.complies_with, e.overlaps, sig_parts], sort_keys=True))
     meta = read_json(edir / "meta.json", {})
-    if meta.get("signature") == sig and (edir / "kg.json").exists():
+    same_sig = meta.get("signature") == sig and (edir / "kg.json").exists()
+    if same_sig and not rt.s.force:
         return EntryAction(entry=e.key, action="unchanged")
     if rt.dry:
-        return EntryAction(entry=e.key, action="rebuilt", detail="dry run")
+        return EntryAction(entry=e.key, action="refreshed" if same_sig else "rebuilt", detail="dry run" + (" (forced)" if same_sig else ""))
     g = T.merge_graphs(parts, e, names)
     old_exists = (edir / "kg.json").exists()
+    if same_sig:                       # forced rebuild of an entry whose inputs did not change
+        diff = T.kg_diff(load_graph_file(edir / "kg.json"), g)
+        if not _kg_changed(diff):      # identical result: refresh the files, keep no archive copy
+            rt.save_graph(g, edir / "kg.json")
+            rt.write_json(edir / "meta.json", {**meta, "built": utcnow(), "nodes": g.number_of_nodes(), "edges": g.number_of_edges(),
+                                               "missing": missing})
+            return EntryAction(entry=e.key, action="refreshed", detail=f"forced rebuild: identical ({g.number_of_nodes()} nodes)")
     archived = None
     if old_exists:
         archived = _archive(rt, "entries", e.key.replace(":", "_"), [edir / "kg.json", edir / "meta.json"],
@@ -1002,6 +1067,8 @@ def summarize(state: AgentState) -> dict[str, Any]:
         "documents": len(da),
         "docs_created": count(da, "action", "created"), "docs_updated": count(da, "action", "updated"),
         "docs_unchanged": count(da, "action", "unchanged"), "docs_error": count(da, "action", "error"),
+        "forced": bool(state.get("forced")), "docs_refreshed": count(da, "action", "refreshed"),
+        "entries_refreshed": sum(1 for x in state.get("entry_actions", []) if x["action"] == "refreshed"),
         "entries_rebuilt": sum(1 for x in state.get("entry_actions", []) if x["action"] in ("rebuilt", "created")),
         "trackers": len(state.get("tracker_log", [])),
         "trackers_changed": sum(1 for t in state.get("tracker_log", []) if t["changed"]),
@@ -1049,11 +1116,12 @@ def _md(x: Any, n: int = 90) -> str:
 
 def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Optional[RunNarrative]) -> str:
     L: list[str] = []
-    mode = " (DRY RUN)" if rt.dry else ""
+    mode = (" (DRY RUN)" if rt.dry else "") + (" (FORCED UPDATE)" if summary.get("forced") else "")
     L.append(f"## Run {rt.run_id}{mode}\n")
     L.append(f"Started {rt.started}, finished {utcnow()}.\n")
     L.append(f"**Summary:** {summary['documents']} document(s) checked: {summary['docs_created']} new, "
-             f"{summary['docs_updated']} updated, {summary['docs_unchanged']} unchanged, {summary['docs_error']} failed. "
+             f"{summary['docs_updated']} updated, " + (f"{summary['docs_refreshed']} re-read unchanged (forced), " if summary.get("forced") else "") +
+             f"{summary['docs_unchanged']} unchanged, {summary['docs_error']} failed. "
              f"{summary['entries_rebuilt']} entry KG(s) rebuilt, {summary['not_current']} entr(ies) not current. {summary['trackers']} tracking page(s) checked "
              f"({summary['trackers_changed']} with changes). {summary['config_changes']} configuration edit(s). "
              f"{summary['errors']} error(s). **{summary['warnings']} warning(s).**\n")
@@ -1063,6 +1131,22 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
         L.append("")
     for n in state.get("notes", []):
         L.append(f"_Note: {n}_\n")
+
+    if summary.get("forced"):
+        fd = [a for a in state.get("doc_actions", []) if a.get("forced")]
+        L.append(f"### Forced update: {len(fd)} source document(s) and {len(state.get('tracker_log', []))} tracking page(s) re-read directly\n")
+        L.append("| result | document | entries | text sha before → after | detail |\n|---|---|---|---|---|")
+        for a in fd:
+            sh = " → ".join(x or "-" for x in (a.get("shas") or [])) or "-"
+            L.append(f"| {a['action']} | {_md(a['url'], 70)} | {_md(', '.join(a['entries']), 40)} | `{sh}` | {_md(a['detail'], 90)} |")
+        ef = [a for a in state.get("entry_actions", []) if a["action"] in ("refreshed", "rebuilt", "created")]
+        if ef:
+            L.append(f"\nEntry KGs rebuilt by the forced update: {', '.join(a['entry'] + ' (' + a['action'] + ')' for a in ef)}.")
+        L.append("\n| tracking page | tracker | result | findings |\n|---|---|---|---|")
+        for t in state.get("tracker_log", []):
+            res = "error" if t["error"] else "changed" if t["changed"] else "unchanged"
+            L.append(f"| {_md(t['url'], 70)} | {t['tracker']} | {res} | {_md('; '.join(t.get('findings') or []) or '-', 90)} |")
+        L.append(f"\n_Every re-read is logged in `{rt.p.forced}`; new editions found are handled as in a normal run (see tracker findings below)._\n")
 
     al = state.get("alerts", [])
     if al:
@@ -1299,10 +1383,10 @@ def list_local(settings: Settings) -> None:
 
 def status(settings: Settings) -> None:
     p = Paths(settings.home)
-    print(f"{'document':18} {'kind':5} {'versions':>8} {'last changed':21} {'err':>3}  url")
+    print(f"{'document':18} {'kind':5} {'versions':>8} {'last changed':21} {'forced':>10} {'err':>3}  url")
     for d in sorted(p.docs.glob("*/state.json")):
         st = DocState(**read_json(d, {}))
-        print(f"{d.parent.name:18} {st.content_kind:5} {st.versions:8} {st.last_changed:21} {st.consecutive_errors:3}  {st.url}")
+        print(f"{d.parent.name:18} {st.content_kind:5} {st.versions:8} {st.last_changed:21} {st.last_forced[:10] or '-':>10} {st.consecutive_errors:3}  {st.url}")
     raw = {n: read_json(Path(getattr(settings, n)), {}) for n in ("standards", "reports")}
     print(f"\n{'entry':14} {'status':17} {'latest available':34} staged")
     for n in ("standards", "reports"):
@@ -1351,6 +1435,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
+    r.add_argument("--force", action="store_true", help="forced update: re-read every tracking page and source document directly "
+                   "(no conditional requests, no \"unchanged\" short-cut), rebuild the KGs even if nothing changed, pick up "
+                   "the latest edition if one is available, and log/report it all (logs/forced.jsonl). Combine with --only to limit it")
     d = sub.add_parser("daemon", parents=[common], help="simple foreground loop: run every day (the full daemon with "
                        "catch-up, retries, status and systemd support is src/kg_daemon.py)")
     d.add_argument("--at", default="06:00", help="local time HH:MM")
@@ -1376,7 +1463,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                  ollama_host=a.ollama_host, llm=a.llm, min_interval=a.min_interval,
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
-                 only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False))
+                 only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
+                 force=getattr(a, "force", False))
     if a.cmd == "run":
         st = run_once(s)
         print(st["report"] if s.dry_run else f"report appended to {Paths(s.home).report}\n{st['summary']}")
