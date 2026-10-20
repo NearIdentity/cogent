@@ -100,6 +100,9 @@ class DocState(BaseModel):
     last_error: str = ""
     identities: dict[str, Optional[str]] = Field(default_factory=dict)  # "ASCE 43" -> "19" (as stated in the text)
     ocr_pages: list[int] = Field(default_factory=list)                  # pages read by OCR (no text layer)
+    last_forced: str = ""                                               # last forced (unconditional) re-read
+    forced_runs: int = 0
+    last_forced_result: str = ""                                        # created | updated | refreshed | error
 
 
 class TrackerState(BaseModel):
@@ -115,6 +118,8 @@ class TrackerState(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     consecutive_errors: int = 0
     last_error: str = ""
+    last_forced: str = ""                      # last forced (unconditional) re-read
+    forced_runs: int = 0
 
 
 class Finding(BaseModel):
@@ -154,15 +159,18 @@ class DocAction(BaseModel):
 
     url: str
     entries: list[str]
-    action: Literal["created", "updated", "unchanged", "error", "skipped"]
+    action: Literal["created", "updated", "unchanged", "refreshed", "error", "skipped"]   # refreshed = forced re-read, nothing changed
     detail: str = ""
     diff: dict[str, Any] = Field(default_factory=dict)
     archived: Optional[str] = None
+    forced: bool = False                       # the run was a forced update
+    purged: dict[str, Any] = Field(default_factory=dict)   # stale asset files removed by a forced re-read {files, bytes, dirs, names}
+    shas: list[str] = Field(default_factory=list)   # [text sha before, after] (12 chars) for forced re-reads
 
 
 class EntryAction(BaseModel):
     entry: str
-    action: Literal["created", "rebuilt", "unchanged", "error"]
+    action: Literal["created", "rebuilt", "unchanged", "refreshed", "error"]
     detail: str = ""
     archived: Optional[str] = None
 

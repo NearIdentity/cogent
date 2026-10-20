@@ -63,3 +63,12 @@ makes every option below safe to use; they differ in *who notices that something
    `restart: unless-stopped`). Do not combine it with the timer or cron: pick one scheduler.
 
 Whatever you choose, the overlap lock (`<home>/.lock`) and the idempotent run mean a double trigger costs time, not data.
+
+## Forced updates
+
+`kg_agent.py run --force` re-reads every source unconditionally (see the README, "Forced update"). It is meant as a one-off
+(after changing the parser, or to audit that nothing was missed), not for the schedule: running `--force` every day
+re-downloads every document each time. A one-off forced run next to a daemon is fine (the agent's run lock keeps the two apart).
+To force one scheduled run, pass the flag through the daemon, `kg_daemon.py start … -- --force`, and restart it without it afterwards.
+Forced re-reads are logged in `<home>/logs/forced.jsonl` and reported in `logs/report.md`.
+A forced run also purges stale asset files and archives orphaned staging data (tar.gz under `archive/orphans/`, tracked in `state/orphans.json`); `--no-prune` turns that off.

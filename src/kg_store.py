@@ -185,7 +185,8 @@ class Store:
                 "fetched_from": st.get("fetch_url") or d["url"],
                 "first_seen": st.get("first_seen"), "last_checked": st.get("last_checked"),
                 "last_changed": st.get("last_changed"), "kg_built": st.get("kg_built"),
-                "kg_versions": st.get("versions"), "nodes": st.get("kg_nodes"), "edges": st.get("kg_edges"),
+                "kg_versions": st.get("versions"), "last_forced_reread": st.get("last_forced") or None,
+                "forced_rereads": st.get("forced_runs", 0), "last_forced_result": st.get("last_forced_result") or None, "nodes": st.get("kg_nodes"), "edges": st.get("kg_edges"),
                 "editions_stated_in_text": {k: v for k, v in (st.get("identities") or {}).items() if v},
                 "ocr_pages": st.get("ocr_pages") or [], "consecutive_errors": st.get("consecutive_errors", 0),
                 "last_error": st.get("last_error") or None, "text_sha": (st.get("text_sha") or "")[:12]})
@@ -254,6 +255,17 @@ class Store:
                     out.append(note)
         return out
 
+    def last_forced_run(self) -> Optional[dict[str, Any]]:
+        """The most recent forced-update run record from logs/forced.jsonl (None if there was none)."""
+        try:
+            for line in reversed((self.home / "logs" / "forced.jsonl").read_text(encoding="utf-8").strip().splitlines()):
+                rec = json.loads(line)
+                if rec.get("kind") == "run":
+                    return {"run_id": rec.get("run_id"), "ts": rec.get("ts"), "summary": rec.get("summary")}
+        except (OSError, ValueError):
+            pass
+        return None
+
     def overview(self) -> dict[str, Any]:
         cat = self.catalog()
         by_status: dict[str, int] = {}
@@ -262,7 +274,7 @@ class Store:
         run = self.last_run()
         return {"entries": len(cat), "with_graph": sum(r["has_graph"] for r in cat),
                 "version_status_counts": by_status, "open_warnings": sum(1 for a in self.alerts() if a.get("severity") == "warning"),
-                "agent_last_run": (run or {}).get("finished"), "agent_last_run_summary": (run or {}).get("summary"),
+                "agent_last_run": (run or {}).get("finished"), "agent_last_forced_run": self.last_forced_run(), "agent_last_run_summary": (run or {}).get("summary"),
                 "disclaimers": GENERAL_DISCLAIMERS}
 
     # -------------------------------------------------------------- graph views
