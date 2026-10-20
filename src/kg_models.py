@@ -164,6 +164,7 @@ class DocAction(BaseModel):
     diff: dict[str, Any] = Field(default_factory=dict)
     archived: Optional[str] = None
     forced: bool = False                       # the run was a forced update
+    purged: dict[str, Any] = Field(default_factory=dict)   # stale asset files removed by a forced re-read {files, bytes, dirs, names}
     shas: list[str] = Field(default_factory=list)   # [text sha before, after] (12 chars) for forced re-reads
 
 

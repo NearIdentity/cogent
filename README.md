@@ -1,4 +1,4 @@
-# `cogent`: documents → knowledge graphs, kept up to date
+# `cogent`: Documents → Knowledge Graphs, kept up to date and served on demand
 
 `cogent` fetches and stages the contents of the regulatory and reporting frameworks a (hypothetical) licensing engineer in
 the nuclear-reactor space has to work with: 10 CFR, NRC regulatory guides, NEI guidance, DOE orders and standards, and
@@ -172,7 +172,7 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    configuration changes, document KGs created / updated (with diffs), entry KGs rebuilt, tracker findings, pending
    review, errors, trackers that keep failing. Optionally a local LLM (`--llm`) narrates the structured results at the top.
 
-Subcommands: `run [--dry-run] [--force]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
+Subcommands: `run [--dry-run] [--force [--no-prune]]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
 check a tracker against a live page), `status`. Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
 `--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
@@ -193,6 +193,25 @@ sources instead:
   archived. If the text changed, or the rebuilt KG differs (e.g. after a parser improvement), it is `updated` as in a normal
   run, the old KG is archived and the diff is recorded.
 
+Housekeeping done by a forced update (switch off with `--no-prune`):
+
+* **Stale asset files are purged.** After a document is re-exported, figure/table files that the new `manifest.json` no longer
+  lists are deleted, as are asset folders of an earlier fetch URL (e.g. an older eCFR date). Nothing is purged when
+  there is no trustworthy manifest. Counts and file names go to `logs/forced.jsonl` and the report.
+* **Orphans are archived, compressed.** Staged data that the configuration no longer references (a document whose URL is gone,
+  or the folder of an entry that was deleted) is written to `archive/orphans/<kind>_<id>_<run>.tar.gz`, the archive is
+  verified (file count), and only then is the folder removed from staging. Nothing is deleted if the archive fails.
+  Skipped, with a warning, when the run is limited by `--only`, when the configuration has validation errors or no entries, or with `--no-prune`.
+* **Tracking:** `state/orphans.json` records every orphan from the first run that sees it (`first_orphaned`, `runs`, `status`
+  `orphaned` → `archived`, archive path, size, SHA-256, file count, restore command). Normal runs only detect and report
+  them (section *Orphaned staging data*, `status` lists them); `forced.jsonl` has one `orphan` record per archive. Restore with
+  `tar -xzf archive/orphans/<file> -C <home>/staging/documents/` (entries: `-C <home>/staging/standards/` or `reports/`).
+
+Behaviour that is deliberately unchanged, with a warning in the report (*Forced-update warnings*) and in `forced.jsonl`
+(`kind: warning`): a **failed re-read keeps the previous KG** (the warning names its build date and says it may be out of date);
+entries **outside `--only` are not refreshed** (the warning says how many); `archive/` is never pruned by a forced update
+(it only gains new versions and `archive/orphans/`), and `local/` copies are only read.
+
 Scope it with `--only standard:22,report:1`; combine with `--dry-run` to see what would be re-read without writing
 anything. The flag applies to that run only (it is not sticky). Be considerate: it re-downloads every source once
 (`--min-interval` still spaces requests per host). For the daemon, `kg_daemon.py … -- --force` would force *every* scheduled
@@ -202,7 +221,7 @@ Logging and reporting of forced updates:
 
 | where | what |
 |---|---|
-| `logs/forced.jsonl` | one JSON line per re-read: `kind` = `document` (url, docid, entries, `result` created / updated / refreshed / error, text sha before → after, archive path), `tracker` (url, tracker, result, findings) and a closing `run` record with the summary; written only for forced runs and never in a dry run |
+| `logs/forced.jsonl` | one JSON line per re-read: `kind` = `document` (url, docid, entries, `result` created / updated / refreshed / error, text sha before → after, archive path, `assets_purged`), `tracker` (url, tracker, result, findings), `orphan` (archive path, size, sha256), `warning` and a closing `run` record with the summary; written only for forced runs and never in a dry run |
 | `logs/report.md` | the run header says **(FORCED UPDATE)**; a *Forced update* section lists every document (result, sha before → after, detail) and every tracking page (result, findings), plus the entry KGs rebuilt |
 | `logs/runs.jsonl` | the run summary carries `forced`, `docs_refreshed`, `entries_refreshed` |
 | `staging/documents/<id>/state.json`, `state/trackers.json` | `last_forced`, `forced_runs` (and `last_forced_result` for documents) per source |
@@ -217,7 +236,8 @@ staging/documents/<id>/{state.json,kg.json,assets/}    one per unique URL (asset
 staging/{standards,reports}/<n>/{kg.json,meta.json}    the KG of each entry
 archive/documents/<id>/<ts>_<sha>/   archive/entries/<key>/<ts>/    superseded versions
 local/{standards,reports}/<id>/      purchased copies you drop in (folders are created for paywalled entries)
-state/{trackers,identities,pending,alerts,config_hashes}.json       logs/{report.md,runs.jsonl,forced.jsonl}
+state/{trackers,identities,pending,alerts,config_hashes,orphans}.json       logs/{report.md,runs.jsonl,forced.jsonl}
+archive/orphans/<kind>_<id>_<run>.tar.gz    compressed orphaned staging data (forced updates)
 ```
 
 ## Paywalled documents (warnings)

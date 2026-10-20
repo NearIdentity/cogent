@@ -34,6 +34,7 @@ import logging
 import operator
 import os
 import shutil
+import tarfile
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -76,6 +77,7 @@ class Settings(BaseModel):
     keep_archive: int = 0               # versions kept per document (0 = keep all)
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
+    prune: bool = True                  # with force: also purge stale asset files and archive (compressed) orphaned staging data
     force: bool = False                 # forced update: re-read every source directly (no conditional requests,
                                         # no "unchanged" short-cut), rebuild the KGs, and log it all
 
@@ -94,6 +96,8 @@ class Paths:
         self.report = self.logs / "report.md"
         self.runs = self.logs / "runs.jsonl"
         self.forced = self.logs / "forced.jsonl"       # one line per source re-read by a forced update
+        self.orphans = self.state / "orphans.json"     # tracking of staged data no longer referenced by the configuration
+        self.orphan_archive = self.archive / "orphans"  # compressed (tar.gz) copies of orphaned staging data
         self.lock = self.home / ".lock"
 
     def doc(self, docid: str) -> Path:
@@ -130,6 +134,7 @@ class Runtime:
         self.alerts: dict[str, dict] = {}         # open alerts from earlier runs
         self.ctx = T.TrackerContext(min_interval=s.min_interval, ident_state=self.ident_state, force=s.force)
         self.ecfr_dates: dict[str, Optional[str]] = {}
+        self.config_errors: list[str] = []
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
 
     # -- persistence helpers (no-ops in dry-run) --------------------------------
@@ -251,6 +256,8 @@ class AgentState(TypedDict, total=False):
     alerts: list[dict]
     versions: list[dict]
     forced: bool
+    forced_warnings: Annotated[list[str], operator.add]
+    orphans: list[dict]
     report: str
     summary: dict
 
@@ -281,7 +288,12 @@ def make_nodes(rt: Runtime):
         for name, path in (("standards", s.standards), ("reports", s.reports)):
             rt.raw[name] = json.loads(Path(path).read_text(encoding="utf-8"))
         rt.entries, errs = parse_entries(rt.raw)
+        rt.config_errors = errs
         out["errors"] += [f"config validation: {e}" for e in errs]
+        if s.force and s.only:
+            out_of_scope = [e.key for e in rt.entries if not rt.selected(e)]
+            out["forced_warnings"] = [f"scope limited by --only ({', '.join(s.only)}): {len(out_of_scope)} other entr(ies) and their "
+                                      "documents were NOT refreshed; orphan archiving was skipped"]
 
         # detect manual edits since the previous run
         hashes = read_json(p.state / "config_hashes.json", {})
@@ -408,6 +420,12 @@ def make_nodes(rt: Runtime):
             if s.force:
                 act.forced = True
                 _stamp_forced(rt, act)
+                if act.action == "error":
+                    prev = read_json(rt.p.doc(docid_of(url)) / "state.json", {}).get("kg_built") if (rt.p.doc(docid_of(url)) / "kg.json").exists() else None
+                    msg = (f"forced re-read FAILED for {url}: {act.detail}; " +
+                           (f"the previous KG (built {prev}) was kept and may be out of date" if prev else "no KG exists for it yet"))
+                    out.setdefault("forced_warnings", []).append(msg)
+                    _log_forced(rt, {"kind": "warning", "url": url, "entries": keys, "detail": msg})
             if act.action == "error":
                 out["errors"].append(f"document {url}: {act.detail}")
             out["doc_actions"].append(act.model_dump())
@@ -500,13 +518,8 @@ def make_nodes(rt: Runtime):
         rt.write_json(p.state / "trackers.json", {u: t.model_dump() for u, t in rt.tracker_state.items()})
         rt.write_json(p.state / "identities.json", rt.ident_state)
         rt.write_json(p.state / "pending.json", rt.pending)
+        state["orphans"] = _track_orphans(rt, state)
         summary = summarize(state)
-        live = {docid_of(u) for e in rt.entries for u, _ in entry_sources(rt, e)}
-        orphans = [d.parent.name for d in p.docs.glob("*/state.json") if d.parent.name not in live]
-        if orphans:
-            state.setdefault("notes", []).append(
-                f"{len(orphans)} staged document(s) are no longer referenced by the configuration "
-                f"(kept in staging/documents for reference): {', '.join(orphans[:6])}")
         narrative = narrate(rt, state, summary)
         text = render_report(rt, state, summary, narrative)
         rt.append(p.report, text)
@@ -704,7 +717,129 @@ def _stamp_forced(rt: Runtime, act: DocAction) -> None:
         st.last_forced, st.forced_runs, st.last_forced_result = utcnow(), st.forced_runs + 1, act.action
         rt.write_json(ddir / "state.json", st.model_dump())
     _log_forced(rt, {"kind": "document", "url": act.url, "docid": docid_of(act.url), "entries": act.entries, "result": act.action,
-                     "detail": act.detail, "text_sha_before_after": act.shas, "archived": act.archived})
+                     "detail": act.detail, "text_sha_before_after": act.shas, "archived": act.archived,
+                     **({"assets_purged": act.purged} if act.purged and act.purged.get("files") else {})})
+
+
+def _tree_stats(path: Path) -> tuple[int, int]:
+    files = [f for f in path.rglob("*") if f.is_file()]
+    return len(files), sum(f.stat().st_size for f in files)
+
+
+def _prune_assets(assets_root: Path, keep: Path) -> dict[str, Any]:
+    """Purge stale exported assets of one document after its assets were re-exported into ``keep``:
+    files in ``keep/figures|tables`` that the new manifest does not list, and whole sibling folders
+    (assets of an earlier fetch URL, e.g. an older eCFR date). Returns what was removed."""
+    out: dict[str, Any] = {"files": 0, "bytes": 0, "dirs": 0, "names": []}
+    man = read_json(keep / "manifest.json")
+    if man is None or not assets_root.is_dir():
+        return out                                            # nothing trustworthy to compare with: purge nothing
+    wanted = {a["file"] for a in man.get("assets", [])}
+    for sub in ("figures", "tables"):
+        for f in sorted((keep / sub).glob("*")) if (keep / sub).is_dir() else []:
+            if f.is_file() and f"{sub}/{f.name}" not in wanted:
+                out["files"] += 1
+                out["bytes"] += f.stat().st_size
+                out["names"].append(f"{keep.name[:8]}/{sub}/{f.name}")
+                f.unlink()
+    for d in sorted(assets_root.iterdir()):
+        if d.is_dir() and d.resolve() != keep.resolve():
+            n, b = _tree_stats(d)
+            out["files"], out["bytes"], out["dirs"] = out["files"] + n, out["bytes"] + b, out["dirs"] + 1
+            out["names"].append(f"{d.name[:8]}/ ({n} files)")
+            shutil.rmtree(d)
+    out["names"] = out["names"][:20]
+    return out
+
+
+def _find_orphans(rt: Runtime) -> list[dict[str, Any]]:
+    """Staged data the configuration no longer references: document folders (by URL) and entry folders (by id)."""
+    p = rt.p
+    live_docs = {docid_of(u) for e in rt.entries for u, _ in entry_sources(rt, e)}
+    live_entries = {e.key for e in rt.entries}
+    out = []
+    for d in sorted(p.docs.glob("*/state.json")):
+        if d.parent.name not in live_docs:
+            st = read_json(d, {})
+            out.append({"kind": "document", "id": d.parent.name, "label": st.get("url", ""), "path": d.parent,
+                        "restore_into": "staging/documents"})
+    for kind in ("standard", "report"):
+        base = p.home / "staging" / f"{kind}s"
+        for d in sorted(base.glob("*")) if base.is_dir() else []:
+            if d.is_dir() and d.name.isdigit() and f"{kind}:{d.name}" not in live_entries:
+                out.append({"kind": "entry", "id": f"{kind}:{d.name}", "label": read_json(d / "meta.json", {}).get("name", ""),
+                            "path": d, "restore_into": f"staging/{kind}s"})
+    return out
+
+
+def _archive_orphan(rt: Runtime, o: dict[str, Any]) -> dict[str, Any]:
+    """tar.gz one orphan under archive/orphans/, verify the archive, only then remove it from staging."""
+    src: Path = o["path"]
+    n_files, n_bytes = _tree_stats(src)
+    name = f"{o['kind']}_{o['id'].replace(':', '_')}_{rt.run_id}.tar.gz"
+    dest = rt.p.orphan_archive / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while dest.exists():                                        # never overwrite an earlier archive
+        n += 1
+        name = f"{o['kind']}_{o['id'].replace(':', '_')}_{rt.run_id}_{n}.tar.gz"
+        dest = rt.p.orphan_archive / name
+    with tarfile.open(dest, "w:gz") as tf:
+        tf.add(src, arcname=src.name)
+    with tarfile.open(dest, "r:gz") as tf:                       # verify before deleting anything
+        members = [m for m in tf.getmembers() if m.isfile()]
+    if len(members) != n_files:
+        dest.unlink()
+        raise RuntimeError(f"archive verification failed ({len(members)} of {n_files} files)")
+    sha = hashlib.sha256(dest.read_bytes()).hexdigest()
+    shutil.rmtree(src)
+    return {"archive": f"archive/orphans/{name}", "archive_bytes": dest.stat().st_size, "archive_sha256": sha,
+            "files": n_files, "original_bytes": n_bytes,
+            "restore": f"tar -xzf {rt.p.home}/archive/orphans/{name} -C {rt.p.home}/{o['restore_into']}/"}
+
+
+def _track_orphans(rt: Runtime, state: AgentState) -> list[dict[str, Any]]:
+    """Detect orphans, record them in state/orphans.json (first seen, status, archive) and, in a forced run, archive
+    them (compressed) and remove them from staging. Returns this run's orphan records for the report."""
+    s = rt.s
+    track = read_json(rt.p.orphans, {})
+    found = _find_orphans(rt)
+    now = utcnow()
+    live_keys = {f"{o['kind']}:{o['id']}" for o in found}
+    for k in [k for k, v in track.items() if v["status"] == "orphaned" and k not in live_keys]:
+        del track[k]                                              # referenced again (or removed by hand)
+    archive_ok = s.force and s.prune and not rt.dry
+    why = ""
+    if s.force and s.prune and s.only:
+        why = "orphan archiving skipped: the run is limited by --only"
+    elif s.force and s.prune and (rt.config_errors or not rt.entries):
+        why = "orphan archiving skipped: the configuration has validation errors or no entries"
+    elif s.force and not s.prune:
+        why = "orphan archiving skipped: --no-prune"
+    if why:
+        archive_ok = False
+    out = []
+    for o in found:
+        key = f"{o['kind']}:{o['id']}"
+        rec = track.get(key) or {"kind": o["kind"], "id": o["id"], "label": o["label"], "first_orphaned": now, "runs": 0}
+        rec.update(label=o["label"] or rec.get("label", ""), last_seen=now, runs=rec["runs"] + 1, status="orphaned")
+        if archive_ok:
+            try:
+                rec.update(_archive_orphan(rt, o), status="archived", archived_at=now, archived_run=rt.run_id)
+            except Exception as exc:                              # never lose data: staging is untouched on failure
+                log.exception("orphan archive failed for %s", key)
+                rec["last_error"] = f"{type(exc).__name__}: {exc}"
+                state.setdefault("errors", []).append(f"orphan {key}: {rec['last_error']}")
+        track[key] = rec
+        out.append({**rec, "skipped_reason": why, "archived_now": rec["status"] == "archived" and rec.get("archived_run") == rt.run_id})
+        if s.force:
+            _log_forced(rt, {"kind": "orphan", "orphan_kind": o["kind"], "id": o["id"], "label": rec["label"],
+                             "result": rec["status"], "detail": why or rec.get("last_error", ""),
+                             **{k: rec[k] for k in ("archive", "archive_bytes", "archive_sha256", "files") if k in rec}})
+    if why and found:
+        state.setdefault("forced_warnings", []).append(f"{len(found)} orphaned staging item(s) found; {why}")
+    rt.write_json(rt.p.orphans, track)
+    return out
 
 
 def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
@@ -779,14 +914,17 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     rt.write_json(ddir / "state.json", st.model_dump())
     _prune_archive(rt, "documents", docid)
     ocr = f"; OCR on page(s) {st.ocr_pages} ({g.graph.get('ocr_engine')})" if st.ocr_pages else ""
+    purged = {}
+    if forced and s.assets and s.prune and g.graph.get("assets_dir"):     # purge assets the new export no longer produced
+        purged = _prune_assets(ddir / "assets", Path(g.graph["assets_dir"]))
     if forced and old is not None and not changed_kg:
-        return DocAction(url=url, entries=keys, action="refreshed", forced=True, shas=[old_sha[:12], text_sha[:12]], diff=diff,
+        return DocAction(url=url, entries=keys, action="refreshed", forced=True, shas=[old_sha[:12], text_sha[:12]], diff=diff, purged=purged,
                          detail=f"forced re-read: content identical; KG rebuilt ({g.number_of_nodes()} nodes / {g.number_of_edges()} edges){ocr}")
     why = ""
     if forced and old is not None:
         why = "forced re-read: " + ("source text changed; " if old_sha != text_sha else "text identical but the rebuilt KG differs; ")
     return DocAction(url=url, entries=keys, action="created" if old is None else "updated", forced=forced,
-                     shas=[old_sha[:12], text_sha[:12]] if forced else [],
+                     shas=[old_sha[:12], text_sha[:12]] if forced else [], purged=purged,
                      detail=f"{why}{kind}, {g.number_of_nodes()} nodes / {g.number_of_edges()} edges{ocr}",
                      diff=diff, archived=archived)
 
@@ -1069,6 +1207,10 @@ def summarize(state: AgentState) -> dict[str, Any]:
         "docs_unchanged": count(da, "action", "unchanged"), "docs_error": count(da, "action", "error"),
         "forced": bool(state.get("forced")), "docs_refreshed": count(da, "action", "refreshed"),
         "entries_refreshed": sum(1 for x in state.get("entry_actions", []) if x["action"] == "refreshed"),
+        "assets_purged_files": sum((x.get("purged") or {}).get("files", 0) for x in da),
+        "assets_purged_bytes": sum((x.get("purged") or {}).get("bytes", 0) for x in da),
+        "orphans": len(state.get("orphans", [])), "orphans_archived": sum(1 for o in state.get("orphans", []) if o.get("archived_now")),
+        "forced_warnings": len(state.get("forced_warnings", [])),
         "entries_rebuilt": sum(1 for x in state.get("entry_actions", []) if x["action"] in ("rebuilt", "created")),
         "trackers": len(state.get("tracker_log", [])),
         "trackers_changed": sum(1 for t in state.get("tracker_log", []) if t["changed"]),
@@ -1146,7 +1288,31 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
         for t in state.get("tracker_log", []):
             res = "error" if t["error"] else "changed" if t["changed"] else "unchanged"
             L.append(f"| {_md(t['url'], 70)} | {t['tracker']} | {res} | {_md('; '.join(t.get('findings') or []) or '-', 90)} |")
-        L.append(f"\n_Every re-read is logged in `{rt.p.forced}`; new editions found are handled as in a normal run (see tracker findings below)._\n")
+        pg = [a for a in fd if (a.get("purged") or {}).get("files")]
+        if pg:
+            L.append(f"\nStale asset files purged: {summary['assets_purged_files']} file(s), {summary['assets_purged_bytes']:,} bytes "
+                     f"(" + "; ".join(f"{_md(a['url'], 40)}: {a['purged']['files']} file(s)" for a in pg) + ").")
+        fw = state.get("forced_warnings", [])
+        if fw:
+            L.append("\n**Forced-update warnings**\n")
+            L += [f"- **WARNING** {_md(w, 260)}" for w in fw]
+        L.append(f"\n_Every re-read is logged in `{rt.p.forced}`; new editions found are handled as in a normal run (see tracker findings below). "
+                 "Failed re-reads keep the previous KG; entries outside `--only`, `archive/` (apart from new versions and `archive/orphans/`) "
+                 "and `local/` are not modified._\n")
+    orph = state.get("orphans", [])
+    if orph:
+        arch = [o for o in orph if o["status"] == "archived"]
+        L.append(f"### Orphaned staging data ({len(orph)}: no longer referenced by the configuration)\n")
+        L.append("| kind | id | label | first orphaned | status | archive |\n|---|---|---|---|---|---|")
+        for o in orph:
+            ar = f"`{o['archive']}` ({o['archive_bytes']:,} B, sha256 `{o['archive_sha256'][:12]}`)" if o.get("archive") else (o["skipped_reason"] or "-")
+            L.append(f"| {o['kind']} | {_md(o['id'], 30)} | {_md(o['label'], 50)} | {o['first_orphaned'][:10]} | {o['status']} | {ar} |")
+        if not rt.s.force:
+            L.append("\n_Still in staging. `run --force` archives them (compressed, under `archive/orphans/`) and removes them from staging; "
+                     "tracked in `state/orphans.json`._")
+        elif arch:
+            L.append("\n_Restore with the `restore` command recorded in `state/orphans.json` (tar -xzf … -C staging/…)._")
+        L.append("")
 
     al = state.get("alerts", [])
     if al:
@@ -1399,6 +1565,11 @@ def status(settings: Settings) -> None:
             lat = ", ".join(l["label"] for l in vt["latest"]) or "-"
             eds = ", ".join(fmt_edition(k, v["edition"]) for k, v in vt["staged"].get("editions", {}).items() if v.get("edition")) or "-"
             print(f"{key:14} {vt['status']:17} {lat[:34]:34} {eds} ({len(vt['staged']['documents'])} doc)")
+    orph = read_json(p.orphans, {})
+    if orph:
+        print("\nOrphaned staging data (tracked in state/orphans.json):")
+        for k, o in orph.items():
+            print(f"  {o['status']:9} {k}  first orphaned {o['first_orphaned'][:10]}" + (f"  -> {o['archive']}" if o.get("archive") else ""))
     alerts = read_json(p.state / "alerts.json", {})
     if alerts:
         print("\nOpen alerts:")
@@ -1435,6 +1606,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
+    r.add_argument("--no-prune", action="store_true", help="with --force: do not purge stale asset files or archive orphaned staging data")
     r.add_argument("--force", action="store_true", help="forced update: re-read every tracking page and source document directly "
                    "(no conditional requests, no \"unchanged\" short-cut), rebuild the KGs even if nothing changed, pick up "
                    "the latest edition if one is available, and log/report it all (logs/forced.jsonl). Combine with --only to limit it")
@@ -1464,7 +1636,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
-                 force=getattr(a, "force", False))
+                 force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False))
     if a.cmd == "run":
         st = run_once(s)
         print(st["report"] if s.dry_run else f"report appended to {Paths(s.home).report}\n{st['summary']}")

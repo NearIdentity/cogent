@@ -413,3 +413,131 @@ def test_force_flag_on_the_command_line(env, capsys):
     assert "'forced': True" in out and "'docs_refreshed': 3" in out
     kg_agent.main(["run", *base])                                   # the flag is per run, not sticky
     assert "'forced': False" in capsys.readouterr().out
+
+
+def test_prune_assets_keeps_listed_files_only(tmp_path):
+    root = tmp_path / "assets"
+    keep = root / ("a" * 64)
+    (keep / "figures").mkdir(parents=True)
+    (keep / "tables").mkdir()
+    (keep / "figures" / "fig1.png").write_bytes(b"1" * 10)
+    (keep / "figures" / "stale.png").write_bytes(b"2" * 20)
+    (keep / "tables" / "t1.csv").write_text("a,b\n")
+    old = root / ("b" * 64)
+    (old / "figures").mkdir(parents=True)
+    (old / "figures" / "x.png").write_bytes(b"3" * 5)
+    (keep / "manifest.json").write_text(json.dumps({"assets": [{"file": "figures/fig1.png"}, {"file": "tables/t1.csv"}]}))
+    out = kg_agent._prune_assets(root, keep)
+    assert out["files"] == 2 and out["bytes"] == 25 and out["dirs"] == 1
+    assert (keep / "figures" / "fig1.png").exists() and (keep / "tables" / "t1.csv").exists()
+    assert not (keep / "figures" / "stale.png").exists() and not old.exists()
+    (keep / "manifest.json").unlink()                                  # no trustworthy manifest -> purge nothing
+    (keep / "figures" / "stale2.png").write_bytes(b"x")
+    assert kg_agent._prune_assets(root, keep)["files"] == 0 and (keep / "figures" / "stale2.png").exists()
+
+
+def test_forced_update_purges_stale_assets_and_archives_orphans(env):
+    import tarfile
+    site, s, sp, rp = env
+    home = s.home
+    kg_agent.run_once(s)
+    doc3 = kg_agent.docid_of(next(x for x in json.loads(sp.read_text())["standards"] if x["id"] == 3)["links"][0]["url"])
+    doc2 = kg_agent.docid_of(next(x for x in json.loads(sp.read_text())["standards"] if x["id"] == 2)["links"][0]["url"])
+    # stale assets next to a live document, and an old fetch-URL folder
+    a2 = next((home / "staging/documents" / doc2 / "assets").iterdir())
+    (a2 / "figures").mkdir(exist_ok=True)
+    (a2 / "figures" / "stale.png").write_bytes(b"x" * 30)
+    older = home / "staging/documents" / doc2 / "assets" / ("e" * 64) / "figures"
+    older.mkdir(parents=True)
+    (older / "old.png").write_bytes(b"y" * 40)
+    # the configuration drops standard 3 -> its document and entry KG become orphans
+    cfg = json.loads(sp.read_text())
+    cfg["standards"] = [x for x in cfg["standards"] if x["id"] != 3]
+    sp.write_text(json.dumps(cfg, indent=2))
+    rcfg = json.loads(rp.read_text())
+    for r in rcfg["reports"]:
+        r["standards_to_comply_with_ids"] = [i for i in r["standards_to_comply_with_ids"] if i != 3]
+    rp.write_text(json.dumps(rcfg, indent=2))
+
+    # normal run: detected and tracked, left in place; stale assets are not touched
+    st = kg_agent.run_once(s)
+    track = json.loads((home / "state/orphans.json").read_text())
+    assert {k: v["status"] for k, v in track.items()} == {f"document:{doc3}": "orphaned", "entry:standard:3": "orphaned"}
+    assert (home / "staging/documents" / doc3 / "kg.json").exists() and (a2 / "figures" / "stale.png").exists()
+    assert "### Orphaned staging data (2" in st["report"] and "Still in staging" in st["report"] and st["summary"]["orphans"] == 2
+    assert not (home / "archive/orphans").exists()
+
+    # forced + --only: scope warning, nothing archived, nothing outside scope refreshed
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True, "only": ["standard:2"]}))
+    assert any("scope limited by --only" in w for w in st["forced_warnings"]) and any("orphan archiving skipped" in w for w in st["forced_warnings"])
+    assert (home / "staging/documents" / doc3 / "kg.json").exists() and st["summary"]["docs_refreshed"] == 1
+    assert "Forced-update warnings" in st["report"]
+    assert st["summary"]["assets_purged_files"] == 2 and not (a2 / "figures" / "stale.png").exists()   # in-scope document is pruned
+    (a2 / "figures" / "stale.png").write_bytes(b"x" * 30)                                               # put the stale files back
+    older.mkdir(parents=True)
+    (older / "old.png").write_bytes(b"y" * 40)
+
+    # forced + --no-prune: neither purge nor archive
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True, "prune": False}))
+    assert (a2 / "figures" / "stale.png").exists() and (home / "staging/documents" / doc3).exists()
+    assert any("--no-prune" in w for w in st["forced_warnings"])
+
+    # forced: stale assets purged, orphans archived (compressed, verified) and removed from staging
+    f = kg_agent.Settings(**{**s.model_dump(), "force": True})
+    st = kg_agent.run_once(f)
+    sm = st["summary"]
+    assert sm["assets_purged_files"] == 2 and sm["assets_purged_bytes"] == 70 and sm["orphans_archived"] == 2, st["report"]
+    assert not (a2 / "figures" / "stale.png").exists() and not older.parent.exists()
+    assert not (home / "staging/documents" / doc3).exists() and not (home / "staging/standards/3").exists()
+    track = json.loads((home / "state/orphans.json").read_text())
+    rec = track[f"document:{doc3}"]
+    assert rec["status"] == "archived" and rec["archive"].startswith("archive/orphans/document_") and rec["archive"].endswith(".tar.gz")
+    import hashlib
+    arc = home / rec["archive"]
+    assert hashlib.sha256(arc.read_bytes()).hexdigest() == rec["archive_sha256"] and rec["archive_bytes"] == arc.stat().st_size
+    with tarfile.open(arc) as tf:
+        assert any(n.endswith("kg.json") for n in tf.getnames())
+    recs = [json.loads(l) for l in (home / "logs/forced.jsonl").read_text().splitlines()]
+    last = max(i for i, r in enumerate(recs) if r["kind"] == "run")
+    prev = max(i for i, r in enumerate(recs[:last]) if r["kind"] == "run")
+    assert {r["result"] for r in recs[prev + 1:last] if r["kind"] == "orphan"} == {"archived"}
+    assert any(r["kind"] == "document" and r.get("assets_purged", {}).get("files") == 2 for r in recs)
+    assert "Stale asset files purged: 2 file(s)" in st["report"] and "archive/orphans/" in st["report"]
+    # restore from the archive brings the document back
+    with tarfile.open(arc) as tf:
+        tf.extractall(home / "staging/documents")
+    assert (home / "staging/documents" / doc3 / "kg.json").exists()
+    # the restored folder is an orphan again; archiving it a second time is tracked as a new archive of the same item
+    kg_agent.run_once(f)
+    assert not (home / "staging/documents" / doc3).exists()
+
+
+def test_forced_failed_fetch_keeps_previous_kg_with_warning(env):
+    site, s, sp, rp = env
+    home = s.home
+    kg_agent.run_once(s)
+    kg_file = next(home.glob("staging/standards/2/kg.json"))
+    before = kg_file.read_text()
+    orig = site.route
+    site.route = lambda path, q: None if path.endswith("rg1233_rev0.pdf") else orig(path, q)      # the source now 404s
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
+    assert kg_file.read_text() == before and st["summary"]["docs_error"] == 1
+    w = [x for x in st["forced_warnings"] if "rg1233_rev0.pdf" in x]
+    assert w and "FAILED" in w[0] and "previous KG" in w[0] and "may be out of date" in w[0]
+    assert "**WARNING** forced re-read FAILED" in st["report"]
+    recs = [json.loads(l) for l in (home / "logs/forced.jsonl").read_text().splitlines()]
+    assert any(r["kind"] == "warning" for r in recs) and any(r["kind"] == "document" and r["result"] == "error" for r in recs)
+    d = next(p for p in home.glob("staging/documents/*/state.json") if "rg1233_rev0" in p.read_text())
+    assert json.loads(d.read_text())["last_forced_result"] == "error"
+
+
+def test_orphans_not_archived_when_configuration_is_invalid(env):
+    site, s, sp, rp = env
+    kg_agent.run_once(s)
+    cfg = json.loads(sp.read_text())
+    cfg["standards"].append({"id": 9})                              # invalid entry (no "document")
+    cfg["standards"] = [x for x in cfg["standards"] if x["id"] != 3]
+    sp.write_text(json.dumps(cfg))
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
+    assert any("validation errors" in w for w in st["forced_warnings"]) and not (s.home / "archive/orphans").exists()
+    assert any(o["status"] == "orphaned" for o in json.loads((s.home / "state/orphans.json").read_text()).values())
