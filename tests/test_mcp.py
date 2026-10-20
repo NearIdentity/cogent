@@ -405,3 +405,14 @@ def test_wildcard_public_host_disables_host_check(home):
             r = c.post("/mcp", json=init, headers=hdr)
             assert (r.status_code == 200) == want_ok, (hosts, r.status_code)
             assert c.post("/mcp", json=init, headers={**hdr, "Authorization": "Bearer nope"}).status_code == 401
+
+
+def test_unconvertible_figure_gives_a_clear_error(assets_home):
+    home, sp, rp = assets_home
+    a = home / "staging/documents/aaaa1111/assets/h1"
+    (a / "figures" / "f0077.avif").write_bytes(b"\x00\x00\x00\x1cftypavif" + b"\x00" * 20)
+    m = json.loads((a / "manifest.json").read_text())
+    m["assets"].append({"id": "f0077", "kind": "figure", "page": 1, "caption": "x", "file": "figures/f0077.avif"})
+    (a / "manifest.json").write_text(json.dumps(m))
+    with pytest.raises(kg_store.NotFound, match="cannot be converted"):
+        kg_store.Store(home, sp, rp).figure("standard:1", "aaaa1111/f0077")

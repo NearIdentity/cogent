@@ -784,7 +784,9 @@ def load_html(path: str) -> list[Element]:
 
 DEFAULT_ASSETS_DIR = "kg_assets"  # override via out_dir= or $KG_ASSETS_DIR
 _IMG_MAGIC = ((b"\x89PNG", ".png"), (b"\xff\xd8", ".jpg"), (b"GIF8", ".gif"),
-              (b"BM", ".bmp"), (b"II*\x00", ".tif"), (b"MM\x00*", ".tif"))
+              (b"BM", ".bmp"), (b"II*\x00", ".tif"), (b"MM\x00*", ".tif"),
+              (b"\x00\x00\x00\x0cjP  ", ".jp2"), (b"\xff\x4f\xff\x51", ".j2k"),   # JPEG 2000 (file / codestream)
+              (b"\x00\x00\x01\x00", ".ico"), (b"\x97JB2\r\n\x1a\n", ".jb2"))
 
 
 def _slug(text: str, n: int = 40) -> str:
@@ -792,15 +794,29 @@ def _slug(text: str, n: int = 40) -> str:
 
 
 def _image_ext(data: bytes) -> str:
+    """File extension for image bytes by content ('' when the bytes are not an image we can identify:
+    e.g. an HTML error page or compressed bytes returned instead of the picture)."""
     for magic, ext in _IMG_MAGIC:
         if data.startswith(magic):
             return ext
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
-    head = data[:512].lstrip().lower()
-    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in data[:2048].lower()):
+    if data[4:12] in (b"ftypavif", b"ftypavis"):
+        return ".avif"
+    if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftypmsf1"):
+        return ".heic"
+    head = data[:2048].lstrip(b"\xef\xbb\xbf \t\r\n").lower()          # tolerate a BOM and leading whitespace
+    if head.startswith((b"<!doctype html", b"<html")):
+        return ""
+    if b"<svg" in head and (head.startswith((b"<svg", b"<?xml", b"<!--", b"<!doctype svg")) or b"<!doctype svg" in head):
         return ".svg"
-    return ".bin"
+    try:                                          # anything else Pillow can identify (e.g. PPM, PCX, ICNS ...)
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(data)) as im:
+            return "." + (im.format or "").lower().replace("jpeg", "jpg") if im.format else ""
+    except Exception:
+        return ""
 
 
 def _figure_bytes(e: Element) -> Optional[bytes]:
@@ -823,13 +839,25 @@ def _figure_bytes(e: Element) -> Optional[bytes]:
 
 
 def _to_png(data: bytes) -> Optional[bytes]:
-    """Convert a raster image to PNG with PyMuPDF (None if unsupported)."""
+    """Convert an image to PNG (None if no converter can read it): PyMuPDF first, then Pillow (ICO, WebP, AVIF
+    with plugin, ...)."""
     try:
         import pymupdf
         pix = pymupdf.Pixmap(data)
         if pix.colorspace is not None and pix.colorspace.n > 3:  # CMYK -> RGB
             pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
         return pix.tobytes("png")
+    except Exception:
+        pass
+    try:
+        import io
+
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as im:
+            im.load()
+            out = io.BytesIO()
+            im.convert("RGBA" if "A" in im.getbands() or im.mode == "P" else "RGB").save(out, "PNG")
+            return out.getvalue()
     except Exception:
         return None
 
@@ -842,10 +870,12 @@ def export_assets(elements: list[Element], source: str, out_dir: Optional[str] =
     ``.../tables/<id>_p<page>_<caption>.csv`` and ``manifest.json`` (id, kind,
     page, caption, file, size). Raster figures are converted to PNG when
     ``image_format="png"`` (SVG is kept as is; ``"native"`` keeps the original
-    bytes). ``out_dir`` defaults to ``$KG_ASSETS_DIR`` or ``./kg_assets``.
+    bytes; a format that cannot be converted keeps its own extension, never ``.bin``). Content that is not an image
+    (an HTML error page returned for the ``src``, ...) is not written and is listed under ``skipped`` in the manifest. ``out_dir`` defaults to ``$KG_ASSETS_DIR`` or ``./kg_assets``.
     Sets ``meta["file"]`` on each exported element. Returns the document folder."""
     root = Path(out_dir or os.environ.get("KG_ASSETS_DIR") or DEFAULT_ASSETS_DIR) / source_hash(source)
     manifest: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for e in elements:
         if e.kind not in ("table", "figure"):
             continue
@@ -858,6 +888,10 @@ def export_assets(elements: list[Element], source: str, out_dir: Optional[str] =
             if not data:
                 continue
             ext = _image_ext(data)
+            if not ext:                              # not an image (error page, compressed bytes, ...): do not save it
+                log.warning("figure %s: %s is not an image (starts %r); not exported", e.id, e.meta.get("src_abs", "")[:80], data[:16])
+                skipped.append({"id": e.id, "page": e.page, "caption": e.caption, "reason": "content is not an image"})
+                continue
             if image_format == "png" and ext not in (".png", ".svg"):
                 png = _to_png(data)
                 if png:
@@ -875,7 +909,7 @@ def export_assets(elements: list[Element], source: str, out_dir: Optional[str] =
                          "file": e.meta["file"], **info})
     root.mkdir(parents=True, exist_ok=True)
     (root / "manifest.json").write_text(json.dumps(
-        {"source": source, "assets": manifest}, indent=2, ensure_ascii=False))
+        {"source": source, "assets": manifest, **({"skipped": skipped} if skipped else {})}, indent=2, ensure_ascii=False))
     return root
 
 

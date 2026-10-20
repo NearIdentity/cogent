@@ -511,7 +511,10 @@ class Store:
         """A figure as PNG bytes; watermarked and bannered when it comes from paywalled content."""
         import kg_assets as A
         path, item, pw, docid = self._asset(ref, asset_id, "figure")
-        png, (w, h) = A.to_png(path.read_bytes(), max(200, min(max_px, 4000)))
+        try:
+            png, (w, h) = A.to_png(path.read_bytes(), max(200, min(max_px, 4000)))
+        except Exception:
+            raise NotFound(f"figure {asset_id!r} is stored as {path.suffix or 'an unknown format'} and cannot be converted to PNG") from None
         marked = pw["paywalled"] and self.paywalled_assets != "allow"
         if marked:
             png = A.watermark(png, A.notice(pw["holder"]))
