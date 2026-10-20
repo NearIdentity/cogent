@@ -64,7 +64,7 @@ playwright install chromium                                          # headless 
 ```bash
 # one document → KG (file or URL), saved under kg_store/<sha256 of the input>.json
 python src/kg_ingest.py https://www.nrc.gov/docs/ML1924/ML19241A472.pdf
-python src/kg_ingest.py paper.pdf out.graphml --assets-dir kg_assets      # + figures (PNG) and tables (CSV) as files
+python src/kg_ingest.py paper.pdf out.graphml --assets-dir kg_assets      # + figures (PNG) and tables (CSV) as files; a manifest.json lists them
 
 # look at it
 python src/kg_show.py https://www.nrc.gov/docs/ML1924/ML19241A472.pdf --open
@@ -316,6 +316,11 @@ entry-level relations only (no document text, so paywalled content is never merg
   `affects_reports` (`declared`, `via_overlap`, `inferred`).
 * Alerts for a standard now end with *"Reports affected: report:9 (declared)…"* and carry `details.affects_reports`.
 * MCP: tool `get_dependents(entry)`; the graph tools accept `ref="combined"`; resource `kg://combined/graph`.
+
+Figure export notes: images are sniffed by content (PNG, JPEG, GIF, BMP, TIFF, WebP, JPEG 2000, ICO, AVIF, SVG incl. ones
+with a BOM, comment or DOCTYPE first); raster formats are converted to PNG (PyMuPDF, then Pillow) and a format that cannot be
+converted keeps its own extension. Content that is not an image (e.g. an HTML error page served for an `<img src>`) is not
+written and is listed under `skipped` in the figure manifest. No `.bin` files are produced.
 
 ## Environment variables
 
