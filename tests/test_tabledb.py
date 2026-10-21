@@ -292,3 +292,21 @@ def test_units_are_deduced_stored_and_selectable(tmp_path, pg_server, pg_schema)
     col = next(c for t in dd["tables"] for c in t["columns"] if c["header"] == "Allowable Stress")
     assert col["unit"] == "ksi" and col["unit_candidates"][0]["source"] == "table_declaration"
     assert "| ksi |" in (home / "tabledb" / ("c" * 16) / "data_dictionary.md").read_text()
+
+
+def test_readonly_role_script_takes_its_password_from_a_variable(pg_server, pg_schema):
+    """deploy/tabledb-readonly-role.sql has no password in it; psql -v ro_password=... supplies it (and re-running resets it)."""
+    import subprocess
+    import psycopg
+    from conftest import _pg_bin
+    psql = _pg_bin() / "psql"
+    sql = Path(__file__).resolve().parent.parent / "deploy" / "tabledb-readonly-role.sql"
+    assert "change-me" not in sql.read_text()
+    for pw in ("first-pw", "second-pw"):
+        r = subprocess.run([str(psql), pg_server, "-v", "ON_ERROR_STOP=1", "-v", f"ro_password={pw}", "-f", str(sql)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    with psycopg.connect(pg_server, autocommit=True) as c:
+        c.execute("DROP ROLE IF EXISTS cogent_ro_probe")
+        assert c.execute("select rolcanlogin from pg_roles where rolname='cogent_ro'").fetchone() == (True,)
+        c.execute("DROP OWNED BY cogent_ro")
+        c.execute("DROP ROLE cogent_ro")

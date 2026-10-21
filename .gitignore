@@ -9,3 +9,7 @@ __pycache__/
 
 # Virtual environment files; cf. venv-setup.sh
 /cogent/
+
+# secrets
+deploy/.env
+.env

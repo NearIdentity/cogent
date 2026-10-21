@@ -1,5 +1,6 @@
 """End-to-end test of the KG update agent against a local mock site (three 'days')."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -517,11 +518,12 @@ def test_forced_failed_fetch_keeps_previous_kg_with_warning(env):
     home = s.home
     kg_agent.run_once(s)
     kg_file = next(home.glob("staging/standards/2/kg.json"))
-    before = kg_file.read_text()
+    stamp = lambda t: re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "<time>", t)    # a forced rebuild refreshes the build time (second resolution)
+    before = stamp(kg_file.read_text())
     orig = site.route
     site.route = lambda path, q: None if path.endswith("rg1233_rev0.pdf") else orig(path, q)      # the source now 404s
     st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
-    assert kg_file.read_text() == before and st["summary"]["docs_error"] == 1
+    assert stamp(kg_file.read_text()) == before and st["summary"]["docs_error"] == 1
     w = [x for x in st["forced_warnings"] if "rg1233_rev0.pdf" in x]
     assert w and "FAILED" in w[0] and "previous KG" in w[0] and "may be out of date" in w[0]
     assert "**WARNING** forced re-read FAILED" in st["report"]
@@ -561,7 +563,7 @@ def test_table_database_stage_runs_after_staging_and_never_fails_the_run(env, pg
     assert "no DSN" in st["summary"]["tabledb"]["error"]
     # off by default / skipped in a dry run
     assert kg_agent.run_once(s)["summary"]["tabledb"] is None
-    assert kg_agent.run_once(kg_agent.Settings(**{**on.model_dump(), "dry_run": True}))["summary"]["tabledb"] == {"skipped": "dry run"}
+    assert kg_agent.run_once(kg_agent.Settings(**{**on.model_dump(), "dry_run": True}))["summary"]["tabledb"] == {"not_run": "dry run"}
 
 
 def test_full_pipeline_html_tables_to_database(tmp_path, pg_server, pg_schema):
@@ -589,3 +591,19 @@ def test_full_pipeline_html_tables_to_database(tmp_path, pg_server, pg_schema):
         assert st["tables"] == 2 and st["rows"] == 8 and st["joins"] == 1
     finally:
         site.close()
+
+
+def test_report_renders_with_skipped_tables(tmp_path, monkeypatch):
+    """Regression: a non-zero `skipped` count in the table stage summary crashed the report (it was mistaken for a skip reason)."""
+    import kg_tabledb
+    out = {"embedder": "hash", "sources": 3, "loaded": 1, "unchanged": 1, "skipped": 1, "dropped": 0, "joins": 0, "documents_with_joins": 0,
+           "llm_joins": None, "errors": [], "warnings": []}
+    monkeypatch.setattr(kg_tabledb, "run", lambda *a, **k: out)
+    sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+    sp.write_text(json.dumps({"standards": []}))
+    rp.write_text(json.dumps({"reports": []}))
+    s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0, tables=True, tabledb_dsn="postgresql://x@127.0.0.1:9/x", embedder="hash")
+    td = kg_agent.run_once(s)["summary"]["tabledb"]
+    assert td["skipped"] == 1
+    report = next((tmp_path / "home").rglob("report*.md")).read_text()
+    assert "### Table database" in report and "1 skipped" in report

@@ -15,9 +15,10 @@ staging/documents/<id>/assets/…/    ──┼────► │ discover → 
 
 ## Quick start
 ```bash
+cp deploy/tabledb.env.example deploy/.env      # set COGENT_DB_PASSWORD and COGENT_RO_PASSWORD (deploy/.env is git-ignored)
 docker compose -f deploy/docker-compose.tabledb.yml up -d                  # PostgreSQL 16 + pgvector (or install both yourself)
 ollama pull nomic-embed-text                                               # the embedding model (768 dimensions)
-export COGENT_TABLEDB_DSN=postgresql://cogent:change-me@127.0.0.1:5432/cogent
+export COGENT_TABLEDB_DSN=postgresql://cogent:<COGENT_DB_PASSWORD>@127.0.0.1:5432/cogent    # never commit a real one
 pip install -r requirements.txt
 
 python src/kg_agent.py run --tables            # stage as usual, then build / refresh the table database as the last stage
