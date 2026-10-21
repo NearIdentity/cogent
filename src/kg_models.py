@@ -46,6 +46,13 @@ class DocEntry(BaseModel):
     paywalled: bool = False                                   # document must be bought -> needs a local copy
     local_copy: Optional[str] = None                          # file/dir with the purchased copy (optional)
     overlaps: list[int] = Field(default_factory=list)         # ids of standards whose text overlaps this one
+    endorsed_editions: list[str] = Field(default_factory=list)   # editions of this document that a regulator endorses (e.g. RG 1.28 Rev. 6 endorses NQA-1 2017, 2019, 2022)
+    endorsed_by: str = ""                                     # who endorses them (free text, used in the warning)
+
+    @field_validator("endorsed_editions", mode="before")
+    @classmethod
+    def _editions_as_text(cls, v: Any) -> Any:
+        return [str(x).strip() for x in (v or []) if str(x).strip()]
 
     @field_validator("tracking_urls", mode="before")
     @classmethod
@@ -67,6 +74,7 @@ class DocEntry(BaseModel):
                        tracking_urls=raw.get("update_tracking_urls", []),
                        format_of_data=raw.get("format_of_data", ""),
                        paywalled=bool(raw.get("paywalled", inferred)), local_copy=raw.get("local_copy"),
+                       endorsed_editions=raw.get("endorsed_editions") or [], endorsed_by=raw.get("endorsed_by") or "",
                        overlaps=[o["id"] for o in raw.get("overlaps_with", []) if isinstance(o, dict) and "id" in o])
         return cls(kind=kind, id=raw["id"], name=raw["report"], links=raw.get("template_links", []),
                    tracking_urls=raw.get("update_tracking_urls", []),
@@ -185,7 +193,7 @@ class RunNarrative(BaseModel):
 class Alert(BaseModel):
     """A condition a human should act on (persisted until it is resolved)."""
 
-    kind: Literal["no_local_copy", "new_edition_for_purchase", "local_copy_outdated",
+    kind: Literal["no_local_copy", "new_edition_for_purchase", "local_copy_outdated", "edition_not_endorsed",
                   "local_copy_unidentified", "store_page_changed"]
     entry: str
     identity: str = ""

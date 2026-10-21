@@ -51,6 +51,10 @@ import networkx as nx
 from bs4 import BeautifulSoup, Tag
 from langgraph.graph import END, StateGraph
 
+import kg_layout as _kg_layout
+import kg_predicates as _pred
+import kg_tablecheck as _tablecheck
+
 log = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
@@ -80,6 +84,7 @@ class Triple:
     object: str
     subject_type: str = "Entity"
     object_type: str = "Entity"
+    strict: bool = True        # rule-based predicate (a text span): must contain a known verb; LLM predicates only pass the quality filter
 
 
 class KGState(TypedDict, total=False):
@@ -252,6 +257,61 @@ def read_source(src: str, timeout: float = 60.0) -> bytes:
     return _fetch_url(src, mode, timeout)
 
 
+_UNIT_LIKE = re.compile(r"^[A-Za-zµΩ°/]{1,4}$")
+_EXPONENT_BEFORE = re.compile(r"(?:^|[\s(×x*])(?:10|e)\s*$", re.I)
+
+
+def _is_footnote_marker(prev: str, sup: str) -> bool:
+    """A raised, small trailing run is a footnote marker unless it is an exponent (10^-4) or a unit power (m^2)."""
+    sup = sup.strip()
+    if not sup or len(sup) > 2 or not re.fullmatch(r"[0-9a-z*†‡§]{1,2}", sup):
+        return False
+    prev = prev.rstrip()
+    if _EXPONENT_BEFORE.search(prev):
+        return False
+    last = re.split(r"[\s(/]", prev)[-1] if prev else ""
+    return not (sup.isdigit() and _UNIT_LIKE.match(last) and len(last) <= 3 and last.islower())
+
+
+def _split_superscripts(page: Any, table: Any, rows: list[list[str]]) -> tuple[list[list[str]], list[dict[str, Any]]]:
+    """Take footnote markers out of the cells of a PDF table. The text extractor glues a raised marker to the value ('NDC-2' + 4 -> 'NDC-24',
+    'Worker' + 2 -> 'Worker2'), which looks valid and is wrong. Trailing superscript runs (smaller font, raised baseline or the superscript flag)
+    are removed from the cell and returned as ``footnotes`` [{row, col, marker}] (row 0 is the header row). Empty rows are dropped as before."""
+    try:
+        trows = list(table.rows)
+        if len(trows) != len(rows):
+            raise ValueError("row count differs")
+        notes: list[dict[str, Any]] = []
+        kept: list[list[str]] = []
+        for i, (row, tr) in enumerate(zip(rows, trows)):
+            row = list(row)
+            cells = getattr(tr, "cells", None) or []
+            for j, text in enumerate(row):
+                bbox = cells[j] if j < len(cells) else None
+                if not text or bbox is None:
+                    continue
+                spans = [sp for b in page.get_text("dict", clip=bbox)["blocks"] if b["type"] == 0 for ln in b["lines"] for sp in ln["spans"] if sp["text"].strip()]
+                if len(spans) < 2:
+                    continue
+                main = max(spans, key=lambda sp: sp["size"])
+                tail = spans[-1]
+                raised = tail["origin"][1] < main["origin"][1] - 0.15 * main["size"]
+                small = tail["size"] <= 0.8 * main["size"]
+                if tail is not main and (bool(tail["flags"] & 1) or (raised and small)):
+                    mark = tail["text"].strip()
+                    base = text[: len(text) - len(mark)] if text.endswith(mark) else None
+                    if base is not None and base.strip() and _is_footnote_marker(base, mark):
+                        row[j] = base.strip()
+                        notes.append({"row": len(kept), "col": j, "marker": mark})
+            if any(row):
+                kept.append(row)
+            else:
+                notes = [x for x in notes if x["row"] != len(kept)]
+        return kept, notes
+    except Exception:                                    # no cell geometry: keep the extracted text as it is
+        return [r for r in rows if any(r)], []
+
+
 def _load_pdf_basic(path: str) -> list[Element]:
     """Basic PDF parser using plain PyMuPDF (font-size heading heuristics,
     ``find_tables``, embedded images). Fallback for ``load_pdf``."""
@@ -278,19 +338,19 @@ def _load_pdf_basic(path: str) -> list[Element]:
         try:
             for t in page.find_tables().tables:
                 rows = [[_clean(c or "") for c in r] for r in t.extract()]
-                rows = [r for r in rows if any(r)]
+                rows, notes = _split_superscripts(page, t, rows)
                 if len(rows) < 2:
                     continue
                 table_boxes.append(pymupdf.Rect(t.bbox))
                 n += 1
-                page_items.append((t.bbox[1], Element(
+                page_items.append((tuple(t.bbox), Element(
                     _eid("tbl", n), "table", page=pno, table=rows,
-                    text=" | ".join(rows[0]))))
+                    text=" | ".join(rows[0]), meta=({"footnotes": notes} if notes else {}))))
         except Exception:  # find_tables unavailable / failed on this page
             pass
 
         # Text blocks (skip those inside tables)
-        captions: list[tuple[float, str]] = []
+        captions: list[tuple[tuple, str]] = []              # (bbox, text)
         for b in page.get_text("dict")["blocks"]:
             if b["type"] != 0:
                 continue
@@ -304,14 +364,14 @@ def _load_pdf_basic(path: str) -> list[Element]:
             bold = all(s["flags"] & 16 for s in spans)
             n += 1
             if _CAPTION_RE.match(text):
-                captions.append((b["bbox"][1], text))
+                captions.append((tuple(b["bbox"]), text))
                 continue
             if len(text) < 120 and (size >= body * 1.15 or (bold and size >= body)):
                 level = 1 if size >= body * 1.5 else 2 if size >= body * 1.25 else 3
                 el = Element(_eid("h", n), "heading", text, level=level, page=pno)
             else:
                 el = Element(_eid("p", n), "paragraph", text, page=pno)
-            page_items.append((b["bbox"][1], el))
+            page_items.append((tuple(b["bbox"]), el))
 
         # Images -> figures, matched to the nearest caption on the page
         for img in page.get_images(full=True):
@@ -328,10 +388,10 @@ def _load_pdf_basic(path: str) -> list[Element]:
                 continue
             cap = ""
             if captions:
-                dist, cap = min(((abs(y - r.y1), c) for y, c in captions),
+                dist, cap = min(((abs(bb[1] - r.y1), c) for bb, c in captions),
                                 key=lambda t: t[0])
             n += 1
-            page_items.append((r.y0, Element(
+            page_items.append(((r.x0, r.y0, r.x1, r.y1), Element(
                 _eid("fig", n), "figure", text=cap, caption=cap, page=pno,
                 meta={"sha1": hashlib.sha1(data).hexdigest()[:12],
                       "bbox": [round(v, 1) for v in r],
@@ -339,12 +399,13 @@ def _load_pdf_basic(path: str) -> list[Element]:
 
         # Captions not claimed by a figure are kept as paragraphs
         claimed = {e.caption for _, e in page_items if e.kind == "figure"}
-        for y, c in captions:
+        for bb, c in captions:
             if c not in claimed:
                 n += 1
-                page_items.append((y, Element(_eid("p", n), "paragraph", c, page=pno)))
+                page_items.append((bb, Element(_eid("p", n), "paragraph", c, page=pno)))
 
-        elements.extend(e for _, e in sorted(page_items, key=lambda t: t[0]))
+        # reading order: column by column on multi-column pages (a plain sort by y interleaves the columns)
+        elements.extend(e for _, e in _kg_layout.order(page_items, page.rect.width, lambda it: it[0]))
     return elements
 
 
@@ -556,7 +617,7 @@ def load_pdf_layout(path: str) -> list[Element]:
                 and len(e.table[0]) == len(prev.table[0]) and not e.caption
                 and e.meta["bbox"][1] < 0.2 * e.meta["page_height"]
                 and prev.meta["bbox"][3] > 0.75 * prev.meta["page_height"]):
-            rows = e.table[1:] if e.table[0] == prev.table[0] else e.table  # drop repeated header
+            rows = e.table[_tablecheck.header_prefix_len(prev.table, e.table):]      # drop the repeated header block (1-3 rows, OCR noise tolerated)
             prev.table = prev.table + rows
             prev.meta.update(last_page=e.page, bbox=e.meta["bbox"])
             continue
@@ -879,10 +940,13 @@ def export_assets(elements: list[Element], source: str, out_dir: Optional[str] =
     for e in elements:
         if e.kind not in ("table", "figure"):
             continue
+        if e.kind == "table" and e.meta.get("front_matter"):        # table of contents / acronym list: in the graph, but not a data table
+            skipped.append({"id": e.id, "page": e.page, "caption": e.caption, "reason": f"front matter ({e.meta['front_matter']})"})
+            continue
         stem = "_".join(x for x in (e.id, f"p{e.page}" if e.page else "", _slug(e.caption or "")) if x)
         if e.kind == "table":
             sub, name = "tables", f"{stem}.csv"
-            payload, info = None, {"rows": len(e.table), "cols": len(e.table[0])}
+            payload, info = None, {"rows": len(e.table), "cols": len(e.table[0]), **({"footnotes": e.meta["footnotes"]} if e.meta.get("footnotes") else {})}
         else:
             data = _figure_bytes(e)
             if not data:
@@ -969,7 +1033,11 @@ class RuleBasedExtractor(Extractor):
 
     def entities(self, sentence: str) -> list[tuple[str, int, int]]:
         found = []
+        from kg_tools import identifier_spans
+        idspans = identifier_spans(sentence)                # standards / guides / CFR references are Identifier nodes, not entities
         for m in _ENT_RE.finditer(sentence):
+            if any(m.start() < b and m.end() > a for a, b in idspans):
+                continue
             words = m.group().split()
             while words and words[0] in _STOP:
                 words.pop(0)
@@ -1032,7 +1100,7 @@ def parse_triples(reply: str) -> list[Triple]:
         if isinstance(d, dict) and d.get("subject") and d.get("object"):
             out.append(Triple(_clean(str(d["subject"])),
                               _clean(str(d.get("predicate") or "related_to")),
-                              _clean(str(d["object"]))))
+                              _clean(str(d["object"])), strict=False))
     return out
 
 
@@ -1216,6 +1284,15 @@ def make_pipeline(
             els = load_html(p)
         else:
             raise ValueError(f"Unsupported file type: {ext!r} (need .pdf or .html)")
+        for e in els:                           # 'Table 2--1', 'Table 5<U+2011>1', 'andSDC-2'; '2.3.3Criteria' -> '2.3.3 Criteria'
+            if e.kind == "heading" and e.text:
+                e.text = _tablecheck.fix_heading(e.text)
+            if e.caption:
+                fixed = _tablecheck.fix_caption(e.caption)
+                if e.text == e.caption:
+                    e.text = fixed
+                e.caption = fixed
+        _tablecheck.apply(els, _renumber)       # false tables (two-column prose, sentence lists) go back to paragraphs; TOC / glossary are flagged
         if figure_captioner:  # optional vision model for uncaptioned figures
             for e in els:
                 data = e.meta.get("bytes")
@@ -1246,7 +1323,7 @@ def make_pipeline(
                 ts = extractor.extract_table(e.table)
                 if e.caption:
                     ts += extractor.extract_text(e.caption)
-            elif e.kind in ("paragraph", "figure") and e.text:
+            elif e.kind in ("paragraph", "figure") and e.text and not _pred.is_toc_like(e.text):
                 ts = extractor.extract_text(e.text)
             else:
                 ts = []
@@ -1257,6 +1334,9 @@ def make_pipeline(
         g = nx.MultiDiGraph(source=state["path"])
         if state.get("assets_dir"):
             g.graph["assets_dir"] = state["assets_dir"]
+        demoted = sum(1 for e in state["elements"] if e.meta.get("demoted_table"))
+        if demoted:
+            g.graph["tables_demoted"] = demoted
         ocr_pages = sorted({e.page for e in state["elements"] if e.meta.get("ocr") and e.page})
         if ocr_pages:                                     # pages that were read by OCR, not from a text layer
             g.graph["ocr_pages"] = ocr_pages
@@ -1273,6 +1353,12 @@ def make_pipeline(
             if e.kind == "table":
                 attrs["rows"] = json.dumps(e.table)
                 attrs["file"] = e.meta.get("file")  # exported CSV, if any
+                if e.meta.get("front_matter"):
+                    attrs["front_matter"] = e.meta["front_matter"]
+                if e.meta.get("footnotes"):
+                    attrs["footnotes"] = json.dumps(e.meta["footnotes"])      # [{row, col, marker}]: markers removed from the cell values
+                if e.meta.get("repeated_header_rows_removed"):
+                    attrs["repeated_header_rows_removed"] = e.meta["repeated_header_rows_removed"]
             if e.kind == "figure":
                 attrs.update({k: v for k, v in e.meta.items() if k not in ("bytes", "src_abs")})
             if e.kind == "heading":
@@ -1303,8 +1389,9 @@ def make_pipeline(
                         g.add_edge(e.id, nid, key="MENTIONS", relation="MENTIONS")
                 if s == o:
                     continue
-                rel = re.sub(r"\s+", "_", t.predicate.strip()) or "related_to"
-                ekey = f"{rel}|{e.id}"
+                table = t.subject_type == "TableRow"
+                rel = _pred.relation(t.predicate, t.strict, table)
+                ekey = f"{rel}|{e.id}" + (f"|{t.predicate}" if table else "")
                 if not g.has_edge("ent:" + s, "ent:" + o, ekey):
                     g.add_edge("ent:" + s, "ent:" + o, key=ekey, relation=rel,
                                predicate=t.predicate, source=e.id, page=e.page)

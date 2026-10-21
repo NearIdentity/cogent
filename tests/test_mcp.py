@@ -416,3 +416,38 @@ def test_unconvertible_figure_gives_a_clear_error(assets_home):
     (a / "manifest.json").write_text(json.dumps(m))
     with pytest.raises(kg_store.NotFound, match="cannot be converted"):
         kg_store.Store(home, sp, rp).figure("standard:1", "aaaa1111/f0077")
+
+
+def test_asset_ids_accept_short_prefixes_and_graph_node_ids(assets_home):
+    """T-02: graph node ids show only a prefix of the document id; the asset tools must resolve it and explain misses."""
+    home, sp, rp = assets_home
+    st = kg_store.Store(home, sp, rp)
+    full = st.table_csv("standard:1", "aaaa1111/t0002")
+    assert st.resolve_docid("aaaa11") == "aaaa1111" and st.resolve_docid("AAAA1111") == "aaaa1111"
+    assert st.table_csv("standard:1", "aaaa1111:t0002")["csv"] == full["csv"]                   # a graph node id
+    assert st.table_csv("standard:1", "aaaa11/t0002")["csv"] == full["csv"]                     # a unique prefix
+    assert st.list_assets("aaaa11")["documents"][0]["document_id"] == "aaaa1111"
+    with pytest.raises(kg_store.NotFound, match="unknown document id 'cccc3333'"):
+        st.list_assets("cccc3333")
+    with pytest.raises(kg_store.NotFound, match="belongs to standard:2"):                        # exists, but another entry owns it
+        st.table_csv("standard:1", "bbbb2222/t0002")
+    with pytest.raises(kg_store.NotFound, match="unknown document id"):
+        st.table_csv("standard:1", "zzzz9999/t0002")
+
+
+def test_no_response_leaks_local_paths(tmp_path):
+    """S-01: file:// URLs and the agent / user home directories never reach a client."""
+    home = tmp_path / "agent home"
+    home.mkdir()
+    kg_mcp.set_private_roots(home)
+    try:
+        h = str(home.resolve())
+        out = kg_mcp.scrub({"url": f"file://{h}/local/standards/30/ASME_NQA-1_1989.pdf", "fetched_from": f"file://{h}/elsewhere/x.pdf",
+                            "msg": f"place it in {h}/local/standards/30/", "other": "file:///home/someone/Documents/y.pdf",
+                            "nested": [{"p": str(Path.home().resolve()) + "/notes"}], "n": 3})
+        assert out["url"] == "local:standards/30/ASME_NQA-1_1989.pdf" and out["fetched_from"] == "<agent-home>/elsewhere/x.pdf"
+        assert out["msg"] == "place it in local:standards/30/" and out["other"] == "local:y.pdf" and out["n"] == 3
+        assert out["nested"][0]["p"] == "~/notes"
+        assert "file:///" not in json.dumps(out) and h not in json.dumps(out)
+    finally:
+        kg_mcp.set_private_roots(tmp_path / "unused")

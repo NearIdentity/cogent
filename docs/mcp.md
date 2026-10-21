@@ -30,6 +30,8 @@ HTTP), `uvicorn`/Starlette, `networkx`; for the public URL Caddy, `cloudflared` 
 | `list_entries(kind?, query?)` | standards/reports with graph availability, build time, version status |
 | `get_entry_metadata(entry)` | per-document capture times, latest vs on-board editions, warnings, disclaimers |
 | `list_assets(ref, kind?)`, `get_figure(ref, asset_id, max_px?)`, `get_table_csv(ref, asset_id, max_rows?)` | figures (PNG image content) and tables (CSV) exported from the parsed documents; `asset_id` is `<document_id>/<id>` from `list_assets` |
+| `list_tables`, `describe_table`, `search_tables`, `lookup_values`, `query_table`, `join_tables`, `get_data_dictionary`, `get_relationship_map`, `evaluate_joins`, `explain_units`, `get/set/reset_session_preferences`, `list_profiles`, `run_sql`* | the table database (needs `--tabledb-dsn`; *`--allow-sql`): look up design values by meaning or exact filter. See [tabledb.md](tabledb.md) |
+| `get_data_dictionary`, `get_relationship_map` | data dictionaries and inferred join maps of the extracted tables (published files, no database needed) |
 | `get_dependents(entry)` | reports that depend on a standard / standards a report depends on (curated vs inferred), and what is affected if it changes |
 | `get_warnings(entry?)`, `get_disclaimers(entry?)` | alerts / applicable disclaimers |
 | `graph_summary`, `get_outline`, `search_graph`, `get_node`, `get_neighbors`, `get_subgraph`, `get_table`, `export_graph` | navigate a graph (`ref` = `standard:22`, `report:3` or a document id) |

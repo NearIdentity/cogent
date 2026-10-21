@@ -1,5 +1,6 @@
 """End-to-end test of the KG update agent against a local mock site (three 'days')."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -302,8 +303,10 @@ def test_combined_graph_and_alert_impact(env):
     assert ("entry:report:1", "entry:standard:2", "complies_with") in rels
     assert all(a.get("basis") in ("config", "text") for *_, a in g.edges(data=True))
     assert all("text" not in a for _, a in g.nodes(data=True))          # no document text is merged
-    # report 1 reuses the RG 1.233 PDF and cites 'RG 1.233' -> inferred 'cites' edge to standard 2
-    assert ("entry:report:1", "entry:standard:2", "cites") in rels
+    # report 1 reuses the RG 1.233 PDF: that document mentioning itself is not a citation of standard 2 (they share a source document) ...
+    assert ("entry:report:1", "entry:standard:2", "cites") not in rels
+    # ... but its text cites standard 1's identifier, and standard 2's text does too: inferred 'cites' edges
+    assert ("entry:report:1", "entry:standard:1", "cites") in rels and ("entry:standard:2", "entry:standard:1", "cites") in rels
     meta = json.loads((d / "meta.json").read_text())
     assert meta["run_id"] and not meta["entries_without_graph"]
     built = meta["built"]
@@ -313,7 +316,7 @@ def test_combined_graph_and_alert_impact(env):
     import kg_store
     st = kg_store.Store(home, sp, rp)
     r = st.dependents("standard:2")
-    assert [x["entry"] for x in r["declared_dependents"]] == ["report:1"] and r["combined"]["derived"]
+    assert [x["entry"] for x in r["declared_dependents"]] == ["report:1"] and r["combined"]["derived"] and r["part_of"] == []
     assert st.graph_summary("combined")["nodes"] == 5
     # an alert on a standard names the reports it affects
     rt = kg_agent.Runtime(s)
@@ -517,11 +520,12 @@ def test_forced_failed_fetch_keeps_previous_kg_with_warning(env):
     home = s.home
     kg_agent.run_once(s)
     kg_file = next(home.glob("staging/standards/2/kg.json"))
-    before = kg_file.read_text()
+    stamp = lambda t: re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "<time>", t)    # a forced rebuild refreshes the build time (second resolution)
+    before = stamp(kg_file.read_text())
     orig = site.route
     site.route = lambda path, q: None if path.endswith("rg1233_rev0.pdf") else orig(path, q)      # the source now 404s
     st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
-    assert kg_file.read_text() == before and st["summary"]["docs_error"] == 1
+    assert stamp(kg_file.read_text()) == before and st["summary"]["docs_error"] == 1
     w = [x for x in st["forced_warnings"] if "rg1233_rev0.pdf" in x]
     assert w and "FAILED" in w[0] and "previous KG" in w[0] and "may be out of date" in w[0]
     assert "**WARNING** forced re-read FAILED" in st["report"]
@@ -541,3 +545,144 @@ def test_orphans_not_archived_when_configuration_is_invalid(env):
     st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
     assert any("validation errors" in w for w in st["forced_warnings"]) and not (s.home / "archive/orphans").exists()
     assert any(o["status"] == "orphaned" for o in json.loads((s.home / "state/orphans.json").read_text()).values())
+
+
+def test_table_database_stage_runs_after_staging_and_never_fails_the_run(env, pg_server, pg_schema):
+    """kg_agent.py run --tables: builds the table database as the last stage; a problem there is reported, not raised."""
+    site, s, sp, rp = env
+    on = kg_agent.Settings(**{**s.model_dump(), "tables": True, "tabledb_dsn": pg_server, "tabledb_schema": pg_schema, "embedder": "hash"})
+    st = kg_agent.run_once(on)
+    td = st["summary"]["tabledb"]
+    assert td["errors"] == [] and td["sources"] == 0 and "no staged tables" in " ".join(td["warnings"])        # the mock site serves text-only PDFs
+    assert "### Table database" in st["report"] and (s.home / "logs/tabledb.jsonl").exists()
+    assert json.loads((s.home / "logs/runs.jsonl").read_text().splitlines()[-1])["summary"]["tabledb"]["sources"] == 0
+    # unreachable database: the staging run still succeeds, the problem is an error in the report
+    bad = kg_agent.Settings(**{**s.model_dump(), "tables": True, "tabledb_dsn": "postgresql://nobody@127.0.0.1:9/x", "embedder": "hash"})
+    st = kg_agent.run_once(bad)
+    assert st["summary"]["docs_unchanged"] == 3 and "table database stage failed" in st["summary"]["tabledb"]["error"] and st["summary"]["errors"] >= 1
+    # no DSN configured at all
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "tables": True}))
+    assert "no DSN" in st["summary"]["tabledb"]["error"]
+    # off by default / skipped in a dry run
+    assert kg_agent.run_once(s)["summary"]["tabledb"] is None
+    assert kg_agent.run_once(kg_agent.Settings(**{**on.model_dump(), "dry_run": True}))["summary"]["tabledb"] == {"not_run": "dry run"}
+
+
+def test_full_pipeline_html_tables_to_database(tmp_path, pg_server, pg_schema):
+    """Staging agent -> exported tables -> table database -> data dictionary, on a page served by the mock site."""
+    import kg_tabledb
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"standards": [{"id": 1, "document": "Seismic Design Criteria", "links": [{"text": "html", "url": f"{site.base}/docs/seismic_tables.html"}],
+                              "update_tracking_urls": []}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0, tables=True, tabledb_dsn=pg_server,
+                              tabledb_schema=pg_schema, embedder="hash")
+        td = kg_agent.run_once(s)["summary"]["tabledb"]
+        assert td["errors"] == [] and td["loaded"] == 2 and td["joins"] == 1
+        dd = json.loads(next((s.home / "tabledb").glob("*/data_dictionary.json")).read_text())
+        assert [t["caption"][:9] for t in dd["tables"]] == ["Table 3-1", "Table 4-1"]
+        td2 = kg_agent.run_once(s)["summary"]["tabledb"]                                    # nothing changed anywhere: nothing reloaded
+        assert td2["loaded"] == 0 and td2["unchanged"] == 2
+        forced = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))["summary"]["tabledb"]
+        assert forced["loaded"] == 2                                                         # --force reaches the table stage too
+        st = kg_tabledb.status(s.home, pg_server, pg_schema)
+        assert st["tables"] == 2 and st["rows"] == 8 and st["joins"] == 1
+    finally:
+        site.close()
+
+
+def test_report_renders_with_skipped_tables(tmp_path, monkeypatch):
+    """Regression: a non-zero `skipped` count in the table stage summary crashed the report (it was mistaken for a skip reason)."""
+    import kg_tabledb
+    out = {"embedder": "hash", "sources": 3, "loaded": 1, "unchanged": 1, "skipped": 1, "dropped": 0, "joins": 0, "documents_with_joins": 0,
+           "llm_joins": None, "errors": [], "warnings": []}
+    monkeypatch.setattr(kg_tabledb, "run", lambda *a, **k: out)
+    sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+    sp.write_text(json.dumps({"standards": []}))
+    rp.write_text(json.dumps({"reports": []}))
+    s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0, tables=True, tabledb_dsn="postgresql://x@127.0.0.1:9/x", embedder="hash")
+    td = kg_agent.run_once(s)["summary"]["tabledb"]
+    assert td["skipped"] == 1
+    report = next((tmp_path / "home").rglob("report*.md")).read_text()
+    assert "### Table database" in report and "1 skipped" in report
+
+
+def test_local_copy_edition_read_from_file_name_when_the_text_does_not_state_it(tmp_path):
+    """V-01: ``ASCE_SEI43-05.pdf`` whose text names no edition is the 2005 edition, not the configured 2019 one."""
+    from mock_site import Site, make_pdf
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": 20, "document": "ASCE/SEI 43-19, Seismic Design Criteria", "paywalled": True,
+                                          "links": [{"text": "ASCE Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": [f"{site.base}/index/asce.html"]}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        kg_agent.run_once(s)
+        (s.home / "local/standards/20").mkdir(parents=True, exist_ok=True)
+        (s.home / "local/standards/20/ASCE_SEI43-05.pdf").write_bytes(make_pdf("Seismic Design Criteria for Structures", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        out = [a for a in st["alerts"] if a["kind"] == "local_copy_outdated"]
+        assert len(out) == 1 and out[0]["severity"] == "warning" and out[0]["details"]["have"] == "05", st["alerts"]
+        assert not [a for a in st["alerts"] if a["kind"] == "local_copy_unidentified"]
+    finally:
+        site.close()
+
+
+def test_edition_not_endorsed_warning(tmp_path):
+    """D-01: the configuration lists the editions a regulator endorses; an on-board edition outside the list is a warning."""
+    from mock_site import Site, make_pdf
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": 30, "document": "ASME NQA-1", "paywalled": True, "endorsed_editions": ["2017", "2019", "2022"],
+                                          "endorsed_by": "RG 1.28 Rev. 6", "links": [{"text": "ASME Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": []}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        kg_agent.run_once(s)
+        loc = s.home / "local/standards/30"
+        loc.mkdir(parents=True, exist_ok=True)
+        (loc / "ASME_NQA-1_1989.pdf").write_bytes(make_pdf("Quality Assurance Requirements", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        bad = [a for a in st["alerts"] if a["kind"] == "edition_not_endorsed"]
+        assert len(bad) == 1 and bad[0]["severity"] == "warning" and "RG 1.28 Rev. 6" in bad[0]["message"] and "2017, 2019, 2022" in bad[0]["message"], st["alerts"]
+        assert "EDITION NOT ENDORSED" in st["report"] and bad[0]["details"]["have"] == "1989"
+        (loc / "ASME_NQA-1_1989.pdf").unlink()
+        (loc / "ASME_NQA-1_2019.pdf").write_bytes(make_pdf("Quality Assurance Requirements", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        assert not [a for a in st["alerts"] if a["kind"] == "edition_not_endorsed"], st["alerts"]
+    finally:
+        site.close()
+
+
+def test_run_limited_by_only_keeps_the_open_alerts_of_other_entries(tmp_path):
+    """A run with --only standard:20 used to rewrite alerts.json with that entry's alerts alone, silently closing every other open warning."""
+    from mock_site import Site
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": i, "document": f"ASCE/SEI {40 + i}-19", "paywalled": True, "links": [{"text": "Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": []} for i in (20, 21)]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        full = kg_agent.run_once(s)
+        assert sorted(a["entry"] for a in full["alerts"] if a["kind"] == "no_local_copy") == ["standard:20", "standard:21"]
+        part = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "only": ["standard:20"]}))
+        assert sorted(a["entry"] for a in part["alerts"] if a["kind"] == "no_local_copy") == ["standard:20", "standard:21"]
+        kept = next(a for a in part["alerts"] if a["entry"] == "standard:21")
+        assert kept["runs"] == 1                                              # untouched: not counted as seen again
+        on_disk = json.loads((s.home / "state/alerts.json").read_text())
+        assert {v["entry"] for v in on_disk.values()} == {"standard:20", "standard:21"}
+    finally:
+        site.close()

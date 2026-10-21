@@ -29,6 +29,12 @@ src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a 
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
 src/kg_assets.py     PNG conversion, downscaling and copyright watermark for figures served over MCP
+src/kg_llm.py, kg_llmjoin.py, kg_units.py, kg_tableservice.py  Ollama chat client; LLM join inference + judge; unit deduction; per-session tailoring
+src/kg_tabledb.py    table database agent: tables -> PostgreSQL + pgvector (typed rows, embeddings, joins, dictionaries) + read-side queries
+src/kg_tables.py     table model: CSV frame, type inference, KG context, embedding text (numbers excluded)
+src/kg_relmap.py     join inference between a document's tables; data dictionary / relationship map (JSON, Markdown, Mermaid)
+src/kg_embed.py      embedders: Ollama (/api/embed) and a deterministic hash embedder
+src/kg_tableservice.py  MCP query front-end of the table database (ref resolution, paywall policy, provenance, lexical fallback)
 src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
@@ -91,6 +97,7 @@ Each entry is a standard or a report format; the agent reads these fields:
 | `paywalled` (standards) | `true` if the document must be bought (see below); also inferred from "paywalled" in `format_of_data` |
 | `local_copy` | optional file / directory / glob of a purchased copy (default `<home>/local/<standards\|reports>/<id>/`) |
 | `overlaps_with` | `[{"id", "scope", "note"}]`: entries whose text overlaps (e.g. 28 ↔ 1 on 10 CFR 50 Appendix B); becomes an `overlaps_with` edge |
+| `endorsed_editions`, `endorsed_by` | optional: the editions of this document that a regulator endorses (`["2017", "2019", "2022"]`) and who (`"RG 1.28 Rev. 6"`); an on-board edition outside the list raises the warning `edition_not_endorsed` (also in the MCP warnings) |
 | `previous_versions` | superseded editions, kept for reference but not staged |
 | `version_tracking` | **written by the agent**: latest edition available vs. what is staged (see below) |
 
@@ -105,11 +112,16 @@ returns a `networkx.MultiDiGraph`. It is a LangGraph pipeline `load → structur
 * **load** – PDF (layout-aware parser, else basic PyMuPDF, then OCR for pages without text), HTML (BeautifulSoup) or eCFR
   versioner XML → ordered `Element`s: headings (with levels), paragraphs, tables (rows), figures (+ captions). URLs are read
   through a headless browser by default (`--fetch browser|http|auto`; HTML is the rendered DOM) with a plain-HTTP fallback.
+  Multi-column pages are read column by column (`src/kg_layout.py`: gutters are found from the text blocks; full-width blocks split the page into bands),
+  in the basic PDF parser and for OCR'd pages; `get_outline` adds `order_warnings` when top-level section numbers come out of sequence.
 * **structure** – every element gets its enclosing section from the heading hierarchy.
 * **export** (with `assets_dir`) – figures as PNG, tables as CSV, plus a `manifest.json`, under `<assets_dir>/<sha256(source)>/`.
 * **extract** – triples from text, tables and captions: `RuleBasedExtractor` (default, no dependencies), `OllamaExtractor`
   (local model, JSON-schema output, rule-based fallback), `HybridExtractor` (LLM first, rules fill the gaps), or any
   `prompt → str` function via `LLMExtractor`. Table rows become *row key → column header → value* facts.
+  Relation names come from a small vocabulary (`src/kg_predicates.py`): a rule-based predicate must contain a known verb and is reduced to its lemma plus
+  preposition (`is required by` → `require_by`), everything else is `related_to`; table cells are `has_value` (the header is kept as the edge's `predicate`);
+  table-of-contents lines yield no relations. The raw text is always kept as the edge's `predicate` attribute.
 * **build** – merges duplicate entities, then emits the graph:
   node types `Document, Heading, Paragraph, Table, Figure` and extracted entities;
   edges `CONTAINS` (hierarchy), `NEXT` (reading order), `MENTIONS`, and the extracted relations.
@@ -362,8 +374,12 @@ entry-level relations only (no document text, so paywalled content is never merg
 
 * `complies_with`, `overlaps_with` – **curated** (`basis: config`), from the JSON configuration.
 * `cites` – **inferred** (`basis: text`, with `count`, `identifiers`): an entry's text cites an identifier (e.g. `RG 1.233`)
-  that is another entry's own identity. Treat it as a hint.
-* `dependents.json` lists per entry `depends_on`, `declared_dependents`, `overlaps`, `cited_by`, `cites` and, for standards,
+  that is another entry's own identity. Treat it as a hint. A citation resolves to **one** entry (standards before reports, then the entry that
+  stands for the fewest identifiers; the others are listed as `also_matched` on the edge). An entry never cites itself: not through an
+  identifier it owns, and not through an entry that shares one of its source documents. In 10 CFR text a bare `part 100` /
+  `appendix A to part 100` counts as the identifier `10 CFR 100`.
+* `part_of` – **inferred** (`basis: identifier`): the entry for `10 CFR 50.69` is part of the entry for `10 CFR 50`.
+* `dependents.json` lists per entry `depends_on`, `declared_dependents`, `overlaps`, `cited_by`, `cites`, `part_of` and, for standards,
   `affects_reports` (`declared`, `via_overlap`, `inferred`).
 * Alerts for a standard now end with *"Reports affected: report:9 (declared)…"* and carry `details.affects_reports`.
 * MCP: tool `get_dependents(entry)`; the graph tools accept `ref="combined"`; resource `kg://combined/graph`.
@@ -373,6 +389,17 @@ with a BOM, comment or DOCTYPE first); raster formats are converted to PNG (PyMu
 converted keeps its own extension. Content that is not an image (e.g. an HTML error page served for an `<img src>`) is not
 written and is listed under `skipped` in the figure manifest. No `.bin` files are produced.
 
+## Table database (design values from the tables of the standards)
+
+`src/kg_tabledb.py` runs after the KG agent (`python src/kg_agent.py run --tables`, or on its own) and loads every extracted table CSV into PostgreSQL +
+pgvector: one typed database table per CSV with an `_embedding vector(DIM)` column (same Ollama model and dimension everywhere; whole rows are embedded by default, `--row-mode text` leaves numbers out),
+join columns inferred between the tables of a document (names + values + KG relations, optionally also proposed by an Ollama LLM and checked by an LLM judge, `--llm-joins`),
+units of numeric columns deduced from headers, table metadata and KG nodes (strict / broad / off), published as data dictionaries and relationship maps
+(`<home>/tabledb/<docid>/`). The MCP server gets `list_tables`, `describe_table`, `search_tables`, `lookup_values`, `query_table`, `join_tables`,
+`get_data_dictionary`, `get_relationship_map`, `evaluate_joins`, `explain_units`, session tools (`set_session_preferences` …) so that each session or
+each call can pick the join approach, unit mode and retrieval mode (and optionally `run_sql`), with paywall warnings and a disclaimer on every answer.
+Setup, schema, embedding recipe, design alternatives and limits: [docs/tabledb.md](docs/tabledb.md).
+
 ## Environment variables
 
 | variable | effect |
@@ -381,6 +408,7 @@ written and is listed under `skipped` in the figure manifest. No `.bin` files ar
 | `KG_USER_AGENT`, `KG_BROWSER_PATH` | override the browser identity / Chromium executable |
 | `KG_PDF_ENGINE` | `auto` (default), `layout`, `basic` |
 | `KG_OCR`, `KG_OCR_ENGINE`, `KG_OCR_LANG`, `KG_OCR_DPI` | OCR mode / engine / language / render resolution (default 200) |
+| `KG_TABLE_CHECK` | `off` keeps every detected table; default `on` demotes two-column prose and sentence lists to paragraphs (see docs/tabledb.md) |
 | `KG_OUTPUT_DIR`, `KG_ASSETS_DIR` | default folders for saved KGs (`kg_store`) and exported figures/tables (`kg_assets`) |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server (default `http://localhost:11434`) and model (default `llama3.1`) |
 

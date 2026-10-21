@@ -77,6 +77,20 @@ class Settings(BaseModel):
     keep_archive: int = 0               # versions kept per document (0 = keep all)
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
+    tables: bool = False                # after staging: build / refresh the table database (PostgreSQL + pgvector), see kg_tabledb.py
+    tabledb_dsn: Optional[str] = None   # default $COGENT_TABLEDB_DSN
+    tabledb_schema: str = "kgtables"
+    embedder: str = "ollama"            # ollama | hash  (embeddings of table rows)
+    embed_model: Optional[str] = None   # default nomic-embed-text
+    kg_context: bool = True             # use the KG neighbourhood of a table in the embedded text
+    row_mode: str = "full"              # full: embed every cell of a row | text: leave numeric values out
+    llm_joins: bool = False             # also infer joins with an Ollama LLM and judge all candidates with an LLM (needs --tables)
+    join_model: Optional[str] = None    # Ollama chat model of the join suggester (default llama3.1:8b)
+    join_judge_model: Optional[str] = None
+    join_samples: int = 3               # independent suggestion runs per table pair
+    join_judge_runs: int = 3            # judge votes per candidate
+    join_max_pairs: int = 40
+    join_max_seconds: Optional[float] = None
     prune: bool = True                  # with force: also purge stale asset files and archive (compressed) orphaned staging data
     force: bool = False                 # forced update: re-read every source directly (no conditional requests,
                                         # no "unchanged" short-cut), rebuild the KGs, and log it all
@@ -203,7 +217,7 @@ def doc_identities(g: nx.MultiDiGraph, label: str) -> dict[str, Optional[str]]:
         digits = "".join(c for c in n.split(":")[-1] if c.isdigit())
         return int(digits) if digits else 0
     first = sorted((n for n, d in g.nodes(data=True) if d.get("type") in ("Heading", "Paragraph")), key=num)[:15]
-    texts = [label] + [g.nodes[n].get("text") or g.nodes[n].get("label", "") for n in first]
+    texts = T.filename_variants(label) + [g.nodes[n].get("text") or g.nodes[n].get("label", "") for n in first]
     return {i.label: i.edition for i in T.parse_identities(*texts)}
 
 
@@ -509,6 +523,8 @@ def make_nodes(rt: Runtime):
             a.last_seen, a.is_new = now, old is None
             merged[a.key] = a.model_dump()
             log.warning("[%s] %s", a.kind, a.message)
+        if rt.s.only:                                  # a run limited by --only knows nothing new about the other entries: keep their open alerts as they were
+            merged.update({k: v for k, v in rt.alerts.items() if v.get("entry") not in rt.s.only and k not in merged})
         rt.alerts = merged
         rt.write_json(p.state / "alerts.json", merged)
         return {"alerts": list(merged.values())}
@@ -519,6 +535,8 @@ def make_nodes(rt: Runtime):
         rt.write_json(p.state / "identities.json", rt.ident_state)
         rt.write_json(p.state / "pending.json", rt.pending)
         state["orphans"] = _track_orphans(rt, state)
+        if s.tables:
+            state["tabledb"] = _run_tabledb(rt, state)
         summary = summarize(state)
         narrative = narrate(rt, state, summary)
         text = render_report(rt, state, summary, narrative)
@@ -842,6 +860,33 @@ def _track_orphans(rt: Runtime, state: AgentState) -> list[dict[str, Any]]:
     return out
 
 
+def _run_tabledb(rt: Runtime, state: AgentState) -> dict[str, Any]:
+    """Second stage, after staging: tables -> PostgreSQL + pgvector (kg_tabledb). Never fails the run."""
+    s = rt.s
+    if rt.dry:
+        return {"not_run": "dry run"}
+    dsn = s.tabledb_dsn or os.environ.get("COGENT_TABLEDB_DSN")
+    if not dsn:
+        msg = "table database not built: no DSN (--tabledb-dsn or COGENT_TABLEDB_DSN)"
+        state.setdefault("notes", []).append(msg)
+        return {"error": msg}
+    try:
+        import kg_tabledb
+        from kg_embed import get_embedder
+        emb = get_embedder(s.embedder, s.embed_model, s.ollama_host)
+        out = kg_tabledb.run(rt.p.home, dsn, emb, only=s.only, force=s.force, kg_context=s.kg_context, schema=s.tabledb_schema, row_mode=s.row_mode,
+                             **kg_tabledb.llm_kwargs(s.llm_joins, s.join_model, s.join_judge_model, s.ollama_host, s.join_samples, s.join_judge_runs,
+                                                     s.join_max_pairs, s.join_max_seconds))
+    except Exception as exc:
+        log.exception("table database stage failed")
+        msg = f"table database stage failed: {type(exc).__name__}: {exc}"
+        state.setdefault("errors", []).append(msg)
+        return {"error": msg}
+    for e in out.get("errors", []):
+        state.setdefault("errors", []).append(f"table database: {e}")
+    return {k: out[k] for k in ("embedder", "sources", "loaded", "unchanged", "skipped", "dropped", "joins", "documents_with_joins", "llm_joins", "errors", "warnings")}
+
+
 def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     s, p = rt.s, rt.p
     docid = docid_of(url)
@@ -1125,6 +1170,7 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
     * ``local_copy_outdated``      the local copy states an older edition than the latest known one
     * ``local_copy_unidentified``  (info) the edition of the local copy could not be read from its text
     * ``store_page_changed``       (info) the landing/store page changed (possible new edition/errata)
+    * ``edition_not_endorsed``     the edition on board is not one of the ``endorsed_editions`` the configuration lists for the entry
     """
     out: list[Alert] = []
     findings = state.get("findings", [])
@@ -1189,6 +1235,27 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
             if a["action"] == "updated" and e.key in a["entries"] and not a["url"].startswith("file://"):
                 out.append(Alert(kind="store_page_changed", entry=e.key, identity=a["url"], severity="info", message=(
                     f"{e.key}: the store/landing page changed ({a['url']}); check it for a new edition, errata or a price/availability change.")))
+    for e in rt.entries:                                     # editions a regulator endorses (any entry, paywalled or not)
+        if not (e.endorsed_editions and rt.selected(e)):
+            continue
+        by = e.endorsed_by or "the endorsing regulatory guide"
+        for i in T.entry_identities(e):
+            fam = T.FAMILIES[i.family]
+            staged: Optional[str] = None
+            for url, _ in entry_sources(rt, e):
+                ed = (read_json(rt.p.doc(docid_of(url)) / "state.json", {}).get("identities") or {}).get(i.label)
+                if ed is not None and (staged is None or fam.rank(ed) > fam.rank(staged)):
+                    staged = ed
+            if staged is None:
+                continue                                      # edition unknown: local_copy_unidentified already says so
+            ranks = {fam.rank(x) for x in e.endorsed_editions}
+            if fam.rank(staged) in ranks:
+                continue
+            top = max(ranks)
+            why = "newer than any edition" if fam.rank(staged) > top else "not one of the editions"
+            out.append(Alert(kind="edition_not_endorsed", entry=e.key, identity=i.label, details={"have": staged, "endorsed": e.endorsed_editions, "endorsed_by": e.endorsed_by},
+                             message=(f"{e.key} {e.name}: the edition on board ({i.label} {staged}) is {why} endorsed by {by} ({', '.join(e.endorsed_editions)}); "
+                                      f"answers from it may not reflect the endorsed requirements.")))
     return out
 
 
@@ -1207,10 +1274,12 @@ def summarize(state: AgentState) -> dict[str, Any]:
         "docs_unchanged": count(da, "action", "unchanged"), "docs_error": count(da, "action", "error"),
         "forced": bool(state.get("forced")), "docs_refreshed": count(da, "action", "refreshed"),
         "entries_refreshed": sum(1 for x in state.get("entry_actions", []) if x["action"] == "refreshed"),
+        "error_messages": [str(x)[:300] for x in state.get("errors", [])][:50],
         "assets_purged_files": sum((x.get("purged") or {}).get("files", 0) for x in da),
         "assets_purged_bytes": sum((x.get("purged") or {}).get("bytes", 0) for x in da),
         "orphans": len(state.get("orphans", [])), "orphans_archived": sum(1 for o in state.get("orphans", []) if o.get("archived_now")),
         "forced_warnings": len(state.get("forced_warnings", [])),
+        "tabledb": state.get("tabledb"),
         "entries_rebuilt": sum(1 for x in state.get("entry_actions", []) if x["action"] in ("rebuilt", "created")),
         "trackers": len(state.get("tracker_log", [])),
         "trackers_changed": sum(1 for t in state.get("tracker_log", []) if t["changed"]),
@@ -1314,12 +1383,29 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
             L.append("\n_Restore with the `restore` command recorded in `state/orphans.json` (tar -xzf … -C staging/…)._")
         L.append("")
 
+    td = state.get("tabledb")
+    if td:
+        L.append("### Table database\n")
+        if td.get("error") or td.get("not_run"):
+            L.append(f"- {td.get('error') or 'not run: ' + td['not_run']}")
+        else:
+            L.append(f"- {td['sources']} staged table(s): **{td['loaded']} loaded**, {td['unchanged']} unchanged, {td['skipped']} skipped, {td['dropped']} dropped; "
+                     f"{td['joins']} join(s) inferred in {td['documents_with_joins']} document(s); embedder `{td['embedder']}`. "
+                     f"Details in `logs/tabledb_report.md`; data dictionaries and relationship maps in `tabledb/<docid>/`.")
+            lj = td.get("llm_joins")
+            if lj:
+                L.append(f"- LLM join inference (suggester `{lj['suggester']}`, judge `{lj['judge']}`; {lj['documents']} document(s) evaluated, status {', '.join(lj['llm_status']) or '-'}): "
+                         f"{lj['candidates']} candidate(s): {lj['confirmed']} confirmed (deterministic + LLM + judge), {lj['deterministic_only']} deterministic only, "
+                         f"{lj['llm_only']} LLM only, {lj['disputed']} disputed, {lj['rejected']} rejected, {lj['uncertain']} uncertain. Statistics in `tabledb/<docid>/join_evaluation.md`.")
+            L += [f"- **WARNING** {_md(w, 200)}" for w in td.get("warnings", [])] + [f"- **ERROR** {_md(e, 200)}" for e in td.get("errors", [])]
+        L.append("")
+
     al = state.get("alerts", [])
     if al:
         L.append("### Warnings: paywalled documents\n")
         titles = {"no_local_copy": "NO LOCAL COPY", "new_edition_for_purchase": "NEW EDITION FOR PURCHASE",
                   "local_copy_outdated": "LOCAL COPY OUTDATED", "local_copy_unidentified": "local copy not identified",
-                  "store_page_changed": "store page changed"}
+                  "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED"}
         for a in sorted(al, key=lambda a: (a["severity"] != "warning", a["kind"], a["entry"])):
             tag = "**WARNING**" if a["severity"] == "warning" else "note"
             age = "NEW" if a["is_new"] else f"open since {a['first_seen'][:10]}, {a['runs']} runs"
@@ -1606,6 +1692,20 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
+    r.add_argument("--tables", action="store_true", help="after staging, build / refresh the table database (PostgreSQL + pgvector; kg_tabledb.py)")
+    r.add_argument("--tabledb-dsn", help="postgresql://user:pass@host/db (default $COGENT_TABLEDB_DSN)")
+    r.add_argument("--tabledb-schema", default="kgtables")
+    r.add_argument("--embedder", choices=["ollama", "hash"], default="ollama", help="embedder for table rows (Ollama model, or 'hash' for offline tests)")
+    r.add_argument("--embed-model", help="Ollama embedding model (default nomic-embed-text)")
+    r.add_argument("--no-kg-context", action="store_true", help="do not use the KG neighbourhood of a table in the embedded text")
+    r.add_argument("--row-mode", choices=["full", "text"], default="full", help="full: embed every cell of a row (default); text: leave numeric values out")
+    r.add_argument("--llm-joins", action="store_true", help="with --tables: also infer joins with an Ollama LLM and evaluate all candidates with an LLM judge")
+    r.add_argument("--join-model", help="Ollama chat model of the join suggester (default llama3.1:8b)")
+    r.add_argument("--join-judge-model", help="Ollama chat model of the judge (default: the suggester)")
+    r.add_argument("--join-samples", type=int, default=3, help="independent suggestion runs per table pair")
+    r.add_argument("--join-judge-runs", type=int, default=3, help="judge votes per candidate")
+    r.add_argument("--join-max-pairs", type=int, default=40)
+    r.add_argument("--join-max-seconds", type=float, help="time budget per document for the LLM stage")
     r.add_argument("--no-prune", action="store_true", help="with --force: do not purge stale asset files or archive orphaned staging data")
     r.add_argument("--force", action="store_true", help="forced update: re-read every tracking page and source document directly "
                    "(no conditional requests, no \"unchanged\" short-cut), rebuild the KGs even if nothing changed, pick up "
@@ -1636,7 +1736,12 @@ def main(argv: Optional[list[str]] = None) -> None:
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
-                 force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False))
+                 force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False),
+                 tables=getattr(a, "tables", False), tabledb_dsn=getattr(a, "tabledb_dsn", None), tabledb_schema=getattr(a, "tabledb_schema", "kgtables"),
+                 embedder=getattr(a, "embedder", "ollama"), embed_model=getattr(a, "embed_model", None), kg_context=not getattr(a, "no_kg_context", False),
+                 row_mode=getattr(a, "row_mode", "full"), llm_joins=getattr(a, "llm_joins", False), join_model=getattr(a, "join_model", None),
+                 join_judge_model=getattr(a, "join_judge_model", None), join_samples=getattr(a, "join_samples", 3), join_judge_runs=getattr(a, "join_judge_runs", 3),
+                 join_max_pairs=getattr(a, "join_max_pairs", 40), join_max_seconds=getattr(a, "join_max_seconds", None))
     if a.cmd == "run":
         st = run_once(s)
         print(st["report"] if s.dry_run else f"report appended to {Paths(s.home).report}\n{st['summary']}")

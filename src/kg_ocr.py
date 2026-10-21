@@ -179,29 +179,9 @@ def _clean(s: str) -> str:
 
 
 def order_lines(lines: list[OCRLine], width: float) -> list[OCRLine]:
-    """Reading order: top to bottom; on two-column pages column by column between full-width lines."""
-    lines = sorted(lines, key=lambda l: (round(l.y0 / max(l.h, 1.0)), l.x0))
-    if len(lines) < 8:
-        return lines
-    mid = width / 2
-    left = [l for l in lines if l.x1 <= mid * 1.1]
-    right = [l for l in lines if l.x0 >= mid * 0.9]
-    span = [l for l in lines if l not in left and l not in right]
-    if len(left) < 4 or len(right) < 4 or len(span) > 0.25 * len(lines):
-        return sorted(lines, key=lambda l: (l.y0, l.x0))
-    out: list[OCRLine] = []
-    band_l: list[OCRLine] = []
-    band_r: list[OCRLine] = []
-    for l in sorted(lines, key=lambda l: l.y0):
-        if l in span:
-            out += sorted(band_l, key=lambda x: x.y0) + sorted(band_r, key=lambda x: x.y0)
-            band_l, band_r = [], []
-            out.append(l)
-        elif l in left:
-            band_l.append(l)
-        else:
-            band_r.append(l)
-    return out + sorted(band_l, key=lambda x: x.y0) + sorted(band_r, key=lambda x: x.y0)
+    """Reading order: top to bottom; on pages with two or three text columns column by column between full-width lines (kg_layout)."""
+    import kg_layout
+    return kg_layout.order(lines, width)
 
 
 def extract_tables(lines: list[OCRLine], h_med: float) -> tuple[list[tuple[list[list[str]], OCRLine]], list[OCRLine]]:

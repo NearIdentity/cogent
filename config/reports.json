@@ -41,7 +41,7 @@
         ],
         "staged": {
           "kg": "staging/reports/1/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [
             {
               "url": "https://www.nrc.gov/docs/ML1924/ML19241A472.pdf",
@@ -90,7 +90,7 @@
         ],
         "staged": {
           "kg": "staging/reports/2/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [
             {
               "url": "https://www.nrc.gov/docs/ML2326/ML23269A222.pdf",
@@ -137,7 +137,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/3/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [],
           "editions": {}
         }
@@ -184,7 +184,7 @@
         ],
         "staged": {
           "kg": "staging/reports/4/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [
             {
               "url": "https://www.ecfr.gov/current/title-10/section-50.69",
@@ -192,7 +192,7 @@
               "local": false,
               "fetched": "2026-10-12T20:37:34Z",
               "text_sha": "0fd98e0c77ee",
-              "as_of": "2026-10-08",
+              "as_of": "2026-10-19",
               "editions": {}
             }
           ],
@@ -221,7 +221,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/5/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [],
           "editions": {}
         }
@@ -270,7 +270,7 @@
         ],
         "staged": {
           "kg": "staging/reports/6/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [
             {
               "url": "https://www.nrc.gov/reactors/new-reactors/advanced/modernizing/guidance/non-lwr-prob-risk-assessment-standard",
@@ -364,7 +364,7 @@
         ],
         "staged": {
           "kg": "staging/reports/7/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:39Z",
           "documents": [
             {
               "url": "https://www.nrc.gov/docs/ML2125/ML21250A378.pdf",
@@ -447,7 +447,7 @@
         ],
         "staged": {
           "kg": "staging/reports/8/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [
             {
               "url": "https://id.energy.gov/Home/DownloadDocument/5633",
@@ -503,7 +503,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/9/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
@@ -546,7 +546,7 @@
         ],
         "staged": {
           "kg": "staging/reports/10/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [
             {
               "url": "https://www.nrc.gov/docs/ml2317/ml23177a002.pdf",
@@ -608,7 +608,7 @@
         ],
         "staged": {
           "kg": "staging/reports/11/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
@@ -644,7 +644,7 @@
         ],
         "staged": {
           "kg": "staging/reports/12/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
@@ -673,7 +673,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/13/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
@@ -700,7 +700,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/14/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
@@ -730,7 +730,7 @@
         "latest": [],
         "staged": {
           "kg": "staging/reports/15/kg.json",
-          "kg_built": "2026-10-12T20:42:41Z",
+          "kg_built": "2026-10-20T03:47:40Z",
           "documents": [],
           "editions": {}
         }
