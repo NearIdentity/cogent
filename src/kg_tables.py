@@ -23,6 +23,8 @@ from typing import Any, Optional
 
 import networkx as nx
 
+from kg_tablecheck import fix_caption
+
 RECIPE = "v2"                       # bump when the embedding text recipe changes (forces re-embedding)
 ROW_MODES = ("full", "text")        # full: every cell of the row is embedded (default); text: numeric cell values are left out
 
@@ -215,7 +217,7 @@ def _rel_neighbors(g, n: str, rel: str, direction: str) -> list[str]:
 
 def kg_context(g: Optional[nx.MultiDiGraph], node_id: str, caption: str = "", use_kg: bool = True) -> Context:
     """What the document KG knows about a table node (see module docstring). With no graph / unknown node only the caption."""
-    ctx = Context(caption=re.sub(r"\s+", " ", caption or "").strip())
+    ctx = Context(caption=fix_caption(caption))
     m = _TABLE_LABEL.match(ctx.caption)
     ctx.table_label = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
     if g is None or not use_kg or node_id not in g:

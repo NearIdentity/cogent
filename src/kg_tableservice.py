@@ -211,8 +211,10 @@ class TableService:
     def _decorate(self, c, t: dict[str, Any], cache: dict) -> dict[str, Any]:
         lab = self._label(c, t["docid"], cache)
         src = t.get("source_url") or ""
-        t = {**t, "paywalled": lab["paywalled"],
-             "source": {"document_id": t["docid"], "document": t.get("doc_label"), "url": "local:" + src.rsplit("/", 1)[-1] if src.startswith("file://") else src,
+        cfg = self.store._config()
+        title = TDB.document_title(t.get("doc_label") or "", [cfg[k].get("document") or cfg[k].get("report") or "" for k in (t.get("entries") or []) if k in cfg], t["docid"])
+        t = {**t, "doc_label": title, "paywalled": lab["paywalled"],
+             "source": {"document_id": t["docid"], "document": title, "url": "local:" + src.rsplit("/", 1)[-1] if src.startswith("file://") else src,
                         "page": t.get("page"), "caption": t.get("caption"), "section": t.get("section_path")}}
         for k in ("source_url", "pg_table"):
             t.pop(k, None)

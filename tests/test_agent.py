@@ -662,3 +662,27 @@ def test_edition_not_endorsed_warning(tmp_path):
         assert not [a for a in st["alerts"] if a["kind"] == "edition_not_endorsed"], st["alerts"]
     finally:
         site.close()
+
+
+def test_run_limited_by_only_keeps_the_open_alerts_of_other_entries(tmp_path):
+    """A run with --only standard:20 used to rewrite alerts.json with that entry's alerts alone, silently closing every other open warning."""
+    from mock_site import Site
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": i, "document": f"ASCE/SEI {40 + i}-19", "paywalled": True, "links": [{"text": "Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": []} for i in (20, 21)]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        full = kg_agent.run_once(s)
+        assert sorted(a["entry"] for a in full["alerts"] if a["kind"] == "no_local_copy") == ["standard:20", "standard:21"]
+        part = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "only": ["standard:20"]}))
+        assert sorted(a["entry"] for a in part["alerts"] if a["kind"] == "no_local_copy") == ["standard:20", "standard:21"]
+        kept = next(a for a in part["alerts"] if a["entry"] == "standard:21")
+        assert kept["runs"] == 1                                              # untouched: not counted as seen again
+        on_disk = json.loads((s.home / "state/alerts.json").read_text())
+        assert {v["entry"] for v in on_disk.values()} == {"standard:20", "standard:21"}
+    finally:
+        site.close()

@@ -523,6 +523,8 @@ def make_nodes(rt: Runtime):
             a.last_seen, a.is_new = now, old is None
             merged[a.key] = a.model_dump()
             log.warning("[%s] %s", a.kind, a.message)
+        if rt.s.only:                                  # a run limited by --only knows nothing new about the other entries: keep their open alerts as they were
+            merged.update({k: v for k, v in rt.alerts.items() if v.get("entry") not in rt.s.only and k not in merged})
         rt.alerts = merged
         rt.write_json(p.state / "alerts.json", merged)
         return {"alerts": list(merged.values())}

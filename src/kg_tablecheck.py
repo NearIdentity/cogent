@@ -145,6 +145,59 @@ def drop_repeated_headers(rows: list[list[str]]) -> tuple[list[list[str]], int]:
     return best_rows, best_removed
 
 
+_DASHES = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d"), "-")
+
+
+def fix_caption(text: str) -> str:
+    """Normalise a table / figure caption: every dash variant between alphanumerics becomes '-', repeated hyphens collapse ('Table 2--1' ->
+    'Table 2-1', 'Table 5\u20111' -> 'Table 5-1'), and a glued acronym gets its space back ('andSDC-2' -> 'and SDC-2')."""
+    t = re.sub(r"\s+", " ", (text or "").translate(_DASHES)).strip()
+    t = re.sub(r"(?<=[A-Za-z0-9])-{2,}(?=[A-Za-z0-9])", "-", t)
+    return re.sub(r"(?<=[a-z]{2})(?=[A-Z]{2,}[-\d])", " ", t)
+
+
+def fix_heading(text: str) -> str:
+    """Give a section number its space back ('2.3.3Criteria and Guidance' -> '2.3.3 Criteria and Guidance'); multi-level numbers only."""
+    return re.sub(r"^(\d+(?:\.\d+)+)(?=[A-Z][a-z]|[A-Z]{3,}\b)", r"\1 ", text or "")
+
+
+_LEADER = re.compile(r"\.{4,}|(?:\.\s){4,}|…{2,}")
+_SECTION_NO = re.compile(r"^(?:\d+(?:\.\d+)*\.?|[A-Z]\.?|appendix\s+\w+|annex\s+\w+)$", re.I)
+_ACRONYM = re.compile(r"^[A-Z][A-Za-z0-9&/\-]{1,9}$")
+
+
+def front_matter(rows: list[list[str]], caption: str = "") -> Optional[str]:
+    """``'toc'`` for a table of contents (dot leaders, or section numbers with a rising page-number column), ``'glossary'`` for a list of
+    acronyms and their expansions; None for anything else. Such tables describe the document, not its design data."""
+    rows = [[(c or "").strip() for c in r] for r in rows if any((c or "").strip() for c in r)]
+    if len(rows) < 4:
+        return None
+    ncols = max(len(r) for r in rows)
+    if re.search(r"table of contents|^\s*contents\b|list of (figures|tables)", " ".join(r[0] for r in rows[:1] if r) + " " + (caption or ""), re.I):
+        return "toc"
+    leaders = sum(1 for r in rows if any(_LEADER.search(c) for c in r))
+    if leaders / len(rows) >= 0.5:
+        return "toc"
+    pages = []
+    for r in rows:
+        last = next((c for c in reversed(r) if c), "")
+        pages.append(int(last) if re.fullmatch(r"\d{1,4}", last) else None)
+    numbered = sum(1 for r in rows if r and _SECTION_NO.match(r[0]))
+    have = [p for p in pages if p is not None]
+    if ncols >= 3 and len(rows) >= 5 and len(have) >= 0.7 * len(rows) and numbered >= 0.6 * len(rows):
+        rising = sum(1 for a, b in zip(have, have[1:]) if b >= a)
+        if rising >= 0.8 * max(1, len(have) - 1):
+            return "toc"
+    if ncols == 2:
+        head = " ".join(rows[0]).lower()
+        data = rows[1:] if re.search(r"acronym|abbreviation|term|symbol", head) else rows
+        short = sum(1 for r in data if len(r) == 2 and _ACRONYM.match(r[0]) and sum(ch.isupper() for ch in r[0]) >= 2 and len(r[1].split()) >= 2 and not any(ch.isdigit() for ch in r[1]))
+        need = 0.5 if re.search(r"acronym|abbreviation", head) else 0.7
+        if len(data) >= 5 and short / len(data) >= need:
+            return "glossary"
+    return None
+
+
 def demote_text(rows: list[list[str]]) -> str:
     """The text of a rejected table in reading order: the first column top to bottom, then the second, and so on."""
     width = max((len(r) for r in rows), default=0)
@@ -158,7 +211,7 @@ def demote_text(rows: list[list[str]]) -> str:
 
 def apply(elements: list, renumber=None) -> dict[str, int]:
     """Demote the false tables among ``elements`` (kg_ingest.Element objects) in place; returns counts. ``renumber`` re-assigns ids."""
-    stats = {"checked": 0, "demoted": 0, "rosters": 0}
+    stats = {"checked": 0, "demoted": 0, "rosters": 0, "front_matter": 0}
     if not enabled():
         return stats
     for e in elements:
@@ -172,6 +225,11 @@ def apply(elements: list, renumber=None) -> dict[str, int]:
             stats["header_rows_removed"] = stats.get("header_rows_removed", 0) + removed
             if e.text and not e.caption:
                 e.text = " | ".join(rows[0])
+        fm = front_matter(e.table, e.caption)
+        if fm:                                           # stays in the graph, but is not exported as a data table
+            e.meta["front_matter"] = fm
+            stats["front_matter"] += 1
+            continue
         v = classify(e.table, e.caption)
         if v.kind == "prose":
             stats["demoted"] += 1

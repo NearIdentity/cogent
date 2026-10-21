@@ -940,6 +940,9 @@ def export_assets(elements: list[Element], source: str, out_dir: Optional[str] =
     for e in elements:
         if e.kind not in ("table", "figure"):
             continue
+        if e.kind == "table" and e.meta.get("front_matter"):        # table of contents / acronym list: in the graph, but not a data table
+            skipped.append({"id": e.id, "page": e.page, "caption": e.caption, "reason": f"front matter ({e.meta['front_matter']})"})
+            continue
         stem = "_".join(x for x in (e.id, f"p{e.page}" if e.page else "", _slug(e.caption or "")) if x)
         if e.kind == "table":
             sub, name = "tables", f"{stem}.csv"
@@ -1281,7 +1284,15 @@ def make_pipeline(
             els = load_html(p)
         else:
             raise ValueError(f"Unsupported file type: {ext!r} (need .pdf or .html)")
-        _tablecheck.apply(els, _renumber)       # false tables (two-column prose, sentence lists) go back to paragraphs
+        for e in els:                           # 'Table 2--1', 'Table 5<U+2011>1', 'andSDC-2'; '2.3.3Criteria' -> '2.3.3 Criteria'
+            if e.kind == "heading" and e.text:
+                e.text = _tablecheck.fix_heading(e.text)
+            if e.caption:
+                fixed = _tablecheck.fix_caption(e.caption)
+                if e.text == e.caption:
+                    e.text = fixed
+                e.caption = fixed
+        _tablecheck.apply(els, _renumber)       # false tables (two-column prose, sentence lists) go back to paragraphs; TOC / glossary are flagged
         if figure_captioner:  # optional vision model for uncaptioned figures
             for e in els:
                 data = e.meta.get("bytes")
@@ -1342,6 +1353,8 @@ def make_pipeline(
             if e.kind == "table":
                 attrs["rows"] = json.dumps(e.table)
                 attrs["file"] = e.meta.get("file")  # exported CSV, if any
+                if e.meta.get("front_matter"):
+                    attrs["front_matter"] = e.meta["front_matter"]
                 if e.meta.get("footnotes"):
                     attrs["footnotes"] = json.dumps(e.meta["footnotes"])      # [{row, col, marker}]: markers removed from the cell values
                 if e.meta.get("repeated_header_rows_removed"):
