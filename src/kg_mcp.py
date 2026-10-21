@@ -22,6 +22,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 from dataclasses import asdict
@@ -171,11 +172,39 @@ class BearerAuth:
 RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 
+_PRIVATE_ROOTS: list[tuple[str, str]] = []          # (absolute path, public replacement), longest first; set by create_server
+
+
+def set_private_roots(home: Path) -> None:
+    """Local file-system locations that must not appear in answers: the agent home (relative ``local:`` / ``<agent-home>``) and the user's home."""
+    h = Path(home).resolve()
+    roots = [(f"file://{h / 'local'}/", "local:"), (f"file://{h}/", "<agent-home>/"), (str(h / "local") + "/", "local:"),
+             (str(h), "<agent-home>"), (str(Path.home().resolve()), "~")]
+    _PRIVATE_ROOTS[:] = sorted({r for r in roots if r[0] not in ("", "/", "file:///")}, key=lambda r: -len(r[0]))
+
+
+_FILE_URL = re.compile(r"file://(?:/[^\s\"')\]]*)?/([^/\s\"')\]]+)")
+
+
+def scrub(obj: Any) -> Any:
+    """Replace absolute local paths in every string of a result: no user name or directory layout leaves the server (``file:///a/b/x.pdf`` -> ``local:x.pdf``)."""
+    if isinstance(obj, str):
+        for src, dst in _PRIVATE_ROOTS:
+            if src in obj:
+                obj = obj.replace(src, dst)
+        return _FILE_URL.sub(lambda m: "local:" + m.group(1), obj) if "file://" in obj else obj
+    if isinstance(obj, dict):
+        return {k: scrub(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [scrub(v) for v in obj]
+    return obj
+
+
 def _tool_errors(fn: Callable) -> Callable:
     @functools.wraps(fn)
     def inner(*a, **kw):
         try:
-            return fn(*a, **kw)
+            return scrub(fn(*a, **kw))
         except NotFound as exc:
             raise ValueError(str(exc.args[0])) from None
     return inner
@@ -183,6 +212,7 @@ def _tool_errors(fn: Callable) -> Callable:
 
 def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, public_hosts: Optional[list[str]] = None,
                   stateless: bool = True, oauth: Any = None, issuer_url: Optional[str] = None, tables: Any = None) -> FastMCP:
+    set_private_roots(store.home)
     hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
     for h in public_hosts or []:
         hosts += [h, f"{h}:*"]
@@ -221,8 +251,11 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
     @mcp.tool(annotations=RO)
     @_tool_errors
     def get_overview() -> dict[str, Any]:
-        """Start here: how many entries/graphs exist, version-status counts, open warnings, last agent run, disclaimers."""
-        return store.overview()
+        """Start here: how many entries/graphs exist, version-status counts, open warnings, the last agent run with its itemised errors (`run_errors`,
+        `document_errors`), disclaimers, and whether the table database is reachable."""
+        out = store.overview()
+        out["table_database"] = tables.health() if tables is not None else {"configured": False}
+        return out
 
     @mcp.tool(annotations=RO)
     @_tool_errors
@@ -270,14 +303,26 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
     @_tool_errors
     def get_outline(ref: str, max_items: int = 200) -> dict[str, Any]:
         """Headings of the document(s) in reading order (ids usable with get_node / get_neighbors)."""
-        return wrap(ref, {"outline": store.outline(ref, max_items)})
+        warn = store.outline_warnings(ref)
+        return wrap(ref, {"outline": store.outline(ref, max_items),
+                          **({"order_warnings": warn, "order_note": "Section numbers are out of sequence: the page columns may have been read in the wrong order "
+                                                                    "(or the numbering restarts, e.g. in an appendix). Check the source before relying on the order."} if warn else {})})
 
     @mcp.tool(annotations=RO)
     @_tool_errors
-    def search_graph(ref: str, query: str, node_types: Optional[list[str]] = None, limit: int = 20) -> dict[str, Any]:
-        """Keyword search over node labels/text (all terms must match). node_types e.g. ['Paragraph','Heading','Table',
-        'Figure','Entity','Identifier']."""
-        return wrap(ref, {"matches": store.search(ref, query, node_types, limit)})
+    def search_graph(ref: str, query: str, node_types: Optional[list[str]] = None, limit: int = 20,
+                     match: Literal["all", "any"] = "all") -> dict[str, Any]:
+        """Keyword search over node labels/text. match='all' (default): every term must occur in one node; match='any': at least one,
+        best matches first. Hyphens, slashes and underscores count as spaces. node_types e.g. ['Paragraph','Heading','Table',
+        'Figure','Entity','Identifier']. An empty result lists how many nodes contain each term. When an entry has several documents (e.g. the eCFR text and the
+        Federal Register rule), results carry `source_role`, codified regulation text ranks first, and a paragraph repeated in another document is
+        shown once with the other node ids under `also_in`."""
+        rep: dict[str, Any] = {}
+        matches = store.search(ref, query, node_types, limit, match, rep)
+        extra: dict[str, Any] = {}
+        if not matches and len(rep.get("term_counts", {})) > 1:
+            extra = {"term_counts": rep["term_counts"], "note": "no single node contains all the terms; the counts show how many nodes contain each term. Try match='any' or fewer terms."}
+        return wrap(ref, {"matches": matches, **extra})
 
     @mcp.tool(annotations=RO)
     @_tool_errors
@@ -301,9 +346,9 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
 
     @mcp.tool(annotations=RO)
     @_tool_errors
-    def get_table(ref: str, node_id: str) -> dict[str, Any]:
-        """Rows of a Table node."""
-        return wrap(ref, store.table(ref, node_id))
+    def get_table(ref: str, node_id: str, offset: int = 0, limit: int = 200) -> dict[str, Any]:
+        """Rows of a Table node, `limit` rows at a time (default 200; `total_rows`, `truncated` and `next_offset` say whether more remain)."""
+        return wrap(ref, store.table(ref, node_id, offset, limit))
 
     @mcp.tool(annotations=RO)
     @_tool_errors
@@ -370,8 +415,12 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
         """Set how join inference, unit deduction and retrieval behave for the rest of this session (saved server-side for 8 hours, in memory).
         Start from a `profile` and/or set options individually; every later tool call can still override them (arguments of the call, or a
         `profile` named in the call). Pass a stable `session_id` if several conversations share one token. Does not change any stored data."""
-        return svc.set_session(skey(ctx, session_id), profile, approach=approach, min_score=min_score, include_rejected=include_rejected,
-                               min_agreement=min_agreement, units=units, retrieval=retrieval)
+        out = svc.set_session(skey(ctx, session_id), profile, approach=approach, min_score=min_score, include_rejected=include_rejected,
+                              min_agreement=min_agreement, units=units, retrieval=retrieval)
+        if not session_id:
+            out["warning"] = ("saved for every conversation that uses this token without a session_id (key '%s'); pass a unique session_id here and in later "
+                              "calls to keep this conversation's settings separate, or run the server with --stateful" % out["session"])
+        return out
 
     @mcp.tool(annotations=RO)
     @_tool_errors
@@ -589,7 +638,7 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
     @mcp.resource("kg://{kind}/{ident}/metadata", mime_type="application/json")
     def r_meta(kind: str, ident: str) -> str:
         try:
-            return json.dumps(store.entry_metadata(f"{kind}:{ident}"), indent=1)
+            return json.dumps(scrub(store.entry_metadata(f"{kind}:{ident}")), indent=1)
         except NotFound as exc:
             raise ValueError(str(exc.args[0])) from None
 
@@ -713,6 +762,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     oauth_path=a.home / "mcp" / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host,
                     stateless=not a.stateful)
     mode = "OFF" if a.no_auth else f"OAuth 2.1 + bearer token (issuer {a.oauth_issuer})" if a.oauth_issuer else "bearer token"
+    if tables.has_db:
+        h = tables.health()
+        if h.get("reachable") and h.get("can_select"):
+            log.info("table database reachable as %s (%s table(s))", h.get("user"), h.get("tables"))
+        else:
+            log.warning("TABLE DATABASE NOT USABLE: %s. %s The table tools will fail until this is fixed (check with `kg_tabledb.py --dsn <dsn> check`).",
+                        h.get("error") or ("no SELECT privilege" if h.get("reachable") else "unknown"), h.get("hint", ""))
     log.info("serving %s on http://%s:%s/mcp (auth %s)", a.home, a.host, a.port, mode)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info", proxy_headers=True, forwarded_allow_ips="127.0.0.1")
     return 0

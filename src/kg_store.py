@@ -11,6 +11,7 @@ Only networkx is needed (no LangGraph / Playwright / OCR imports).
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,7 @@ ALERT_NOTES = {
     "new_edition_for_purchase": "A newer edition is on sale than the one on board; answers may rest on a superseded edition.",
     "local_copy_outdated": "The on-board copy is older than the latest known edition.",
     "local_copy_unidentified": "The edition of the on-board copy could not be read from its text.",
+    "edition_not_endorsed": "The edition on board is not one that the endorsing regulatory guide accepts; check which edition applies before relying on it.",
     "store_page_changed": "The store/landing page changed since the last check; a new edition or errata may exist.",
 }
 
@@ -70,6 +72,22 @@ def _clip(text: Any, full: bool) -> Any:
     if isinstance(text, str) and not full and len(text) > TEXT_LIMIT:
         return text[:TEXT_LIMIT] + f"… [{len(text) - TEXT_LIMIT} more characters; pass full_text=true]"
     return text
+
+
+ROLE_RANK = {"regulatory_text": 0, "local_copy": 1, "document": 1, "rulemaking_notice": 2}
+
+
+def doc_role(url: str) -> str:
+    """What kind of source a document is: the codified regulation (eCFR), the Federal Register notice that announced it, a purchased local copy, or other."""
+    u = (url or "").lower()
+    if u.startswith("file://"):
+        return "local_copy"
+    host = u.split("/")[2] if "//" in u else ""
+    if host == "ecfr.gov" or host.endswith(".ecfr.gov"):
+        return "regulatory_text"
+    if host == "federalregister.gov" or host.endswith(".federalregister.gov"):
+        return "rulemaking_notice"
+    return "document"
 
 
 class NotFound(KeyError):
@@ -145,6 +163,22 @@ class Store:
             return json.loads(lines[-1]) if lines else None
         except (OSError, ValueError):
             return None
+
+    def run_errors(self, run: Optional[dict[str, Any]] = None) -> list[str]:
+        """The error messages of the last agent run (itemised since the run record carries them)."""
+        run = run if run is not None else self.last_run()
+        return list(((run or {}).get("summary") or {}).get("error_messages") or [])
+
+    def document_errors(self) -> list[dict[str, Any]]:
+        """Documents whose last fetch failed, with the message and the number of consecutive failures (from their state files)."""
+        out = []
+        base = self.home / "staging" / "documents"
+        for d in sorted(base.glob("*/state.json")) if base.is_dir() else []:
+            st = _read_json(d, {}) or {}
+            if st.get("last_error") and st.get("consecutive_errors", 0) > 0:
+                out.append({"document_id": d.parent.name, "entries": self._doc_entries(d.parent.name), "url": st.get("url"),
+                            "error": st["last_error"], "consecutive_errors": st["consecutive_errors"], "last_checked": st.get("last_checked")})
+        return out
 
     # --------------------------------------------------------------- catalogue
     def catalog(self, kind: Optional[str] = None, query: Optional[str] = None) -> list[dict[str, Any]]:
@@ -272,7 +306,7 @@ class Store:
         for r in cat:
             by_status[r["version_status"] or "unknown"] = by_status.get(r["version_status"] or "unknown", 0) + 1
         run = self.last_run()
-        return {"entries": len(cat), "with_graph": sum(r["has_graph"] for r in cat),
+        return {"run_errors": self.run_errors(run), "document_errors": self.document_errors(), "entries": len(cat), "with_graph": sum(r["has_graph"] for r in cat),
                 "version_status_counts": by_status, "open_warnings": sum(1 for a in self.alerts() if a.get("severity") == "warning"),
                 "agent_last_run": (run or {}).get("finished"), "agent_last_forced_run": self.last_forced_run(), "agent_last_run_summary": (run or {}).get("summary"),
                 "disclaimers": GENERAL_DISCLAIMERS}
@@ -290,6 +324,18 @@ class Store:
                 "node_types": types, "relations": rels,
                 "graph_attributes": {k: v for k, v in g.graph.items() if isinstance(v, (str, int, float, bool))}}
 
+    @staticmethod
+    def _nid(g: nx.MultiDiGraph, ref: str, node_id: str) -> str:
+        """A node id as given, or in the other spelling the combined graph uses (``standard:3`` / ``entry:standard:3``); a miss suggests close ids."""
+        if node_id in g:
+            return node_id
+        for alt in ("entry:" + node_id, node_id[len("entry:"):] if node_id.startswith("entry:") else None):
+            if alt and alt in g:
+                return alt
+        import difflib
+        near = difflib.get_close_matches(node_id, [str(n) for n in g.nodes], n=3, cutoff=0.6)
+        raise NotFound(f"node {node_id!r} not in {ref}" + (f"; did you mean {', '.join(repr(x) for x in near)}?" if near else ""))
+
     def _node(self, g: nx.MultiDiGraph, nid: str, full: bool = False) -> dict[str, Any]:
         a = dict(g.nodes[nid])
         out = {"id": nid, "type": a.pop("type", None), "label": _clip(a.pop("label", None), full)}
@@ -302,24 +348,70 @@ class Store:
         out.update({k: v for k, v in a.items() if isinstance(v, (str, int, float, bool, list))})
         return out
 
-    def search(self, ref: str, query: str, node_types: Optional[list[str]] = None, limit: int = 20) -> list[dict[str, Any]]:
+    def search(self, ref: str, query: str, node_types: Optional[list[str]] = None, limit: int = 20, match: str = "all",
+               report: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+        """Keyword search. ``match='all'``: every term must occur in the node (default); ``'any'``: at least one, ranked by how many.
+        Hyphens, slashes and underscores count as spaces on both sides (``DOE-STD`` finds ``DOE STD``). ``report`` (a dict) receives the
+        per-term node counts, so an empty result can say which term is missing."""
+        if match not in ("all", "any"):
+            raise NotFound("match must be 'all' or 'any'")
         g = self.graph(ref)
-        terms = [t for t in query.lower().split() if t]
+        norm = lambda t: " ".join(re.sub(r"[-_/]+", " ", t.lower()).split())
+        terms = [norm(t) for t in query.split() if norm(t)]
+        counts = {t: 0 for t in terms}
         scored = []
         for nid, a in g.nodes(data=True):
             if node_types and a.get("type") not in node_types:
                 continue
-            hay = f"{a.get('label', '')} {a.get('text', '')}".lower()
-            hits = sum(hay.count(t) for t in terms)
-            if terms and all(t in hay for t in terms):
-                scored.append((hits + (5 if all(t in str(a.get("label", "")).lower() for t in terms) else 0), nid))
+            label = norm(str(a.get("label", "")))
+            hay = f"{label} {norm(str(a.get('text', '')))}"
+            present = [t for t in terms if t in hay]
+            for t in present:
+                counts[t] += 1
+            ok = bool(terms) and (len(present) == len(terms) if match == "all" else bool(present))
+            if ok:
+                scored.append((sum(hay.count(t) for t in present) + (5 if all(t in label for t in terms) else 0) + 3 * len(present), nid))
+        roles = self._node_roles(ref, g)
+        if len({r for r in roles.values()}) > 1:                       # several kinds of source in one graph: regulation text before the notice that announced it
+            scored = [(sc + (3 if roles.get(nid) == "regulatory_text" else 0), nid) for sc, nid in scored]
         scored.sort(key=lambda x: (-x[0], x[1]))
-        return [self._node(g, nid) for _, nid in scored[:max(1, min(limit, 100))]]
+        out: list[dict[str, Any]] = []
+        seen: dict[str, dict[str, Any]] = {}
+        for _, nid in scored:
+            a = g.nodes[nid]
+            body = norm(str(a.get("text") or a.get("label") or ""))
+            if len(body) >= 40 and a.get("type") in ("Paragraph", "Heading") and body in seen:        # the same paragraph in another document of the entry
+                seen[body].setdefault("also_in", []).append(nid)
+                continue
+            n = self._node(g, nid)
+            if roles.get(nid):
+                n["source_role"] = roles[nid]
+            if len(body) >= 40 and a.get("type") in ("Paragraph", "Heading"):
+                seen[body] = n
+            out.append(n)
+            if len(out) >= max(1, min(limit, 100)):
+                break
+        if report is not None:
+            report["term_counts"] = counts
+            report["duplicates_merged"] = sum(len(n.get("also_in", [])) for n in out)
+        return out
+
+    def _node_roles(self, ref: str, g: nx.MultiDiGraph) -> dict[str, str]:
+        """node id -> role of its source document (only for entry graphs of several documents; node ids start with the first 8 characters of the document id)."""
+        if ":" not in ref:
+            return {}
+        try:
+            docs = self._entry_docs(ref)
+        except NotFound:
+            return {}
+        if len(docs) < 2:
+            return {}
+        by_prefix = {d[:8]: doc_role((self._doc_state(d) or {}).get("url", "")) for d in docs}
+        return {str(n): by_prefix[str(n).split(":", 1)[0]] for n in g.nodes if str(n).split(":", 1)[0] in by_prefix}
 
     def node(self, ref: str, node_id: str, full_text: bool = False) -> dict[str, Any]:
         g = self.graph(ref)
-        if node_id not in g:
-            raise NotFound(f"node {node_id!r} not in {ref}")
+        node_id = self._nid(g, ref, node_id)
         n = self._node(g, node_id, full_text)
         n["degree"] = {"in": g.in_degree(node_id), "out": g.out_degree(node_id)}
         return n
@@ -327,8 +419,7 @@ class Store:
     def neighbors(self, ref: str, node_id: str, relation: Optional[str] = None, direction: str = "both",
                   limit: int = 50) -> dict[str, Any]:
         g = self.graph(ref)
-        if node_id not in g:
-            raise NotFound(f"node {node_id!r} not in {ref}")
+        node_id = self._nid(g, ref, node_id)
         edges = []
         if direction in ("out", "both"):
             edges += [(node_id, v, d, "out") for _, v, d in g.out_edges(node_id, data=True)]
@@ -344,8 +435,7 @@ class Store:
 
     def subgraph(self, ref: str, center: str, depth: int = 1, max_nodes: int = 100) -> dict[str, Any]:
         g = self.graph(ref)
-        if center not in g:
-            raise NotFound(f"node {center!r} not in {ref}")
+        center = self._nid(g, ref, center)
         seen, frontier = {center}, [center]
         for _ in range(max(0, min(depth, 4))):
             nxt = []
@@ -360,9 +450,12 @@ class Store:
                 "nodes": [self._node(g, n) for n in h.nodes],
                 "edges": [{"source": u, "target": v, "relation": d.get("relation")} for u, v, d in h.edges(data=True)]}
 
-    def table(self, ref: str, node_id: str) -> dict[str, Any]:
+    def table(self, ref: str, node_id: str, offset: int = 0, limit: int = 200) -> dict[str, Any]:
+        """Rows of a Table node, one page at a time (``offset``/``limit`` rows; ``next_offset`` is set while more remain)."""
         g = self.graph(ref)
-        if node_id not in g or g.nodes[node_id].get("type") != "Table":
+        if node_id not in g:
+            node_id = self._nid(g, ref, node_id)
+        if g.nodes[node_id].get("type") != "Table":
             raise NotFound(f"{node_id!r} is not a Table node of {ref}")
         a = g.nodes[node_id]
         rows = a.get("rows")
@@ -371,15 +464,45 @@ class Store:
                 rows = json.loads(rows)
             except ValueError:
                 pass
-        return {"id": node_id, "label": a.get("label"), "page": a.get("page"), "rows": rows}
+        out = {"id": node_id, "label": a.get("label"), "page": a.get("page")}
+        if isinstance(rows, list):
+            offset, limit = max(0, int(offset)), max(1, min(int(limit), 2000))
+            page = rows[offset:offset + limit]
+            more = offset + len(page) < len(rows)
+            out.update(rows=page, total_rows=len(rows), offset=offset, limit=limit, truncated=more, next_offset=offset + len(page) if more else None)
+            if more:
+                out["note"] = f"{len(rows) - offset - len(page)} more row(s); call again with offset={offset + len(page)} (or use get_table_csv for the exported file)"
+        else:
+            out["rows"] = rows
+        return out
 
     def outline(self, ref: str, max_items: int = 200) -> list[dict[str, Any]]:
         """Headings in document order (node ids are ordered by position within each document)."""
         g = self.graph(ref)
         heads = [(n, a) for n, a in g.nodes(data=True) if a.get("type") == "Heading"]
         heads.sort(key=lambda x: (x[1].get("doc", ""), x[1].get("page") or 0, x[0]))
-        return [{"id": n, "level": a.get("level"), "page": a.get("page"), "title": a.get("label"), "doc": a.get("doc")}
-                for n, a in heads[:max_items]]
+        out = []
+        for n, a in heads[:max_items]:
+            label, text = a.get("label") or "", a.get("text") or ""
+            title = text if len(text) > len(label) else label                   # the node label is cut at 80 characters at ingest; the text is whole
+            clipped = len(title) > 300
+            out.append({"id": n, "level": a.get("level"), "page": a.get("page"), "title": title[:300], "doc": a.get("doc"),
+                        **({"truncated": True} if clipped else {})})
+        return out
+
+    def outline_warnings(self, ref: str) -> list[str]:
+        """Plausibility check of the heading numbers in reading order: a top-level number lower than one already seen ('3 RESPONSIBILITY' before
+        '2 APPLICABILITY') suggests the page columns were read in the wrong order (or that numbering restarts, e.g. in an appendix)."""
+        import kg_layout
+        g = self.graph(ref)
+        heads = sorted(((n, a) for n, a in g.nodes(data=True) if a.get("type") == "Heading"), key=lambda x: (x[1].get("doc", ""), x[1].get("page") or 0, x[0]))
+        by_doc: dict[str, list[tuple[str, str]]] = {}
+        for n, a in heads:
+            by_doc.setdefault(a.get("doc", ""), []).append((n, a.get("text") or a.get("label") or ""))
+        out: list[str] = []
+        for doc, hs in by_doc.items():
+            out += [f"{doc + ': ' if doc else ''}{p}" for p in kg_layout.numbering_problems(hs)]
+        return out[:8]
 
     def export(self, ref: str, max_nodes: int = 2000) -> dict[str, Any]:
         g = self.graph(ref)
@@ -466,6 +589,7 @@ class Store:
                 "depends_on": enrich(d["depends_on"]),
                 "declared_dependents": enrich(d["declared_dependents"]),
                 "overlaps_with": enrich(d["overlaps"]),
+                "part_of": enrich(d.get("part_of", [])),
                 "inferred_cited_by": [{**c, "name": names(c["entry"])} for c in d["cited_by"]],
                 "inferred_cites": [{**c, "name": names(c["entry"])} for c in d["cites"]],
                 "if_this_changes_reports_affected": {"declared": enrich(aff["declared"]), "via_overlapping_standard": enrich(aff["via_overlap"]),
@@ -481,9 +605,23 @@ class Store:
             raise NotFound(f"bad document id {docid!r}")
         return _read_json(self.home / "staging" / "documents" / docid / "state.json", {}) or {}
 
+    def resolve_docid(self, token: str) -> str:
+        """A full 16-hex document id, or a unique prefix of one (graph node ids show only 8 characters, like ``57988ced:tbl0224``)."""
+        token = (token or "").strip().lower()
+        base = self.home / "staging" / "documents"
+        if (base / token).is_dir():
+            return token
+        if len(token) >= 6 and all(c in "0123456789abcdef" for c in token) and base.is_dir():
+            hits = sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(token))
+            if len(hits) == 1:
+                return hits[0]
+            if len(hits) > 1:
+                raise NotFound(f"document id prefix {token!r} is ambiguous: {', '.join(hits[:5])}")
+        raise NotFound(f"unknown document id {token!r} (use the 16-character id of the document, e.g. from get_entry_metadata)")
+
     def _entry_docs(self, ref: str) -> list[str]:
         if ":" not in ref:
-            return [ref]
+            return [self.resolve_docid(ref)]
         meta = _read_json(self._entry_dir(ref) / "meta.json")
         if meta is None:
             raise NotFound(f"no staged entry {ref!r}")
@@ -520,7 +658,7 @@ class Store:
             out.append(f"Paywalled source ({pw['reason']}). Server policy for such assets: {self.paywalled_assets}.")
         for k in pw["entries"]:
             out += [a["message"] for a in self.alerts(k)
-                    if a.get("kind") in ("no_local_copy", "new_edition_for_purchase", "local_copy_outdated")]
+                    if a.get("kind") in ("no_local_copy", "new_edition_for_purchase", "local_copy_outdated", "edition_not_endorsed")]
         return list(dict.fromkeys(out))
 
     def _manifest(self, docid: str) -> tuple[Path, dict[str, Any]]:
@@ -550,10 +688,14 @@ class Store:
 
     def _asset(self, ref: str, asset_id: str, kind: str) -> tuple[Path, dict[str, Any], dict[str, Any], str]:
         docid, _, aid = asset_id.partition("/")
+        if not aid:                                                    # a graph Table/Figure node id: '<docid prefix>:<id>'
+            docid, _, aid = asset_id.partition(":")
         if not aid or not docid.isalnum() or not aid.replace("_", "").replace("-", "").isalnum():
-            raise NotFound(f"bad asset id {asset_id!r}; use '<document_id>/<id>' from list_assets")
+            raise NotFound(f"bad asset id {asset_id!r}; use '<document_id>/<id>' from list_assets (or a graph node id such as '57988ced:tbl0224')")
+        docid = self.resolve_docid(docid)
         if docid not in self._entry_docs(ref):
-            raise NotFound(f"asset {asset_id!r} does not belong to {ref!r}")
+            owners = self._doc_entries(docid)
+            raise NotFound(f"document {docid} is not part of {ref!r}" + (f"; it belongs to {', '.join(owners)}" if owners else ""))
         root, man = self._manifest(docid)
         item = next((a for a in man.get("assets", []) if a["id"] == aid and a["kind"] == kind), None)
         if item is None:

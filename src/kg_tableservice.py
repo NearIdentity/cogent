@@ -160,6 +160,14 @@ class TableService:
     def has_db(self) -> bool:
         return self.db is not None
 
+    def health(self) -> dict[str, Any]:
+        """Status of the table database for ``get_overview`` and the start-up log (never raises)."""
+        if self.db is None:
+            return {"configured": False}
+        h = self.db.health()
+        h.pop("schema", None)
+        return h
+
     @contextmanager
     def conn(self):
         if self.db is None:

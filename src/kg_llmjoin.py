@@ -194,6 +194,28 @@ def final_score(c: dict[str, Any]) -> float:
 
 
 # ------------------------------------------------------------------------------------------------ evaluation
+def _stage_notes(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LLM], cfg: Config, status: dict[str, Any]) -> list[str]:
+    """Why a stage did not run or found nothing, in words (an empty evaluation must not look like a failure)."""
+    n, notes = len(tables), []
+    joins = [r for r in det_rels if r["kind"] == "join"]
+    if n < 2:
+        notes.append(f"The document has {n} table(s): there is nothing to join, so no join inference was attempted.")
+        return notes
+    pairs = n * (n - 1) // 2
+    if not joins:
+        notes.append(f"The deterministic rules compared {pairs} table pair(s) of {n} tables and found no join: no column pair shares a similar name together with "
+                     f"overlapping values. The closest near-misses are listed under 'near_misses'.")
+    else:
+        notes.append(f"The deterministic rules found {len(joins)} join(s) among {n} tables ({pairs} table pairs).")
+    if llm is None:
+        notes.append("LLM join inference is off (start the table agent with --llm-joins, or ask for it with the evaluate_joins tool), so only the deterministic joins are listed and nothing was judged.")
+    elif cfg.samples <= 0:
+        notes.append("LLM join inference is configured with 0 samples.")
+    elif status["llm"] == "unavailable":
+        notes.append("The LLM was unreachable; see 'errors'.")
+    return notes
+
+
 def evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LLM], judge_llm: Optional[LLM] = None, cfg: Optional[Config] = None) -> dict[str, Any]:
     """Run suggest -> collect -> judge -> reconcile for one document. ``llm=None`` returns the deterministic relationships as candidates."""
     cfg = cfg or Config()
@@ -316,6 +338,9 @@ def evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LL
         c["status"], c["final_score"] = classify(c), final_score(c)
         c["methods"] = [m for m, on in (("deterministic", c["deterministic"]["proposed"]), ("llm", bool(c["llm"] and c["llm"]["proposed_by"]))) if on]
     _flag_ambiguity(cands)
+    status["notes"] = _stage_notes(tables, det_rels, llm, cfg, status)
+    if not any(c["deterministic"]["proposed"] for c in cands.values()) and len(tables) >= 2:
+        status["near_misses"] = R.near_misses(tables)
     return {"candidates": sorted(cands.values(), key=lambda c: (-c["final_score"], c["id"])), "metrics": metrics(list(cands.values()), run_sets, status),
             "config": cfg.as_dict(), "models": {"suggester": getattr(llm, "model", None), "judge": getattr(judge_llm, "model", None)}, "status": status,
             "judge_note": "The judge is a language model, not ground truth: use its verdicts and the agreement statistics as evidence, not as proof."}
@@ -419,8 +444,15 @@ def candidates_to_relations(cands: list[dict[str, Any]]) -> list[dict[str, Any]]
 def evaluation_markdown(label: str, ev: dict[str, Any]) -> str:
     """Human-readable join evaluation: models, statistics, and every candidate with its verdicts."""
     m, st = ev["metrics"], ev["status"]
-    L_ = [f"# Join evaluation: {label}", "", f"Suggester `{ev['models']['suggester']}` · judge `{ev['models']['judge']}` · LLM stage: {st['llm']} · judge stage: {st['judge']} · "
-          f"{st['suggest_calls']} suggestion call(s), {st['judge_calls']} judge call(s)", "", f"> {ev['judge_note']}", "", "## Statistics", ""]
+    L_ = [f"# Join evaluation: {label}", "", f"Suggester `{ev['models']['suggester'] or 'off'}` · judge `{ev['models']['judge'] or 'off'}` · LLM stage: {st['llm']} · judge stage: {st['judge']} · "
+          f"{st['suggest_calls']} suggestion call(s), {st['judge_calls']} judge call(s)", "", f"> {ev['judge_note']}", ""]
+    if st.get("notes"):
+        L_ += ["## Why", ""] + [f"- {x}" for x in st["notes"]] + [""]
+    if st.get("near_misses"):
+        L_ += ["Closest column pairs the rules rejected:", "", "| left | right | name similarity | shared values | missing |", "|---|---|---|---|---|"]
+        L_ += [f"| {x['left_table'].split('/')[-1]}.{x['left_column']} | {x['right_table'].split('/')[-1]}.{x['right_column']} | {x['name_similarity']} | {x['containment']} | {x['missing']} |"
+               for x in st["near_misses"]] + [""]
+    L_ += ["## Statistics", ""]
     L_ += [f"- {k.replace('_', ' ')}: {v}" for k, v in m.items() if v is not None and k != "statuses"]
     L_ += [f"- statuses: {m['statuses']}", "", "## Candidates", "",
            "| status | join | cardinality | final | deterministic | LLM agreement | judge | reasons |", "|---|---|---|---|---|---|---|---|"]

@@ -217,7 +217,7 @@ def doc_identities(g: nx.MultiDiGraph, label: str) -> dict[str, Optional[str]]:
         digits = "".join(c for c in n.split(":")[-1] if c.isdigit())
         return int(digits) if digits else 0
     first = sorted((n for n, d in g.nodes(data=True) if d.get("type") in ("Heading", "Paragraph")), key=num)[:15]
-    texts = [label] + [g.nodes[n].get("text") or g.nodes[n].get("label", "") for n in first]
+    texts = T.filename_variants(label) + [g.nodes[n].get("text") or g.nodes[n].get("label", "") for n in first]
     return {i.label: i.edition for i in T.parse_identities(*texts)}
 
 
@@ -1168,6 +1168,7 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
     * ``local_copy_outdated``      the local copy states an older edition than the latest known one
     * ``local_copy_unidentified``  (info) the edition of the local copy could not be read from its text
     * ``store_page_changed``       (info) the landing/store page changed (possible new edition/errata)
+    * ``edition_not_endorsed``     the edition on board is not one of the ``endorsed_editions`` the configuration lists for the entry
     """
     out: list[Alert] = []
     findings = state.get("findings", [])
@@ -1232,6 +1233,27 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
             if a["action"] == "updated" and e.key in a["entries"] and not a["url"].startswith("file://"):
                 out.append(Alert(kind="store_page_changed", entry=e.key, identity=a["url"], severity="info", message=(
                     f"{e.key}: the store/landing page changed ({a['url']}); check it for a new edition, errata or a price/availability change.")))
+    for e in rt.entries:                                     # editions a regulator endorses (any entry, paywalled or not)
+        if not (e.endorsed_editions and rt.selected(e)):
+            continue
+        by = e.endorsed_by or "the endorsing regulatory guide"
+        for i in T.entry_identities(e):
+            fam = T.FAMILIES[i.family]
+            staged: Optional[str] = None
+            for url, _ in entry_sources(rt, e):
+                ed = (read_json(rt.p.doc(docid_of(url)) / "state.json", {}).get("identities") or {}).get(i.label)
+                if ed is not None and (staged is None or fam.rank(ed) > fam.rank(staged)):
+                    staged = ed
+            if staged is None:
+                continue                                      # edition unknown: local_copy_unidentified already says so
+            ranks = {fam.rank(x) for x in e.endorsed_editions}
+            if fam.rank(staged) in ranks:
+                continue
+            top = max(ranks)
+            why = "newer than any edition" if fam.rank(staged) > top else "not one of the editions"
+            out.append(Alert(kind="edition_not_endorsed", entry=e.key, identity=i.label, details={"have": staged, "endorsed": e.endorsed_editions, "endorsed_by": e.endorsed_by},
+                             message=(f"{e.key} {e.name}: the edition on board ({i.label} {staged}) is {why} endorsed by {by} ({', '.join(e.endorsed_editions)}); "
+                                      f"answers from it may not reflect the endorsed requirements.")))
     return out
 
 
@@ -1250,6 +1272,7 @@ def summarize(state: AgentState) -> dict[str, Any]:
         "docs_unchanged": count(da, "action", "unchanged"), "docs_error": count(da, "action", "error"),
         "forced": bool(state.get("forced")), "docs_refreshed": count(da, "action", "refreshed"),
         "entries_refreshed": sum(1 for x in state.get("entry_actions", []) if x["action"] == "refreshed"),
+        "error_messages": [str(x)[:300] for x in state.get("errors", [])][:50],
         "assets_purged_files": sum((x.get("purged") or {}).get("files", 0) for x in da),
         "assets_purged_bytes": sum((x.get("purged") or {}).get("bytes", 0) for x in da),
         "orphans": len(state.get("orphans", [])), "orphans_archived": sum(1 for o in state.get("orphans", []) if o.get("archived_now")),
@@ -1380,7 +1403,7 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
         L.append("### Warnings: paywalled documents\n")
         titles = {"no_local_copy": "NO LOCAL COPY", "new_edition_for_purchase": "NEW EDITION FOR PURCHASE",
                   "local_copy_outdated": "LOCAL COPY OUTDATED", "local_copy_unidentified": "local copy not identified",
-                  "store_page_changed": "store page changed"}
+                  "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED"}
         for a in sorted(al, key=lambda a: (a["severity"] != "warning", a["kind"], a["entry"])):
             tag = "**WARNING**" if a["severity"] == "warning" else "note"
             age = "NEW" if a["is_new"] else f"open since {a['first_seen'][:10]}, {a['runs']} runs"

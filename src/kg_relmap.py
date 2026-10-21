@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any, Optional
 
+from kg_tablecheck import name_share
 from kg_tables import Col, Context, parse_number
 
 THRESHOLD = 0.55
@@ -117,10 +118,36 @@ def _kg_boost(a: T, b: T) -> tuple[float, list[str]]:
     return min(1.0, boost), ev
 
 
+def near_misses(tables: list[T], limit: int = 3) -> list[dict[str, Any]]:
+    """The best column pairs that the join rules rejected, with what was missing (to explain 'no joins found')."""
+    vals = {(t.table_id, c.name): value_set([r[j] for r in t.rows]) for t in tables for j, c in enumerate(t.cols)}
+    out = []
+    for i, a in enumerate(tables):
+        for b in tables[i + 1:]:
+            for ca in a.cols:
+                for cb in b.cols:
+                    if not (_joinable(ca) and _joinable(cb)):
+                        continue
+                    va, vb = vals[(a.table_id, ca.name)], vals[(b.table_id, cb.name)]
+                    common = va & vb
+                    sim = name_similarity(ca.header, cb.header)
+                    contain = len(common) / min(len(va), len(vb)) if common else 0.0
+                    if sim < 0.5 and contain == 0:
+                        continue
+                    why = ("no shared values" if not common else "too few shared values" if contain < 0.3 else "") or \
+                          ("column names differ" if sim < 0.85 else "") or "score below the threshold"
+                    out.append({"left_table": a.table_id, "left_column": ca.header, "right_table": b.table_id, "right_column": cb.header,
+                                "name_similarity": round(sim, 2), "containment": round(contain, 2), "missing": why})
+    out.sort(key=lambda x: -(0.4 * x["name_similarity"] + 0.6 * x["containment"]))
+    return out[:limit]
+
+
 def infer(tables: list[T]) -> list[dict[str, Any]]:
     """Join and same-schema relationships among ``tables`` (all from one source document)."""
     rels: list[dict[str, Any]] = []
     vals = {(t.table_id, c.name): value_set([r[j] for r in t.rows]) for t in tables for j, c in enumerate(t.cols)}
+    # columns of person names (committee rosters, author lists) are not join keys: the same person in two lists is not a relationship
+    people = {(t.table_id, c.name) for t in tables for j, c in enumerate(t.cols) if c.pg_type == "text" and name_share([r[j] for r in t.rows]) >= 0.7}
     for i, a in enumerate(tables):
         for b in tables[i + 1:]:
             boost, kg_ev = _kg_boost(a, b)
@@ -128,6 +155,8 @@ def infer(tables: list[T]) -> list[dict[str, Any]]:
             for ca in a.cols:
                 for cb in b.cols:
                     if not (_joinable(ca) and _joinable(cb)):
+                        continue
+                    if (a.table_id, ca.name) in people and (b.table_id, cb.name) in people:
                         continue
                     va, vb = vals[(a.table_id, ca.name)], vals[(b.table_id, cb.name)]
                     common = va & vb

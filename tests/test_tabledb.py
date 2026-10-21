@@ -310,3 +310,12 @@ def test_readonly_role_script_takes_its_password_from_a_variable(pg_server, pg_s
         assert c.execute("select rolcanlogin from pg_roles where rolname='cogent_ro'").fetchone() == (True,)
         c.execute("DROP OWNED BY cogent_ro")
         c.execute("DROP ROLE cogent_ro")
+
+
+def test_health_reports_what_is_wrong(pg_server, pg_schema):
+    """T-01: the table database status tells a reader (and the server's start-up log) why the table tools will not work."""
+    ok = TDB.TableDB(pg_server, pg_schema).health()
+    assert ok["reachable"] and ok["user"] and ok["built"] is False and "build" in ok["hint"]
+    down = TDB.TableDB("postgresql://nobody:x@127.0.0.1:9/none", pg_schema).health()
+    assert down["reachable"] is False and "OperationalError" in down["error"] and "listening" in down["hint"]
+    assert TDB.TableDB(pg_server, pg_schema).health()["schema"] == pg_schema

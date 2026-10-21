@@ -229,6 +229,7 @@ class Family:
         m.groupdict().get("ed"))          # edition of a record match
     tracks_editions: bool = True
     like: Callable[[str, Optional[str]], str] = lambda obs, known: obs   # edition spelling
+    more: str = ""                         # regex of a further key in a list ("RGs 1.200 and 1.247", "10 CFR 50.34, 50.36 and 50.36a")
 
 
 def _rev_after(m: re.Match, text: str) -> Optional[str]:
@@ -241,14 +242,14 @@ def _rev_after(m: re.Match, text: str) -> Optional[str]:
 
 FAMILIES: dict[str, Family] = {f.name: f for f in [
     Family("RG",
-           re.compile(r"(?:NRC\s+)?(?:RG|Regulatory\s+Guide)\s*(?P<key>\d\.\d{1,3})"
+           re.compile(r"(?:NRC\s+)?(?:RGs?|Regulatory\s+Guides?)\s*(?P<key>\d\.\d{1,3})"
                       r"(?:\s*,?\s*\(?Rev(?:ision|\.)?\s*(?P<ed>\d+)\)?)?", re.I),
            lambda k: re.compile(rf"(?<![\d.]){re.escape(k)}(?![\d])"),
-           _int, lambda k, e: f"RG {k}" + (f" Rev. {e}" if e is not None else ""), _rev_after),
+           _int, lambda k, e: f"RG {k}" + (f" Rev. {e}" if e is not None else ""), _rev_after, more=r"\d\.\d{1,3}(?![\d.]\d)"),
     Family("NEI",
-           re.compile(r"NEI\s*(?P<key>\d{2}-\d{2})(?:\s*,?\s*Rev(?:ision|\.)?\s*(?P<ed>\d+))?", re.I),
+           re.compile(r"NEIs?\s*(?P<key>\d{2}-\d{2})(?:\s*,?\s*Rev(?:ision|\.)?\s*(?P<ed>\d+))?", re.I),
            lambda k: re.compile(rf"NEI\s*{re.escape(k)}", re.I),
-           _int, lambda k, e: f"NEI {k}" + (f" Rev. {e}" if e is not None else ""), _rev_after),
+           _int, lambda k, e: f"NEI {k}" + (f" Rev. {e}" if e is not None else ""), _rev_after, more=r"\d{2}-\d{2}(?!\d)"),
     Family("DOE-STD",
            re.compile(r"(?P<pre>DOE|NE)-STD-(?P<key>\d{4})(?:-(?P<ed>\d{4}))?"),
            lambda k: re.compile(rf"(?:DOE|NE)-STD-{re.escape(k)}(?:-(?P<ed>\d{{4}}))?"),
@@ -258,9 +259,9 @@ FAMILIES: dict[str, Family] = {f.name: f for f in [
            lambda k: re.compile(rf"(?<![\d.]){re.escape(k)}(?P<ed>[A-Z])?(?![\w.])"),
            _letter, lambda k, e: f"DOE O {k}{e or ''}"),
     Family("ASCE",
-           re.compile(r"ASCE(?:/SEI)?\s*(?P<key>\d+)-(?P<ed>\d{2,4})"),
-           lambda k: re.compile(rf"ASCE(?:/SEI)?\s*{re.escape(k)}-(?P<ed>\d{{2,4}})"),
-           _year, lambda k, e: f"ASCE/SEI {k}-{e}", like=_like_year),
+           re.compile(r"ASCE(?:\s*/?\s*SEI)?\s*(?P<key>\d+)-(?P<ed>\d{2,4})"),
+           lambda k: re.compile(rf"ASCE(?:\s*/?\s*SEI)?\s*{re.escape(k)}-(?P<ed>\d{{2,4}})"),
+           _year, lambda k, e: f"ASCE/SEI {k}" + (f"-{e}" if e else ""), like=_like_year),
     Family("QME",
            re.compile(r"QME-(?P<key>1)(?:-(?P<ed>\d{4}))?"),
            lambda k: re.compile(rf"QME-{re.escape(k)}(?:-(?P<ed>\d{{4}}))?"),
@@ -270,17 +271,17 @@ FAMILIES: dict[str, Family] = {f.name: f for f in [
            lambda k: re.compile(rf"NQA-{re.escape(k)}[a-z]?(?:-(?P<ed>\d{{4}}))?"),
            _int, lambda k, e: f"NQA-{k}" + (f"-{e}" if e else "")),
     Family("RA-S",
-           re.compile(r"RA-S-(?P<key>1\.4)-(?P<ed>\d{4})"),
-           lambda k: re.compile(rf"RA-S-{re.escape(k)}-(?P<ed>\d{{4}})"),
-           _int, lambda k, e: f"RA-S-{k}-{e}"),
+           re.compile(r"RA-S[\s-]*(?P<key>1\.\d{1,2})(?!\d)(?:-(?P<ed>\d{4}))?", re.I),
+           lambda k: re.compile(rf"RA-S[\s-]*{re.escape(k)}(?:-(?P<ed>\d{{4}}))?", re.I),
+           _int, lambda k, e: f"RA-S-{k}" + (f"-{e}" if e else "")),
     Family("NUREG",
            re.compile(r"NUREG-(?P<key>\d{4})(?:/CR-\d+)?(?:\s*,?\s*Rev(?:ision|\.)?\s*(?P<ed>\d+))?"),
            lambda k: re.compile(rf"NUREG-{re.escape(k)}"),
            _int, lambda k, e: f"NUREG-{k}" + (f" Rev. {e}" if e is not None else ""), _rev_after),
     Family("CFR",
-           re.compile(r"10\s*CFR\s*(?:Part\s*|§\s*)?(?P<key>\d+(?:\.\d+)?)"),
-           lambda k: re.compile(rf"10\s*CFR\s*(?:Part\s*|§\s*)?{re.escape(k)}"),
-           _int, lambda k, e: f"10 CFR {k}", tracks_editions=False),
+           re.compile(r"10\s*CFR\s*(?:Parts?\s*|§§?\s*)?(?P<key>\d+(?:\.\d+)?)"),
+           lambda k: re.compile(rf"10\s*CFR\s*(?:Parts?\s*|§§?\s*)?{re.escape(k)}"),
+           _int, lambda k, e: f"10 CFR {k}", tracks_editions=False, more=r"\d{2,3}(?:\.\d+[a-z]?)?(?![\d])"),
 ]}
 
 
@@ -296,18 +297,64 @@ class Identity:
         return f"{self.family} {self.key}"
 
 
+def filename_variants(name: str) -> list[str]:
+    """A file name as written plus a normalised reading of it, so ``ASCE_SEI43-05.pdf`` reads like ``ASCE SEI 43-05`` and
+    ``ASME_NQA-1_1989.pdf`` like ``ASME NQA-1-1989`` (underscores and a space before a trailing year are separators, not content)."""
+    base = re.sub(r"\.(pdf|html?|txt|docx?)$", "", name or "", flags=re.I)
+    norm = re.sub(r"[_]+", " ", base)
+    norm = re.sub(r"(?<=[A-Za-z]{3})(?=\d)", " ", norm)                    # SEI43 -> SEI 43
+    norm = re.sub(r"(?<=\d)[\s](?=(?:19|20)\d{2}\b)", "-", norm)          # NQA-1 1989 -> NQA-1-1989
+    return [name] + ([norm] if norm != name else [])
+
+
+_LIST_SEP = r"(?:\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+|\s*&\s*)"
+
+
+def _continuations(fam: Family, text: str, pos: int) -> list[tuple[str, int, int]]:
+    """Further keys of a list that follows an identifier: ``RGs 1.200 and 1.247``, ``50.34, 50.36, and 50.36a``. (key, start, end) of each."""
+    if not fam.more:
+        return []
+    pat, out = re.compile(rf"{_LIST_SEP}(?P<n>{fam.more})"), []
+    while True:
+        m = pat.match(text, pos)
+        if not m:
+            return out
+        out.append((m.group("n"), m.start("n"), m.end("n")))
+        pos = m.end()
+
+
+def _identity_matches(text: str):
+    """(family, key, edition, raw, start, end) of every identifier in ``text``, list members included."""
+    for fam in FAMILIES.values():
+        for m in fam.ident.finditer(text or ""):
+            yield fam, m.group("key"), m.groupdict().get("ed"), m.group(0), m.start(), m.end()
+            for key, a, b in _continuations(fam, text, m.end()):
+                yield fam, key, None, text[a:b], a, b
+
+
+def identifier_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of the identifiers in ``text`` (lists as one span), so that entity extraction can leave them to Identifier nodes."""
+    spans = sorted((a, b) for _, _, _, _, a, b in _identity_matches(text))
+    merged: list[list[int]] = []
+    for a, b in spans:
+        if merged and a <= merged[-1][1] + 6:                 # 'RGs 1.200 and 1.247' is one mention
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return [(a, b) for a, b in merged]
+
+
 def parse_identities(*texts: str) -> list[Identity]:
     """All identifiers in the given texts, one per (family, key); when several
-    editions of the same document appear, the highest one is kept."""
+    editions of the same document appear, the highest one is kept. Lists
+    (``RGs 1.200 and 1.247``) yield one identifier per member."""
     best: dict[tuple[str, str], Identity] = {}
     for text in texts:
-        for fam in FAMILIES.values():
-            for m in fam.ident.finditer(text or ""):
-                ed = m.groupdict().get("ed")
-                ident = Identity(fam.name, m.group("key"), ed, m.group(0))
-                cur = best.get((fam.name, ident.key))
-                if cur is None or fam.rank(ed) > fam.rank(cur.edition):
-                    best[(fam.name, ident.key)] = ident
+        for fam, key, ed, raw, _, _ in _identity_matches(text or ""):
+            ident = Identity(fam.name, key, ed, raw)
+            cur = best.get((fam.name, key))
+            if cur is None or fam.rank(ed) > fam.rank(cur.edition):
+                best[(fam.name, key)] = ident
     return list(best.values())
 
 
@@ -742,15 +789,44 @@ def _text_of(d: dict) -> str:
     return " ".join(str(d.get(k, "")) for k in ("label", "text") if d.get(k))
 
 
+_PART_REF = re.compile(r"(?<![\w.§-])[Pp]arts?\s+(?P<first>\d{1,3})(?![\d.]\d)(?P<rest>(?:\s*(?:,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)\d{1,3}(?![\d.]\d))*)")
+
+
+def is_cfr_graph(g: nx.MultiDiGraph) -> bool:
+    """Does this document speak about 10 CFR (so that a bare 'part 100' means 10 CFR part 100)? An eCFR / Federal Register source, ``§ n.n`` section
+    headings, or several explicit '10 CFR' mentions."""
+    src = str(g.graph.get("source", ""))
+    if _host_in(src, ECFR_HOSTS) or _host_in(src, FR_HOSTS):
+        return True
+    heads = sum(1 for _, d in g.nodes(data=True) if d.get("type") == "Heading" and _SEC_HEAD.match(d.get("text", "") or d.get("label", "")))
+    explicit = sum(1 for _, d in g.nodes(data=True) if d.get("type") in ("Paragraph", "Heading") and re.search(r"10\s*CFR", _text_of(d)))
+    return heads >= 2 or explicit >= 3
+
+
+def part_references(text: str) -> list[str]:
+    """Part numbers named in ``text`` in the forms 'part 100', 'appendix A to part 100', 'parts 50 and 52' (valid 10 CFR parts are 1 to 199)."""
+    out: list[str] = []
+    for m in _PART_REF.finditer(text or ""):
+        nums = [m.group("first")] + re.findall(r"\d{1,3}", m.group("rest") or "")
+        out += [n for n in nums if 1 <= int(n) <= 199 and n not in out]
+    return out
+
+
 def add_identifier_citations(g: nx.MultiDiGraph) -> int:
     """Deterministic cross-document links: every RG/NEI/DOE/NUREG/CFR identifier
     mentioned in a paragraph, heading, table or figure caption becomes an
-    ``ident:`` node with a ``CITES`` edge from that element."""
+    ``ident:`` node with a ``CITES`` edge from that element. In 10 CFR text a bare
+    'part 100' / 'appendix A to part 100' is the identifier ``CFR 100`` too."""
     n_added = 0
+    cfr = is_cfr_graph(g)
     for n, d in list(g.nodes(data=True)):
         if d.get("type") not in ("Paragraph", "Heading", "Table", "Figure"):
             continue
-        for ident in parse_identities(_text_of(d), d.get("rows", "") if d.get("type") == "Table" else ""):
+        idents = parse_identities(_text_of(d), d.get("rows", "") if d.get("type") == "Table" else "")
+        if cfr and d.get("type") in ("Paragraph", "Heading"):
+            have = {i.label for i in idents}
+            idents += [Identity("CFR", p) for p in part_references(_text_of(d)) if f"CFR {p}" not in have]
+        for ident in idents:
             tgt = f"ident:{ident.label}"
             if tgt not in g:
                 g.add_node(tgt, type="Identifier", label=FAMILIES[ident.family].fmt(ident.key, None))

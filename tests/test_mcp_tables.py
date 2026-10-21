@@ -200,3 +200,8 @@ def test_empty_or_unreachable_database_gives_clear_errors(built, tmp_path):
     store = kg_store.Store(home, home.parent / "s.json", home.parent / "r.json")
     with pytest.raises(kg_store.NotFound, match="not reachable"):
         TS.TableService(store, "postgresql://nobody@127.0.0.1:9/none", schema, E.HashEmbedder(8)).list_tables()
+
+
+def test_overview_reports_table_database_status(server):
+    td = server.call("get_overview")["table_database"]
+    assert td["configured"] and td["reachable"] and td["built"] and td["can_select"] and td["tables"] >= 1

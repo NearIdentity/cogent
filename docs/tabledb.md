@@ -24,6 +24,7 @@ pip install -r requirements.txt
 python src/kg_agent.py run --tables            # stage as usual, then build / refresh the table database as the last stage
 python src/kg_tabledb.py build                 # or on its own (incremental); --force re-embeds everything, --only standard:22
 python src/kg_tabledb.py status
+python src/kg_tabledb.py --dsn postgresql://cogent_ro:…@127.0.0.1/cogent check     # can the MCP server's read-only login connect and read? (exit 1 if not)
 python src/kg_tabledb.py search "damping value for welded steel structures"
 
 python src/kg_mcp.py serve --tabledb-dsn postgresql://cogent_ro:…@127.0.0.1/cogent     # query front-end (see below)
@@ -43,6 +44,10 @@ day. `--force` of the KG agent also forces the table stage. Offline / CI: `--emb
 | `<column>` | one typed column per CSV column: `bigint`, `double precision` or `text`. A column is numeric when ≥ 90 % of its non-empty cells parse as numbers (`1,200`, `<0.5`, `5 %`, `1.0E-4`, `1.0 × 10^-4 g`); other cells of a numeric column are NULL here and intact in `_raw` |
 | `_embed_text` | exactly the text that was embedded (audit and lexical fallback) |
 | `_embedding vector(DIM)` | the row embedding, **same model, same dimension and same recipe in every table**; HNSW index (cosine) |
+
+**Which "tables" get in.** Layout detectors (PDF table finders, OCR layout models) report two-column running text, sentence lists and rosters as tables. Before the graph is built, `src/kg_tablecheck.py` scores each candidate (long cells, no numbers, headers that read like sentence fragments, two columns of running text, a single text column) and sends the false ones back as paragraphs, in reading order (left column, then right), marked `demoted_table` with the reasons; the graph records `tables_demoted`. A table with a "Table N" caption, and numeric tables, need much stronger evidence to be rejected. Lists of person names are kept but flagged, and name columns are never offered as join keys. `KG_TABLE_CHECK=off` disables the check. The thresholds are heuristics tuned on constructed examples, not yet on a corpus of scanned standards: check `tables_demoted` and the demoted paragraphs on your documents.
+
+**Footnote markers and repeated headers.** In the basic PDF parser a raised, smaller trailing run in a cell (`NDC-2` + superscript `4`) is a footnote marker, not part of the value: it is removed from the cell (so `NDC-2`, not `NDC-24`) and kept as `footnotes` `[{row, col, marker}]` on the Table node and in the asset manifest; exponents (`10^-4`) and unit powers (`m²`) are left alone. Header blocks (1-3 rows) repeated inside a table or at a page break are removed, also when OCR garbled them (`repeated_header_rows_removed`). Not covered: the `pymupdf-layout` engine and OCR'd pages carry no font information, so their tables are unchanged.
 
 Header detection: the first row is the header unless it is mostly numeric (then `column 1…n`); empty columns and rows are dropped; duplicate headers get
 suffixes; names are ASCII snake_case, never reserved words (`limit` → `c_limit`).
@@ -113,7 +118,7 @@ Sessions are keyed by token / OAuth subject plus `session_id` or the MCP session
 `vector`, `lexical` or `hybrid` (reciprocal-rank fusion).
 
 ## MCP front-end
-Registered when the server has `--tabledb-dsn` (or `COGENT_TABLEDB_DSN`); the dictionaries and maps are served from the published files and need no database.
+Registered when the server has `--tabledb-dsn` (or `COGENT_TABLEDB_DSN`); at start-up the server logs whether the database is usable, and `get_overview` reports `table_database` (`reachable`, `built`, `can_select`, an `error` and a `hint`); the dictionaries and maps are served from the published files and need no database.
 
 | tool | use |
 |---|---|

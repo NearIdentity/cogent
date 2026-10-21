@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -44,6 +45,26 @@ def cited_identifiers(kg_path: Path) -> dict[str, int]:
     return out
 
 
+_CFR_SECTION = re.compile(r"^CFR (\d+)\.\S+$")
+
+
+def resolve_owner(label: str, citing: str, owner: dict[str, set[str]], by_key: dict[str, dict[str, Any]],
+                  docs_of: dict[str, set[str]]) -> tuple[Optional[str], list[str]]:
+    """The one entry that a citation of identifier ``label`` points to, and the other entries the label also matched.
+
+    * An entry that IS the cited document (it owns the label) or shares a source document with the citing entry does not cite itself.
+    * Otherwise the most specific owner wins: standards before reports, then the entry that stands for fewer identifiers (``CFR 50`` is Part 50,
+      not an entry that covers Appendix B and a guide as well), then the lower key. The losers are returned so the edge can show them."""
+    owners = owner.get(label, set())
+    if citing in owners:
+        return None, []
+    cands = [o for o in owners if not (docs_of.get(o, set()) & docs_of.get(citing, set()))]
+    if not cands:
+        return None, []
+    cands.sort(key=lambda o: (by_key[o]["kind"] != "standard", len(by_key[o].get("identities", [])), o))
+    return cands[0], cands[1:]
+
+
 def build(home: Path, entries: Iterable[dict[str, Any]], run_id: str = "") -> tuple[nx.MultiDiGraph, dict[str, Any], dict[str, Any]]:
     """``entries``: dicts with key, kind, name, paywalled, complies_with, overlaps, identities (labels),
     version_status, latest (labels), on_board (labels). Returns (graph, dependents, meta)."""
@@ -54,9 +75,12 @@ def build(home: Path, entries: Iterable[dict[str, Any]], run_id: str = "") -> tu
         for lab in e.get("identities", []):
             owner.setdefault(lab, set()).add(e["key"])
 
+    cited: dict[str, dict[str, int]] = {}
     g = nx.MultiDiGraph(built="", run_id=run_id, note="derived; curated edges from configuration, 'cites' edges inferred from text")
     inputs: dict[str, str] = {}
     cites: dict[tuple[str, str], tuple[int, list[str]]] = {}
+    docs_of: dict[str, set[str]] = {}                      # entry -> ids of its source documents (entries that share a document are one source)
+    alternatives: dict[tuple[str, str], set[str]] = {}     # (citing, target) -> other entries the label also matched but were not chosen
     for e in entries:
         kgp = _entry_dir(home, e["key"]) / "kg.json"
         meta = {}
@@ -65,16 +89,22 @@ def build(home: Path, entries: Iterable[dict[str, Any]], run_id: str = "") -> tu
         except (OSError, ValueError):
             pass
         inputs[e["key"]] = meta.get("signature", "")[:16] if kgp.exists() else "none"
+        docs_of[e["key"]] = {d.get("docid") for d in meta.get("documents", []) if d.get("docid")}
         g.add_node(f"entry:{e['key']}", type=e["kind"].capitalize(), label=e["name"], kind=e["kind"], paywalled=e["paywalled"],
                    has_graph=kgp.exists(), graph_built=meta.get("built"), version_status=e.get("version_status"),
                    latest_available=e.get("latest", []), on_board=e.get("on_board", []))
         if kgp.exists():
-            for lab, n in cited_identifiers(kgp).items():
-                for tgt in owner.get(lab, ()):
-                    if tgt != e["key"]:
-                        c, labs = cites.get((e["key"], tgt), (0, []))
-                        cites[(e["key"], tgt)] = (c + n, labs + [lab])
-    dep: dict[str, dict[str, Any]] = {e["key"]: {"depends_on": [], "declared_dependents": [], "overlaps": [], "cited_by": [], "cites": []}
+            cited[e["key"]] = cited_identifiers(kgp)
+    for src, labels in cited.items():
+        for lab, n in labels.items():
+            tgt, others = resolve_owner(lab, src, owner, by_key, docs_of)
+            if tgt is None:
+                continue
+            c, labs = cites.get((src, tgt), (0, []))
+            cites[(src, tgt)] = (c + n, labs + [lab])
+            if others:
+                alternatives.setdefault((src, tgt), set()).update(others)
+    dep: dict[str, dict[str, Any]] = {e["key"]: {"depends_on": [], "declared_dependents": [], "overlaps": [], "cited_by": [], "cites": [], "part_of": []}
                                       for e in entries}
     for e in entries:
         for sid in e.get("complies_with", []):
@@ -91,10 +121,21 @@ def build(home: Path, entries: Iterable[dict[str, Any]], run_id: str = "") -> tu
                     if b not in dep[a]["overlaps"]:
                         dep[a]["overlaps"].append(b)
     for (src, tgt), (n, labs) in sorted(cites.items()):
+        alt = sorted(alternatives.get((src, tgt), ()))
         g.add_edge(f"entry:{src}", f"entry:{tgt}", key="cites", relation="cites", basis="text", confidence="inferred",
-                   count=n, identifiers=sorted(set(labs)))
+                   count=n, identifiers=sorted(set(labs)), **({"also_matched": alt} if alt else {}))
         dep[src]["cites"].append({"entry": tgt, "count": n, "identifiers": sorted(set(labs))})
         dep[tgt]["cited_by"].append({"entry": src, "count": n, "identifiers": sorted(set(labs))})
+    for e in entries:                                      # 10 CFR 50.69 is part of 10 CFR 50 (when another standard entry is that part)
+        for lab in e.get("identities", []):
+            m = _CFR_SECTION.match(lab)
+            if not m:
+                continue
+            tgt, _ = resolve_owner(f"CFR {m.group(1)}", e["key"], owner, by_key, docs_of)
+            if tgt and tgt not in dep[e["key"]]["part_of"]:
+                g.add_edge(f"entry:{e['key']}", f"entry:{tgt}", key="part_of", relation="part_of", basis="identifier", confidence="inferred",
+                           identifiers=[lab, f"CFR {m.group(1)}"])
+                dep[e["key"]]["part_of"].append(tgt)
     for d in dep.values():
         for k in ("depends_on", "declared_dependents", "overlaps"):
             d[k] = sorted(d[k])

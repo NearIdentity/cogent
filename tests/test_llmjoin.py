@@ -269,3 +269,28 @@ def test_ollama_chat_json_structured_output_parsing_and_fallbacks(chat, monkeypa
         kg_llm.parse_json("nothing")
     with pytest.raises(ValueError):
         kg_llm.get_llm("nope")
+
+
+def test_empty_evaluation_says_why_and_lists_near_misses():
+    """TB-05: 'not run, 0 candidates' must be explained: LLM off, one table, or no join found (with the closest near-misses)."""
+    a = mk("d/1", ["Zone", "Limit"], [["z1", "1"], ["z2", "2"], ["z3", "3"], ["z4", "4"]])
+    b = mk("d/2", ["Zones", "Name"], [["z1", "x"], ["q9", "y"], ["q8", "z"], ["q7", "w"]])        # similar name, one shared value of four
+    c = mk("d/3", ["Colour", "Shade"], [["red", "p"], ["blue", "q"], ["green", "r"], ["pink", "s"]])
+    ev = L.evaluate([a, b, c], R.infer([a, b, c]), None)
+    st = ev["status"]
+    assert st["llm"] == "not run" and ev["candidates"] == []
+    assert any("compared 3 table pair" in n and "no join" in n for n in st["notes"]) and any("LLM join inference is off" in n for n in st["notes"])
+    nm = st["near_misses"][0]
+    assert (nm["left_column"], nm["right_column"]) == ("Zone", "Zones") and nm["missing"] == "too few shared values"
+    md = L.evaluation_markdown("Std", ev)
+    assert "Suggester `off` · judge `off`" in md and "## Why" in md and "Closest column pairs" in md
+    one = L.evaluate([a], R.infer([a]), None)
+    assert any("nothing to join" in n for n in one["status"]["notes"]) and "near_misses" not in one["status"]
+
+
+def test_document_title_replaces_generic_labels():
+    import kg_tabledb as TDB
+    assert TDB.document_title("PDF", ["NE-STD-1020 Natural phenomena"], "d1") == "NE-STD-1020 Natural phenomena"
+    assert TDB.document_title("rg1233_rev0.pdf", ["NRC RG 1.233"], "d1") == "NRC RG 1.233"
+    assert TDB.document_title("Seismic Design Criteria for Structures", ["ASCE 43"], "d1") == "Seismic Design Criteria for Structures"
+    assert TDB.document_title("", [], "d1") == "d1"

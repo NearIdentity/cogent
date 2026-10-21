@@ -133,6 +133,43 @@ class TableDB:
         for t in ("kgt_joins", "kgt_columns", "kgt_tables", "kgt_meta"):
             conn.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
 
+    def health(self) -> dict[str, Any]:
+        """Can this DSN reach the database and read the tables? Never raises; ``hint`` says what to do about a failure."""
+        out: dict[str, Any] = {"configured": True, "reachable": False, "schema": self.schema}
+        try:
+            conn = self.connect()
+        except Exception as exc:                                            # noqa: BLE001
+            msg = str(exc)
+            out["error"] = f"{type(exc).__name__}: {msg}"
+            low = msg.lower()
+            if "password authentication failed" in low:
+                out["hint"] = ("the user exists but this password is wrong, or the role does not exist: check the password in --tabledb-dsn / "
+                               "COGENT_TABLEDB_DSN against `ALTER ROLE <user> PASSWORD ...` (role setup: deploy/tabledb-readonly-role.sql)")
+            elif "connection refused" in low or "could not connect" in low or "timeout" in low:
+                out["hint"] = "nothing is listening at that host/port: is the database container running (docker compose ... ps)?"
+            elif "does not exist" in low:
+                out["hint"] = "the database or role named in the DSN does not exist"
+            return out
+        try:
+            out["reachable"] = True
+            out["user"] = conn.execute("SELECT current_user").fetchone()[0]
+            if not self._exists(conn, "kgt_tables"):
+                out["built"] = False
+                out["hint"] = "connected, but no tables are loaded: run `python src/kg_tabledb.py build` (or `kg_agent.py run --tables`)"
+            else:
+                out["built"] = True
+                out["can_select"] = bool(conn.execute("SELECT has_table_privilege(current_user, %s, 'select')",
+                                                      (f'"{self.schema}".kgt_tables',)).fetchone()[0])
+                out["tables"] = conn.execute("SELECT count(*) FROM kgt_tables").fetchone()[0]
+                if not out["can_select"]:
+                    out["hint"] = f"connected as {out['user']} but without SELECT on the schema: GRANT USAGE ON SCHEMA {self.schema} and SELECT ON ALL TABLES"
+        except Exception as exc:                                            # noqa: BLE001
+            out["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            conn.rollback()
+            conn.close()
+        return out
+
     def _exists(self, conn, name: str) -> bool:
         return conn.execute("SELECT to_regclass(%s)", (f'"{self.schema}".{name}',)).fetchone()[0] is not None
 
@@ -463,6 +500,7 @@ class Source:
     doc_label: str
     entries: list[str]
     kg_path: Path
+    entry_names: list[str] = field(default_factory=list)
 
     @property
     def table_id(self) -> str:
@@ -513,13 +551,26 @@ class TableRecord:
                              "n_distinct": x.n_distinct, "key_candidate": x.key_candidate, "samples": x.samples, "min": x.vmin, "max": x.vmax} for x in self.cols]}
 
 
+_GENERIC_TITLE = re.compile(r"^(pdf|html?|document|file|download|link|text|ecfr|final rule|[\w.-]+\.(pdf|html?))$", re.I)
+
+
+def document_title(doc: str, entry_names: list[str], docid: str) -> str:
+    """A readable title for published files: the document's own title if the KG has a specific one, else the configured entry name(s) ('PDF' is not a title)."""
+    if doc and len(doc) >= 8 and not _GENERIC_TITLE.match(doc.strip()):
+        return doc
+    return " / ".join(dict.fromkeys(entry_names)) or doc or docid
+
+
 def discover(home: Path) -> list[Source]:
     """Every table CSV exported next to a staged document KG, with the entries that use the document."""
     entry_docs: dict[str, list[str]] = {}
+    names: dict[str, str] = {}
     for kind in ("standard", "report"):
         for meta in sorted((home / "staging" / f"{kind}s").glob("*/meta.json")):
             try:
-                for d in json.loads(meta.read_text(encoding="utf-8")).get("documents", []):
+                m = json.loads(meta.read_text(encoding="utf-8"))
+                names[f"{kind}:{meta.parent.name}"] = m.get("name") or ""
+                for d in m.get("documents", []):
                     entry_docs.setdefault(d["docid"], []).append(f"{kind}:{meta.parent.name}")
             except (OSError, ValueError, KeyError):
                 continue
@@ -537,7 +588,8 @@ def discover(home: Path) -> list[Source]:
         for a in man.get("assets", []):
             if a.get("kind") == "table" and (mans[0].parent / a["file"]).is_file():
                 out.append(Source(ddir.name, a["id"], mans[0].parent / a["file"], a.get("caption") or "", a.get("page"), state.get("url", ""),
-                                  "", sorted(entry_docs.get(ddir.name, [])), ddir / "kg.json"))
+                                  "", sorted(entry_docs.get(ddir.name, [])), ddir / "kg.json",
+                                  [names[k] for k in sorted(entry_docs.get(ddir.name, [])) if names.get(k)]))
     return out
 
 
@@ -730,7 +782,7 @@ class Agent:
                     cands = ev["candidates"]
                     rels = L.candidates_to_relations(L.select(cands, "hybrid")) + [r for r in det if r["kind"] == "same_schema"]
                     url = srcs[0].url
-                    label = recs[0].ctx.doc or docid
+                    label = document_title(recs[0].ctx.doc, recs[0].src.entry_names, docid)
                     d = R.data_dictionary(docid, label, url if not url.startswith("file://") else "local:" + url.rsplit("/", 1)[-1],
                                           [r.dict_entry() for r in recs], rels, paywall_info(url))
                     d["generated"], d["embedder"], d["signature"], d["approach"] = utcnow(), s.embedder.spec, sig, "hybrid"
@@ -872,6 +924,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     b.add_argument("--llm-max-seconds", type=float, default=None, help="time budget per document for the LLM stage")
     b.add_argument("--no-kg-context", action="store_true", help="do not use the KG neighbourhood in the embedded text")
     sub.add_parser("status", help="what is in the database")
+    sub.add_parser("check", help="can this DSN connect and read the tables? (use the read-only DSN of the MCP server); exit 1 if not")
     q = sub.add_parser("search", help="semantic search over the tables")
     q.add_argument("question")
     q.add_argument("-k", type=int, default=5)
@@ -881,6 +934,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         if a.cmd == "status":
             print(json.dumps(status(a.home, a.dsn, a.schema), indent=2, default=str))
             return 0
+        if a.cmd == "check":
+            h = TableDB(a.dsn, a.schema).health()
+            print(json.dumps(h, indent=2, default=str))
+            return 0 if h.get("reachable") and h.get("can_select") else 1
         emb = get_embedder(a.embedder, a.embed_model, a.ollama_host, a.embed_dim)
         if a.cmd == "build":
             s = run(a.home, a.dsn, emb, only=[x for x in (a.only or "").split(",") if x], force=a.force, rebuild=a.rebuild, kg_context=not a.no_kg_context, schema=a.schema, row_mode=a.row_mode,

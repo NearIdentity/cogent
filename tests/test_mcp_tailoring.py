@@ -329,3 +329,12 @@ def test_evaluate_joins_on_request_with_caller_parameters(built, pg_server, tmp_
         assert "evaluate_joins" not in s2.call("__tools__")
     finally:
         srv2.should_exit = True
+
+
+def test_default_session_warns_and_explicit_session_does_not(server):
+    r = server.call("set_session_preferences", {"profile": "strict"})
+    assert "every conversation" in r["warning"] and "session_id" in r["warning"]
+    r2 = server.call("set_session_preferences", {"profile": "strict", "session_id": "chat-42"})
+    assert "warning" not in r2
+    server.call("reset_session_preferences", {})
+    server.call("reset_session_preferences", {"session_id": "chat-42"})

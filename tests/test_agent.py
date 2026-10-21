@@ -303,8 +303,10 @@ def test_combined_graph_and_alert_impact(env):
     assert ("entry:report:1", "entry:standard:2", "complies_with") in rels
     assert all(a.get("basis") in ("config", "text") for *_, a in g.edges(data=True))
     assert all("text" not in a for _, a in g.nodes(data=True))          # no document text is merged
-    # report 1 reuses the RG 1.233 PDF and cites 'RG 1.233' -> inferred 'cites' edge to standard 2
-    assert ("entry:report:1", "entry:standard:2", "cites") in rels
+    # report 1 reuses the RG 1.233 PDF: that document mentioning itself is not a citation of standard 2 (they share a source document) ...
+    assert ("entry:report:1", "entry:standard:2", "cites") not in rels
+    # ... but its text cites standard 1's identifier, and standard 2's text does too: inferred 'cites' edges
+    assert ("entry:report:1", "entry:standard:1", "cites") in rels and ("entry:standard:2", "entry:standard:1", "cites") in rels
     meta = json.loads((d / "meta.json").read_text())
     assert meta["run_id"] and not meta["entries_without_graph"]
     built = meta["built"]
@@ -314,7 +316,7 @@ def test_combined_graph_and_alert_impact(env):
     import kg_store
     st = kg_store.Store(home, sp, rp)
     r = st.dependents("standard:2")
-    assert [x["entry"] for x in r["declared_dependents"]] == ["report:1"] and r["combined"]["derived"]
+    assert [x["entry"] for x in r["declared_dependents"]] == ["report:1"] and r["combined"]["derived"] and r["part_of"] == []
     assert st.graph_summary("combined")["nodes"] == 5
     # an alert on a standard names the reports it affects
     rt = kg_agent.Runtime(s)
@@ -607,3 +609,56 @@ def test_report_renders_with_skipped_tables(tmp_path, monkeypatch):
     assert td["skipped"] == 1
     report = next((tmp_path / "home").rglob("report*.md")).read_text()
     assert "### Table database" in report and "1 skipped" in report
+
+
+def test_local_copy_edition_read_from_file_name_when_the_text_does_not_state_it(tmp_path):
+    """V-01: ``ASCE_SEI43-05.pdf`` whose text names no edition is the 2005 edition, not the configured 2019 one."""
+    from mock_site import Site, make_pdf
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": 20, "document": "ASCE/SEI 43-19, Seismic Design Criteria", "paywalled": True,
+                                          "links": [{"text": "ASCE Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": [f"{site.base}/index/asce.html"]}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        kg_agent.run_once(s)
+        (s.home / "local/standards/20").mkdir(parents=True, exist_ok=True)
+        (s.home / "local/standards/20/ASCE_SEI43-05.pdf").write_bytes(make_pdf("Seismic Design Criteria for Structures", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        out = [a for a in st["alerts"] if a["kind"] == "local_copy_outdated"]
+        assert len(out) == 1 and out[0]["severity"] == "warning" and out[0]["details"]["have"] == "05", st["alerts"]
+        assert not [a for a in st["alerts"] if a["kind"] == "local_copy_unidentified"]
+    finally:
+        site.close()
+
+
+def test_edition_not_endorsed_warning(tmp_path):
+    """D-01: the configuration lists the editions a regulator endorses; an on-board edition outside the list is a warning."""
+    from mock_site import Site, make_pdf
+    site = Site()
+    try:
+        kg_ingest.set_pdf_engine("basic")
+        std = {"meta": {}, "standards": [{"id": 30, "document": "ASME NQA-1", "paywalled": True, "endorsed_editions": ["2017", "2019", "2022"],
+                                          "endorsed_by": "RG 1.28 Rev. 6", "links": [{"text": "ASME Store", "url": f"{site.base}/store/asce43.html"}],
+                                          "update_tracking_urls": []}]}
+        sp, rp = tmp_path / "s.json", tmp_path / "r.json"
+        sp.write_text(json.dumps(std))
+        rp.write_text(json.dumps({"meta": {}, "reports": []}))
+        s = kg_agent.Settings(home=tmp_path / "home", standards=sp, reports=rp, min_interval=0)
+        kg_agent.run_once(s)
+        loc = s.home / "local/standards/30"
+        loc.mkdir(parents=True, exist_ok=True)
+        (loc / "ASME_NQA-1_1989.pdf").write_bytes(make_pdf("Quality Assurance Requirements", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        bad = [a for a in st["alerts"] if a["kind"] == "edition_not_endorsed"]
+        assert len(bad) == 1 and bad[0]["severity"] == "warning" and "RG 1.28 Rev. 6" in bad[0]["message"] and "2017, 2019, 2022" in bad[0]["message"], st["alerts"]
+        assert "EDITION NOT ENDORSED" in st["report"] and bad[0]["details"]["have"] == "1989"
+        (loc / "ASME_NQA-1_1989.pdf").unlink()
+        (loc / "ASME_NQA-1_2019.pdf").write_bytes(make_pdf("Quality Assurance Requirements", "Scanned text without an edition."))
+        st = kg_agent.run_once(s)
+        assert not [a for a in st["alerts"] if a["kind"] == "edition_not_endorsed"], st["alerts"]
+    finally:
+        site.close()
