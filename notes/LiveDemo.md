@@ -1,78 +1,76 @@
-Instructions for a one-time demo of the MCP server through the Claude web UI. They assume Ubuntu and the unzipped `cogent-dev.zip`. I haven't tested the claude.ai steps (step 5), and Anthropic's connector screens may differ from what I describe.
+# Demo deployment: Cloudflare quick tunnel and the Claude web app
 
-## 0. Before you start
-- **Plan:** custom connectors in claude.ai depend on your Claude plan. Check that Settings → Connectors shows "Add custom connector". If it doesn't, the demo can't run in the web UI. You can still use Claude Code with the bearer-token command that step 4 prints.
-- **Content:** a public URL means anyone with the token can read what is staged. Don't stage purchased standards (entries 20, 21, 25, 30) for a public demo unless your licence allows it. To be safe, start the server with `--paywalled-assets block`.
-- **Machine:** it must stay on and online during the demo.
+This uses the latest committed code. Run commands from the repo root. The quick tunnel gives a random `https://<name>.trycloudflare.com` address that changes on every start, so re-add the connector each time.
 
 ## 1. One-time setup
 ```bash
-unzip cogent-dev.zip && cd cogent
-bash venv-setup.sh                      # creates the ./cogent virtual environment (uv)
-source ./cogent/bin/activate
 pip install -r requirements.txt
+ollama pull nomic-embed-text                       # embeddings (add llama3.1:8b only for LLM join inference)
+cp deploy/tabledb.env.example deploy/.env          # edit: set COGENT_DB_PASSWORD and COGENT_RO_PASSWORD
+docker compose -f deploy/docker-compose.tabledb.yml up -d
+docker compose -f deploy/docker-compose.tabledb.yml logs | tail -3     # wait for "ready to accept connections"
 ```
-`venv-setup.sh` uses `uv`. If it's missing, use `python3 -m venv cogent && source cogent/bin/activate` instead.
-
-## 2. Install `cloudflared`
+Install `cloudflared` if you haven't (Ubuntu, from Cloudflare's apt repository):
 ```bash
-curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-sudo dpkg -i cloudflared.deb
-cloudflared --version
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install cloudflared
 ```
-On an ARM machine use `cloudflared-linux-arm64.deb`. The apt and from-source options are in `docs/mcp.md`. No Cloudflare account is needed.
+If you reused an old database volume, the passwords in `deploy/.env` won't take effect; use `ALTER USER` or `down -v`, as discussed earlier.
 
-## 3. Prepare the demo data
-The server only serves what the agent has already staged. Run the agent once, which needs internet access and may take several minutes:
+## 2. Build the data (agents)
 ```bash
-python src/kg_agent.py run
-python src/kg_agent.py status           # check graphs were built
+export COGENT_TABLEDB_DSN="postgresql://cogent:<COGENT_DB_PASSWORD>@127.0.0.1:5432/cogent"
+python src/kg_agent.py --home kg_agent_home run --tables        # add --llm-joins --join-model llama3.1:8b if you want LLM joins
+python src/kg_tabledb.py status
 ```
-To keep the demo small, restrict it to a few entries, for example `python src/kg_agent.py run --only standard:1,standard:23,report:1`.
+Check that `status` reports tables and rows. A password error here means the DSN doesn't match the database.
 
-## 4. Start the server and the tunnel
-One command does both:
+## 3. Create the access token
 ```bash
-deploy/demo-tunnel.sh --oauth
+python src/kg_mcp.py --home kg_agent_home token create --name web --days 1     # printed once; save it
 ```
-It opens the Cloudflare tunnel first, then starts the server with OAuth enabled for the tunnel's address, and creates a one-day access token. After a few seconds it prints:
-```
-MCP endpoint : https://<random-words>.trycloudflare.com/mcp
-Token        : cgt_...
-```
-Copy both and leave the terminal open. Ctrl+C stops everything and revokes the token.
 
-To also block paywalled assets, add the flag by editing the `serve` line in `deploy/demo-tunnel.sh`, or start the two pieces by hand as described in `docs/mcp.md`.
-
-Quick check from another terminal:
+## 4. Open the tunnel first (terminal 1)
+The OAuth issuer must be the public URL, so the tunnel has to be up first:
 ```bash
-curl https://<random-words>.trycloudflare.com/healthz         # {"status":"ok",...}
-curl -i -X POST https://<random-words>.trycloudflare.com/mcp   # 401 without a token
+cloudflared tunnel --url http://127.0.0.1:8765
+```
+Note the `https://<name>.trycloudflare.com` address.
+
+## 5. Start the MCP server with OAuth and the table tools (terminal 2)
+```bash
+python src/kg_mcp.py --home kg_agent_home serve --host 127.0.0.1 --port 8765 \
+  --public-host '*' \
+  --oauth-issuer https://<name>.trycloudflare.com \
+  --tabledb-dsn "postgresql://cogent_ro:<COGENT_RO_PASSWORD>@127.0.0.1:5432/cogent" \
+  --embedder ollama --embed-model nomic-embed-text
+```
+Use the read-only `cogent_ro` login here, not the owner. Add `--llm-model llama3.1:8b` if you want `evaluate_joins`. Add `--paywalled-assets block` if purchased standards are staged and the demo audience shouldn't see them.
+
+## 6. Check from outside
+```bash
+curl https://<name>.trycloudflare.com/healthz           # {"status":"ok",...}
+curl -i -X POST https://<name>.trycloudflare.com/mcp    # 401: authentication is on
 ```
 
-## 5. Add the connector in the Claude web UI
-1. In claude.ai, open **Settings → Connectors → Add custom connector**.
-2. Enter a name (for example "cogent-kg") and the URL `https://<random-words>.trycloudflare.com/mcp`.
-3. Connect. A browser tab should open on the server's sign-in page ("Authorize MCP client"). Paste the token from step 4 and press **Allow**.
-4. Back in claude.ai, enable the connector for your conversation.
+## 7. Connect the Claude web app
+1. In claude.ai, open Settings → Connectors → Add custom connector.
+2. Enter `https://<name>.trycloudflare.com/mcp`.
+3. Claude opens the server's sign-in page. Paste the token from step 3 and approve.
+4. In a chat, enable the connector, then ask: "What is the allowable stress for A572 in the standards' tables?" The server instructions steer Claude to `lookup_values`.
 
-## 6. Prompts for the demo
-- "Use cogent-kg to give me an overview of what's available, then list the standards."
-- "Is the staged copy of NRC RG 1.233 the latest edition? Cite capture times and warnings."
-- "Which reports are affected if standard 1 (10 CFR Part 50) changes?"
-- "Search the 10 CFR 50.69 graph for 'categorization' and show the neighbors of the best match."
-- "List the figures and tables for standard 23 and show one."
+To demonstrate tailoring, ask it to use the `strict_design_lookup` prompt, or to call `set_session_preferences` with `profile: strict` versus `exploratory`.
 
-If answers look empty, the agent run in step 3 hasn't staged those entries.
+## 8. Tear down
+- Ctrl+C the tunnel (the URL dies immediately) and stop the server.
+- `python src/kg_mcp.py --home kg_agent_home token revoke --name web`
+- Remove the connector in claude.ai. Optionally `docker compose -f deploy/docker-compose.tabledb.yml stop`.
 
-## 7. When the demo ends
-Press Ctrl+C in the script's terminal. That closes the tunnel, so the URL stops working, and revokes the token. Then remove the connector in claude.ai (Settings → Connectors).
-
-## If something goes wrong
-- **The sign-in page doesn't open or claude.ai says it can't connect:** the connector flow is untested against claude.ai from my side. Check that you started with `--oauth` (the script prints the issuer in its log line), and that the URL you entered ends with `/mcp`. Each restart gives a new URL, so remove the old connector and add it again.
-- **"Token is not valid":** you pasted a token from an earlier run. Each run of the script makes a new one.
-- **`421` or "Invalid Host header":** the server wasn't started through the script or without `--public-host '*'`.
-- **Tools return nothing:** run `python src/kg_agent.py status` to see which entries have graphs.
-- **Fallback with no OAuth:** `deploy/demo-tunnel.sh` without `--oauth`, then in Claude Code run the `claude mcp add --transport http …` line that the script prints.
-
-The same material is in `docs/mcp.md`, in the section "Demo with a Cloudflare quick tunnel".
+## Caveats
+- Custom connectors depend on your Claude plan and on what the web app currently offers; I can't check either.
+- The OAuth flow was tested only against the server's own test client, not claude.ai. If the web app rejects the sign-in, note the error.
+- `deploy/demo-tunnel.sh --oauth` automates steps 3–5 but does not pass the table-database flags, so use the manual steps for the table tools.
+- Quick tunnels have no uptime guarantee. Anyone with the URL and token can read everything staged in `kg_agent_home`.
+- `--public-host '*'` turns off the Host-header check because the tunnel name is random. The token check still applies.
