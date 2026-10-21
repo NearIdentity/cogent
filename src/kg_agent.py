@@ -862,7 +862,7 @@ def _run_tabledb(rt: Runtime, state: AgentState) -> dict[str, Any]:
     """Second stage, after staging: tables -> PostgreSQL + pgvector (kg_tabledb). Never fails the run."""
     s = rt.s
     if rt.dry:
-        return {"skipped": "dry run"}
+        return {"not_run": "dry run"}
     dsn = s.tabledb_dsn or os.environ.get("COGENT_TABLEDB_DSN")
     if not dsn:
         msg = "table database not built: no DSN (--tabledb-dsn or COGENT_TABLEDB_DSN)"
@@ -1361,8 +1361,8 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
     td = state.get("tabledb")
     if td:
         L.append("### Table database\n")
-        if td.get("error") or td.get("skipped"):
-            L.append(f"- {td.get('error') or 'skipped: ' + td['skipped']}")
+        if td.get("error") or td.get("not_run"):
+            L.append(f"- {td.get('error') or 'not_run: ' + td['not_run']}")
         else:
             L.append(f"- {td['sources']} staged table(s): **{td['loaded']} loaded**, {td['unchanged']} unchanged, {td['skipped']} skipped, {td['dropped']} dropped; "
                      f"{td['joins']} join(s) inferred in {td['documents_with_joins']} document(s); embedder `{td['embedder']}`. "
