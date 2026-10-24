@@ -5,6 +5,9 @@ the nuclear-reactor space has to work with: 10 CFR, NRC regulatory guides, NEI g
 consensus standards. It turns each PDF / HTML / eCFR document into a **knowledge graph (KG)**, stages one KG for every
 standard and every report format listed in two JSON configuration files, and runs a **daily update agent** that detects new
 editions, refreshes the KGs, archives the old ones, updates the configuration and appends a report of what it did.
+Two more layers sit on top of the staged graphs: a **table database** (the tables of the documents loaded into PostgreSQL + pgvector,
+so that design values can be looked up by meaning or exact filter) and an **MCP server** that serves the graphs, the tables, their data
+dictionaries and join maps, with provenance and warnings, to AI clients such as Claude Code or the Claude web app.
 
 It prefers local tools (LangGraph, Pydantic, Ollama via LangChain, PyMuPDF, RapidOCR/Tesseract) and keeps free-text
 processing to a minimum: update detection is done by hard-coded parsers and trackers, not by a language model.
@@ -17,7 +20,10 @@ processing to a minimum: update detection is done by hard-coded parsers and trac
 * [Viewing a KG](#viewing-a-kg) (`kg_show.py`)
 * [The update agent](#the-update-agent) (`kg_agent.py`)
 * [Paywalled documents](#paywalled-documents-warnings) · [Version tracking](#version-tracking-in-the-configuration) · [OCR](#ocr-for-scanned-pdfs)
-* [Scheduling](#scheduling) · [Environment variables](#environment-variables) · [Tests](#tests) · [Status and limits](#status-and-limits)
+* [Scheduling](#scheduling)
+* [MCP server](#mcp-server-serve-the-kgs-to-ai-agents) · [Combined graph](#combined-graph-which-reports-depend-on-which-standards) · [Table database](#table-database-design-values-from-the-tables-of-the-standards) · [Scaling out](#scaling-out)
+* [Environment variables](#environment-variables) · [Tests](#tests) · [Status and limits](#status-and-limits)
+* Further reading: [CHANGELOG.md](CHANGELOG.md) · [docs/mcp.md](docs/mcp.md) · [docs/tabledb.md](docs/tabledb.md) · [docs/scaling.md](docs/scaling.md) · [docs/scheduling.md](docs/scheduling.md) · [notes/MCP_Server.md](notes/MCP_Server.md)
 
 ## Repository layout
 
@@ -25,22 +31,31 @@ processing to a minimum: update detection is done by hard-coded parsers and trac
 config/standards.json  reports.json     the document configurations (30 standards, 15 report formats)
 src/kg_ingest.py     PDF / HTML / eCFR-XML (file or URL) → networkx KG; extractors; export/save/load; assets
 src/kg_ocr.py        OCR for scanned PDF pages (RapidOCR / Tesseract engines, page → headings/paragraphs/tables)
+src/kg_layout.py     reading order on multi-column pages; section-number sequence check
+src/kg_tablecheck.py table validity (false tables → paragraphs, front matter, repeated headers), caption clean-up
+src/kg_predicates.py relation vocabulary for the extracted triples
 src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a KG
-src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
-src/kg_assets.py     PNG conversion, downscaling and copyright watermark for figures served over MCP
-src/kg_llm.py, kg_llmjoin.py, kg_units.py, kg_tableservice.py  Ollama chat client; LLM join inference + judge; unit deduction; per-session tailoring
-src/kg_tabledb.py    table database agent: tables -> PostgreSQL + pgvector (typed rows, embeddings, joins, dictionaries) + read-side queries
-src/kg_tables.py     table model: CSV frame, type inference, KG context, embedding text (numbers excluded)
-src/kg_relmap.py     join inference between a document's tables; data dictionary / relationship map (JSON, Markdown, Mermaid)
-src/kg_embed.py      embedders: Ollama (/api/embed) and a deterministic hash embedder
-src/kg_tableservice.py  MCP query front-end of the table database (ref resolution, paywall policy, provenance, lexical fallback)
-src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
+src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
-deploy/              cogent-run.{service,timer} (systemd timer), cogent-daemon.service (systemd), cogent.cron (cron)
-docs/scheduling.md   daemon vs. cron vs. systemd timer: comparison and recommendation
-tests/               test_agent.py, test_ocr.py, test_daemon.py + mock_site.py (a local mock of the sources); no internet needed
+src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
+src/kg_assets.py     PNG conversion, downscaling and copyright watermark for figures served over MCP
+src/kg_tabledb.py    table database agent: tables → PostgreSQL + pgvector (typed rows, embeddings, joins, dictionaries); read-side queries; `check`
+src/kg_tables.py     table model: CSV frame, type inference, KG context, embedding text (whole rows by default)
+src/kg_relmap.py     join inference between a document's tables; data dictionary / relationship map (JSON, Markdown, Mermaid)
+src/kg_llm.py, kg_llmjoin.py   Ollama chat client; LLM join inference with an LLM judge
+src/kg_units.py      unit deduction for numeric columns (strict / broad / off)
+src/kg_embed.py      embedders: Ollama (/api/embed) and a deterministic hash embedder
+src/kg_mcp.py        the MCP server: tools, resources, prompts, bearer-token / OAuth auth, workers, rate limit, metrics
+src/kg_store.py      read-only backend of the server: graphs, metadata, assets, warnings, paywall policy
+src/kg_tableservice.py  MCP query front-end of the table database (preferences, ref resolution, paywall policy, provenance, lexical fallback)
+src/kg_sessions.py   session-preference stores: memory, sqlite, redis
+src/kg_oauth.py      OAuth 2.1 provider for claude.ai custom connectors
+src/kg_snapshot.py   publish / pull versioned bundles of the agent home for other MCP servers
+deploy/              systemd units (run timer, daemon, MCP server, tunnel), cron, Caddy, compose files for PostgreSQL + pgvector, tunnel scripts and examples
+docs/                mcp.md · tabledb.md · scaling.md · scheduling.md        notes/  MCP_Server.md · LiveDemo.md        CHANGELOG.md
+tests/               one file per area (agent, ocr, daemon, mcp, tables, units, llm joins, scale-out, …) + mock_site.py (a local mock of the sources)
 requirements.txt     dependencies (optional ones are commented)      venv-setup.sh   uv-based virtualenv setup
 ```
 
@@ -63,7 +78,12 @@ playwright install chromium                                          # headless 
 | `rapidocr-onnxruntime` **or** the Tesseract program | OCR of scanned pages | `pip` / `apt install tesseract-ocr` |
 | `pyvis`, `matplotlib` | offline vis-network library for `kg_show.py` (else a CDN `<script>`), PNG output | `requirements.txt` |
 | Ollama + `langchain-ollama` | `--extractor ollama\|hybrid` (triples) and `--llm` (report narration) | `ollama pull llama3.1` |
-| `pytest`, `reportlab` | the tests | `requirements.txt` |
+| PostgreSQL 16 + the `pgvector` extension, `psycopg` | the table database (`--tables`, `kg_tabledb.py`, the table tools of the MCP server) | `docker compose -f deploy/docker-compose.tabledb.yml up -d` (needs `deploy/.env`, see [docs/tabledb.md](docs/tabledb.md)) |
+| Ollama + an embedding model | embeddings of table rows and of questions (`ollama pull nomic-embed-text`); `--embedder hash` works without a model | https://ollama.com |
+| `mcp`, `uvicorn`, `httpx`, `Pillow` | the MCP server | `requirements.txt` |
+| `redis` | `--session-store redis://…` only | `pip install redis` |
+| `cloudflared` | a public URL for the MCP server (quick or named tunnel) | see [docs/scaling.md](docs/scaling.md) |
+| `pytest`, `reportlab` | the tests (the table tests also need PostgreSQL binaries with pgvector, else they are skipped) | `requirements.txt` |
 
 ## Quick start
 
@@ -81,6 +101,16 @@ python src/kg_agent.py run                                             # stage /
 python src/kg_agent.py status                                          # staged documents, version table, open warnings
 python src/kg_agent.py probe https://www.nrc.gov/regulations-legislation/regulatory-guides-by-division/division-1---power-reactors
 python src/kg_daemon.py start --at 06:00 --tz Europe/London -- --extractor rules   # detached daemon; status | run-now | stop
+
+# the table database (PostgreSQL + pgvector, see docs/tabledb.md) and the MCP server
+cp deploy/tabledb.env.example deploy/.env                              # set the two passwords once (the file is git-ignored)
+docker compose -f deploy/docker-compose.tabledb.yml up -d
+export COGENT_TABLEDB_DSN=postgresql://cogent:<COGENT_DB_PASSWORD>@127.0.0.1:5432/cogent    # the owner login, for the agent
+python src/kg_agent.py run --tables                                    # stage, then load the tables
+python src/kg_mcp.py token create --name claude                        # printed once
+export COGENT_TABLEDB_DSN=postgresql://cogent_ro:<COGENT_RO_PASSWORD>@127.0.0.1:5432/cogent    # the read-only login, for the server
+python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host '*'
+claude mcp add --transport http cogent-kg http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
 ```
 
 ## The configuration files
@@ -115,7 +145,10 @@ returns a `networkx.MultiDiGraph`. It is a LangGraph pipeline `load → structur
   Multi-column pages are read column by column (`src/kg_layout.py`: gutters are found from the text blocks; full-width blocks split the page into bands),
   in the basic PDF parser and for OCR'd pages; `get_outline` adds `order_warnings` when top-level section numbers come out of sequence.
 * **structure** – every element gets its enclosing section from the heading hierarchy.
-* **export** (with `assets_dir`) – figures as PNG, tables as CSV, plus a `manifest.json`, under `<assets_dir>/<sha256(source)>/`.
+* **tables** – before the graph is built, detected tables are checked (`kg_tablecheck.py`): two-column prose and sentence lists go back to paragraphs, tables
+  of contents and acronym lists are flagged `front_matter`, repeated header blocks and PDF footnote markers (`NDC-2` + raised `4`) are removed from the cells
+  and recorded, captions are normalised (`Table 5‑1` keeps its subnumber). `KG_TABLE_CHECK=off` switches this off. Details: [docs/tabledb.md](docs/tabledb.md).
+* **export** (with `assets_dir`) – figures as PNG, tables as CSV (not for front matter), plus a `manifest.json`, under `<assets_dir>/<sha256(source)>/`.
 * **extract** – triples from text, tables and captions: `RuleBasedExtractor` (default, no dependencies), `OllamaExtractor`
   (local model, JSON-schema output, rule-based fallback), `HybridExtractor` (LLM first, rules fill the gaps), or any
   `prompt → str` function via `LLMExtractor`. Table rows become *row key → column header → value* facts.
@@ -185,7 +218,10 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    review, errors, trackers that keep failing. Optionally a local LLM (`--llm`) narrates the structured results at the top.
 
 Subcommands: `run [--dry-run] [--force [--no-prune]]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
-check a tracker against a live page), `status`. Common options: `--standards`, `--reports`, `--home` (default
+check a tracker against a live page), `status`, `local` and `add-local` (purchased copies, below). Table database options of `run`: `--tables`
+(after staging, load the tables; needs `COGENT_TABLEDB_DSN` or `--tabledb-dsn`), `--embedder`, `--embed-model`, `--row-mode full|text`, `--llm-joins` with
+`--join-model`, `--join-judge-model`, `--join-samples`, `--join-judge-runs`, `--join-max-pairs`, `--join-max-seconds`; `--publish-snapshot DIR` writes a bundle for other
+servers after the run. Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
 `--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
@@ -250,6 +286,9 @@ archive/documents/<id>/<ts>_<sha>/   archive/entries/<key>/<ts>/    superseded v
 local/{standards,reports}/<id>/      purchased copies you drop in (folders are created for paywalled entries)
 state/{trackers,identities,pending,alerts,config_hashes,orphans}.json       logs/{report.md,runs.jsonl,forced.jsonl}
 archive/orphans/<kind>_<id>_<run>.tar.gz    compressed orphaned staging data (forced updates)
+staging/combined/{kg.json,dependents.json,meta.json}    entry-level graph (below)
+tabledb/<docid>/{data_dictionary,relationships,join_evaluation}.*    published by the table agent; logs/{tabledb.jsonl,tabledb_report.md}
+mcp/{tokens.json,oauth.json,sessions.db}    written by the MCP server (access tokens as hashes, OAuth state, shared session preferences)
 ```
 
 ## Paywalled documents (warnings)
@@ -263,7 +302,10 @@ warnings appear at the top of each report section, in the log, and in `state/ale
 * **NEW EDITION FOR PURCHASE** – a tracker saw a newer edition on a landing / store / index page; stays open until the
   local copy states that edition;
 * **LOCAL COPY OUTDATED** – the local copy's own title page states an older edition than the latest known one;
+* **EDITION NOT ENDORSED** – the edition on board is not one of the entry's `endorsed_editions` (any entry, paywalled or not);
 * (info) *local copy not identified*, *store page changed*.
+
+A run limited with `--only` leaves the open alerts of the other entries untouched.
 
 Import and stage a purchased copy with one command (copies it into the right folder, skips identical files,
 optionally stages immediately and prints the entry's remaining warnings):
@@ -357,14 +399,28 @@ Everything after `--` is passed to `kg_agent.py run` (so `--no-auto-apply`, `--o
 
 ## MCP server (serve the KGs to AI agents)
 
-`src/kg_mcp.py` exposes the staged graphs plus meta-data (capture times, latest-vs-on-board editions, warnings,
-disclaimers) over MCP streamable HTTP with bearer-token authentication:
+`src/kg_mcp.py` exposes the staged graphs, the table database and their meta-data (capture times, latest-vs-on-board editions, warnings, disclaimers,
+provenance on every answer) over MCP streamable HTTP. It is read-only.
 
 ```bash
-python src/kg_mcp.py token create --name claude
+python src/kg_mcp.py token create --name claude                         # printed once; only a hash is stored
 python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host kg.example.com
 ```
-The server also serves the exported figures/tables (`list_assets`, `get_figure`, `get_table_csv`); figures from paywalled content are watermarked and carry warnings (`--paywalled-assets watermark|block|allow`). For a quick public demo without any hosting see `deploy/demo-tunnel.sh` (Cloudflare quick tunnel; docs/mcp.md). Add `--oauth-issuer https://kg.example.com` for OAuth 2.1 (claude.ai custom connectors). Remote-URL options, Claude Code / API / Desktop instructions and the authentication notes are in [docs/mcp.md](docs/mcp.md).
+
+* **Tools** (24 always, up to 33 with a table database and the optional flags): graph navigation and search (`get_overview`, `list_entries`, `get_entry_metadata`,
+  `graph_summary`, `get_outline`, `search_graph`, `get_node`, `get_neighbors`, `get_subgraph`, `get_table` with paging, `export_graph`), `get_dependents`, `get_warnings`,
+  `get_disclaimers`, figures and tables (`list_assets`, `get_figure`, `get_table_csv`; short document ids and graph node ids accepted), the table database
+  (`list_tables`, `describe_table`, `search_tables`, `lookup_values`, `query_table`, `join_tables`, `explain_units`, `evaluate_joins` with `--llm-model`, `run_sql` with `--allow-sql`),
+  data dictionaries and maps (`get_data_dictionary`, `get_relationship_map`, `get_join_evaluation`) and per-session tailoring (`set/get/reset_session_preferences`, `list_profiles`),
+  plus resources and prompts. A complete description is in [notes/MCP_Server.md](notes/MCP_Server.md).
+* **Paywalled content** – figures and table results from purchased copies are watermarked or flagged and carry warnings (`--paywalled-assets watermark|block|allow`).
+  Local file paths are removed from every answer.
+* **Authentication** – bearer tokens (`token create|list|revoke`), optionally OAuth 2.1 for the Claude web app (`--oauth-issuer https://kg.example.com`). Use the
+  SELECT-only database login (`deploy/tabledb-readonly-role.sql`) for `--tabledb-dsn`. `get_overview` reports `table_database` (reachable, built, can_select) and the
+  start-up log says whether the database is usable; check a login with `python src/kg_tabledb.py --dsn <dsn> check`.
+* **Public URL** – quick demo without an account: `deploy/demo-tunnel.sh` (Cloudflare quick tunnel, the address changes every time). A stable free URL:
+  `deploy/named-tunnel.sh setup <hostname>` ([docs/scaling.md](docs/scaling.md)). Other options, Claude Code / API / Desktop instructions and the authentication notes:
+  [docs/mcp.md](docs/mcp.md).
 
 ## Combined graph (which reports depend on which standards)
 
@@ -400,6 +456,12 @@ units of numeric columns deduced from headers, table metadata and KG nodes (stri
 each call can pick the join approach, unit mode and retrieval mode (and optionally `run_sql`), with paywall warnings and a disclaimer on every answer.
 Setup, schema, embedding recipe, design alternatives and limits: [docs/tabledb.md](docs/tabledb.md).
 
+## Scaling out
+
+`kg_mcp.py serve` takes `--workers`, `--graph-cache`, `--session-store memory|sqlite:<file>|redis://…`, `--embed-cache/--embed-concurrency/--embed-wait`,
+`--rate-limit` and `--metrics`; `kg_snapshot.py` (and `kg_agent.py run --publish-snapshot DIR`) ships the agent's results to other servers. A free, stable URL comes from a
+named Cloudflare tunnel: `deploy/named-tunnel.sh setup <hostname>`, with systemd units in `deploy/`. Details, limits and a hardening checklist: [docs/scaling.md](docs/scaling.md).
+
 ## Environment variables
 
 | variable | effect |
@@ -411,24 +473,30 @@ Setup, schema, embedding recipe, design alternatives and limits: [docs/tabledb.m
 | `KG_TABLE_CHECK` | `off` keeps every detected table; default `on` demotes two-column prose and sentence lists to paragraphs (see docs/tabledb.md) |
 | `KG_OUTPUT_DIR`, `KG_ASSETS_DIR` | default folders for saved KGs (`kg_store`) and exported figures/tables (`kg_assets`) |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server (default `http://localhost:11434`) and model (default `llama3.1`) |
+| `COGENT_HOME`, `COGENT_STANDARDS`, `COGENT_REPORTS` | defaults of `--home`, `--standards`, `--reports` of the MCP server and snapshot tool |
+| `COGENT_TABLEDB_DSN` | PostgreSQL DSN of the table database (the owner login for the agent, the read-only login for the MCP server) |
+| `COGENT_EMBEDDER`, `COGENT_EMBED_MODEL`, `COGENT_LLM_MODEL` | embedder (`ollama` / `hash`), its model, and the Ollama chat model for join inference |
+| `COGENT_MCP_TOKEN` | one extra static access token for the MCP server |
+| `COGENT_WORKERS`, `COGENT_GRAPH_CACHE`, `COGENT_SESSION_STORE`, `COGENT_RATE_LIMIT` | defaults of the scale-out flags (`--workers`, `--graph-cache`, `--session-store`, `--rate-limit`) |
+| `COGENT_TEST_PG_DSN` | tests only: a PostgreSQL + pgvector database for the table tests (else a private cluster is started from the installed binaries) |
 
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (291 tests at the time of writing)
 ```
 
-`tests/test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid
-report→standard references, symmetric overlaps, valid `version_tracking`) rather than specific entries, so editing the
-configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;
-`COGENT_STRICT_CONFIG=1` turns dangling report→standard references from warnings into failures.
-
-The rest cover a three-day simulation of the agent (bootstrap, quiet day, new RG revision / DOE edition / eCFR amendment /
-Federal Register rule), configuration propagation, archiving, audit log and manual-edit detection, dry-run, identifier
-parsing and edition normalisation, version tracking, paywall warnings, report/standard cross-references, and OCR (fake
-engines, mixed documents, tables, columns, scan fingerprints, and RapidOCR when installed), and the daemon (schedule
-maths across a DST change, catch-up, retry backoff, hooks, PID lock, supervision / timeout, real `serve` and `start`/`stop`
-processes with signals).
+* `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
+  `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;
+  `COGENT_STRICT_CONFIG=1` turns dangling report→standard references from warnings into failures.
+* `test_agent.py` is a three-day simulation of the agent (bootstrap, quiet day, new RG revision / DOE edition / eCFR amendment / Federal Register rule), configuration
+  propagation, archiving, forced updates, audit log and manual-edit detection, paywall and endorsement warnings, version tracking, the combined graph and the table stage.
+  `test_ocr.py`, `test_daemon.py` (schedule maths across a DST change, catch-up, retry backoff, hooks, PID lock, supervision, real `serve` and `start`/`stop` processes).
+* Extraction: `test_identifiers.py`, `test_identity_filenames.py`, `test_predicates.py`, `test_layout.py`, `test_tablecheck.py`, `test_table_footnotes.py`, `test_assets_export.py`.
+* MCP server and table database: `test_mcp.py`, `test_store_api.py`, `test_combine_resolution.py`, `test_tables.py`, `test_tabledb.py`, `test_mcp_tables.py`,
+  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`.
+* The table tests need PostgreSQL with the pgvector extension (a private cluster from the installed binaries, or `COGENT_TEST_PG_DSN`); without it they are skipped.
+  The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
 
 ## Status and limits
 
@@ -442,6 +510,10 @@ processes with signals).
 * Entries without `links` / `template_links` (many report formats, e.g. reports that only point to eCFR) have status
   `no_documents`; their KG holds the entry node and its `complies_with` relations.
 * Paywalled standards can only be tracked through their public landing pages; the standard itself needs your local copy.
+* The table, reading-order, footnote and front-matter heuristics were tested on constructed examples and hand-built PDFs. Check `tables_demoted`, `order_warnings` and
+  the demoted paragraphs after a forced re-ingest of real scanned documents; the footnote split does not apply to the `pymupdf-layout` engine or to OCR'd pages.
+* The LLM join inference and its judge are evidence, not ground truth. The Cloudflare tunnel steps, Redis sessions and behaviour under real load were not exercised
+  against the real services. See [CHANGELOG.md](CHANGELOG.md) for the known limits of each change.
 * The rule-based extractor is a baseline (capitalised phrases and the words between them). For richer relations use
   `--extractor ollama` or `hybrid`.
 * `pymupdf-layout` / `pymupdf4llm` are AGPL-3.0 or Artifex-commercial licensed.

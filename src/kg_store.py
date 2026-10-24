@@ -11,6 +11,7 @@ Only networkx is needed (no LangGraph / Playwright / OCR imports).
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 import re
 import threading
 from datetime import datetime, timezone
@@ -96,7 +97,7 @@ class NotFound(KeyError):
 
 class Store:
     def __init__(self, home: Path, standards: Optional[Path] = None, reports: Optional[Path] = None,
-                 stale_after_days: float = 3.0, paywalled_assets: str = "watermark"):
+                 stale_after_days: float = 3.0, paywalled_assets: str = "watermark", max_cached_graphs: int = 64):
         if paywalled_assets not in ("watermark", "block", "allow"):
             raise ValueError("paywalled_assets must be watermark, block or allow")
         self.paywalled_assets = paywalled_assets
@@ -104,8 +105,10 @@ class Store:
         self.standards = Path(standards) if standards else None
         self.reports = Path(reports) if reports else None
         self.stale_after_days = stale_after_days
-        self._cache: dict[str, tuple[float, nx.MultiDiGraph]] = {}
+        self.max_cached_graphs = max(0, int(max_cached_graphs))      # 0 = keep every graph that was loaded; otherwise least recently used graphs are dropped
+        self._cache: "OrderedDict[str, tuple[float, nx.MultiDiGraph]]" = OrderedDict()
         self._lock = threading.Lock()
+        self.cache_stats = {"hits": 0, "loads": 0, "evictions": 0}
 
     # ------------------------------------------------------------------ config
     def _config(self) -> dict[str, dict[str, Any]]:
@@ -135,11 +138,18 @@ class Store:
         with self._lock:
             hit = self._cache.get(str(path))
             if hit and hit[0] == mtime:
+                self._cache.move_to_end(str(path))
+                self.cache_stats["hits"] += 1
                 return hit[1]
         data = json.loads(path.read_text(encoding="utf-8"))
         g = nx.node_link_graph(data, edges="edges")
         with self._lock:
             self._cache[str(path)] = (mtime, g)
+            self._cache.move_to_end(str(path))
+            self.cache_stats["loads"] += 1
+            while self.max_cached_graphs and len(self._cache) > self.max_cached_graphs:
+                self._cache.popitem(last=False)
+                self.cache_stats["evictions"] += 1
         return g
 
     def _graph_path(self, ref: str) -> Path:

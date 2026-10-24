@@ -123,3 +123,26 @@ def test_outline_warns_when_section_numbers_are_out_of_sequence(store, tmp_path)
     (e / "kg.json").write_text(json.dumps(nx.node_link_data(g, edges="edges")))
     w = store.outline_warnings("standard:2")
     assert len(w) == 1 and "APPLICABILITY" in w[0] and w[0].startswith("d: ")
+
+
+def test_graph_cache_is_bounded_and_least_recently_used(tmp_path):
+    """Scale-out: every worker holds its own graphs; the cache keeps at most max_cached_graphs of them (least recently used go first)."""
+    home = tmp_path / "home"
+    (tmp_path / "s.json").write_text(json.dumps({"standards": [{"id": i, "document": f"S{i}", "links": []} for i in (1, 2, 3)]}))
+    (tmp_path / "r.json").write_text(json.dumps({"reports": []}))
+    for i in (1, 2, 3):
+        d = home / "staging" / "standards" / str(i)
+        d.mkdir(parents=True)
+        g = nx.MultiDiGraph()
+        g.add_node(f"n{i}", type="Paragraph", label=f"node {i}", text=f"node {i}")
+        (d / "kg.json").write_text(json.dumps(nx.node_link_data(g, edges="edges")))
+    st = kg_store.Store(home, tmp_path / "s.json", tmp_path / "r.json", max_cached_graphs=2)
+    st.graph("standard:1"), st.graph("standard:2")
+    st.graph("standard:1")                                    # standard:1 is now the most recently used
+    st.graph("standard:3")                                    # evicts standard:2
+    assert len(st._cache) == 2 and st.cache_stats == {"hits": 1, "loads": 3, "evictions": 1}
+    assert any(k.endswith("/1/kg.json") for k in st._cache) and not any(k.endswith("/2/kg.json") for k in st._cache)
+    unbounded = kg_store.Store(home, tmp_path / "s.json", tmp_path / "r.json", max_cached_graphs=0)
+    for i in (1, 2, 3):
+        unbounded.graph(f"standard:{i}")
+    assert len(unbounded._cache) == 3 and unbounded.cache_stats["evictions"] == 0

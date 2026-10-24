@@ -78,6 +78,8 @@ class Settings(BaseModel):
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
     tables: bool = False                # after staging: build / refresh the table database (PostgreSQL + pgvector), see kg_tabledb.py
+    publish_snapshot: Optional[str] = None   # after the run: write a bundle of the agent home here for other MCP servers to pull (kg_snapshot.py)
+    snapshot_keep: int = 5
     tabledb_dsn: Optional[str] = None   # default $COGENT_TABLEDB_DSN
     tabledb_schema: str = "kgtables"
     embedder: str = "ollama"            # ollama | hash  (embeddings of table rows)
@@ -1512,6 +1514,15 @@ def run_once(settings: Settings, llm: Any = None) -> AgentState:
         if not rt.dry and rt.p.lock.exists():
             rt.p.lock.unlink()
         raise
+    if settings.publish_snapshot and not rt.dry:                 # scale-out: other servers pull this bundle (never fails the run)
+        try:
+            import kg_snapshot
+            snap = kg_snapshot.publish(settings.home, Path(settings.publish_snapshot), settings.standards, settings.reports, settings.snapshot_keep)
+            log.info("snapshot published: %s (%d files, %d bytes)", snap["name"], snap["files"], snap["bytes"])
+            final["snapshot"] = {k: snap[k] for k in ("name", "sha256", "bytes", "files")}
+        except Exception as exc:                                  # noqa: BLE001
+            log.error("snapshot not published: %s", exc)
+            final["snapshot"] = {"error": f"{type(exc).__name__}: {exc}"}
     return final
 
 
@@ -1692,6 +1703,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
+    r.add_argument("--publish-snapshot", metavar="DIR", help="after the run, write a bundle of the agent home to DIR (a shared mount or a folder served over HTTP) "
+                   "for other MCP servers to pull with kg_snapshot.py; see docs/scaling.md")
+    r.add_argument("--snapshot-keep", type=int, default=5, help="bundles kept in DIR")
     r.add_argument("--tables", action="store_true", help="after staging, build / refresh the table database (PostgreSQL + pgvector; kg_tabledb.py)")
     r.add_argument("--tabledb-dsn", help="postgresql://user:pass@host/db (default $COGENT_TABLEDB_DSN)")
     r.add_argument("--tabledb-schema", default="kgtables")
@@ -1737,6 +1751,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
                  force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False),
+                 publish_snapshot=getattr(a, "publish_snapshot", None), snapshot_keep=getattr(a, "snapshot_keep", 5),
                  tables=getattr(a, "tables", False), tabledb_dsn=getattr(a, "tabledb_dsn", None), tabledb_schema=getattr(a, "tabledb_schema", "kgtables"),
                  embedder=getattr(a, "embedder", "ollama"), embed_model=getattr(a, "embed_model", None), kg_context=not getattr(a, "no_kg_context", False),
                  row_mode=getattr(a, "row_mode", "full"), llm_joins=getattr(a, "llm_joins", False), join_model=getattr(a, "join_model", None),

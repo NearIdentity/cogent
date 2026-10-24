@@ -1,17 +1,28 @@
+# The MCP server under systemd (behind the named tunnel or Caddy).
+#   sudo mkdir -p /etc/cogent && sudo cp deploy/mcp.env.example /etc/cogent/mcp.env && sudo chmod 600 /etc/cogent/mcp.env   # then edit it
+#   sudo cp deploy/cogent-mcp.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now cogent-mcp
+# Settings that change per machine live in /etc/cogent/mcp.env (public host name, tokens, read-only database DSN), not here.
 [Unit]
-Description=cogent knowledge-graph MCP server
-After=network.target
+Description=cogent: knowledge-graph MCP server
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 User=cogent
 WorkingDirectory=/opt/cogent
-# create /etc/cogent/mcp.env first (optional): COGENT_MCP_TOKEN=...   (or use `kg_mcp.py token create`)
-EnvironmentFile=-/etc/cogent/mcp.env
-ExecStart=/opt/cogent/.venv/bin/python src/kg_mcp.py --home /var/lib/cogent serve --standards config/standards.json --reports config/reports.json --public-host kg.example.com --oauth-issuer https://kg.example.com
+EnvironmentFile=/etc/cogent/mcp.env
+# Workers share the port; sessions live in a SQLite file so that every worker sees the same preferences. Remove --workers for a single process.
+ExecStart=/opt/cogent/.venv/bin/python src/kg_mcp.py --home ${COGENT_HOME} serve --standards config/standards.json --reports config/reports.json \
+    --public-host ${COGENT_PUBLIC_HOST} --oauth-issuer https://${COGENT_PUBLIC_HOST} \
+    --workers 2 --session-store sqlite:${COGENT_HOME}/mcp/sessions.db --rate-limit 600 --metrics
 Restart=on-failure
+RestartSec=5
+LimitNOFILE=4096
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/cogent/mcp   # tokens.json, oauth.json
+ProtectHome=true
+# tokens.json, oauth.json and sessions.db are written here
+ReadWritePaths=/var/lib/cogent/mcp
 PrivateTmp=true
 
 [Install]
