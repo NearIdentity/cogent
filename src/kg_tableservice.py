@@ -30,6 +30,7 @@ token plus a ``session_id`` the client chooses (``default`` if it gives none).
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 import threading
 import time
 from contextlib import contextmanager
@@ -40,6 +41,7 @@ import kg_llmjoin as L
 import kg_relmap as R
 import kg_tabledb as TDB
 import kg_units as U
+from kg_sessions import SESSION_TTL, MemorySessions, make_sessions
 from kg_assets import notice
 from kg_embed import Embedder, EmbedError
 from kg_llm import LLMError, get_llm
@@ -49,7 +51,6 @@ log = logging.getLogger("kg_tableservice")
 DISCLAIMER = ("Tables were extracted automatically from the source documents; cells can be merged, split or mis-read, units may be missing or inferred, "
               "and column types and join candidates are inferred. Verify design values against the source document before use.")
 RETRIEVAL = ("semantic", "lexical", "hybrid")
-SESSION_TTL = 8 * 3600
 
 
 @dataclass
@@ -90,35 +91,24 @@ def _overlay(base: dict[str, Any], profile: Optional[str], overrides: dict[str, 
     return out
 
 
-class Sessions:
-    """Per-session preference overlays kept in memory (they are lost on restart; clients can set them again)."""
-
-    def __init__(self, ttl: float = SESSION_TTL):
-        self.ttl, self._d, self._lock = ttl, {}, threading.Lock()
-
-    def get(self, key: str) -> dict[str, Any]:
-        with self._lock:
-            now = time.time()
-            for k in [k for k, (_, exp) in self._d.items() if exp < now]:
-                del self._d[k]
-            return dict(self._d.get(key, ({}, 0))[0])
-
-    def set(self, key: str, prefs: dict[str, Any]) -> None:
-        with self._lock:
-            self._d[key] = (dict(prefs), time.time() + self.ttl)
-
-    def clear(self, key: str) -> bool:
-        with self._lock:
-            return self._d.pop(key, None) is not None
+Sessions = MemorySessions                  # kept for older imports
 
 
 class TableService:
     def __init__(self, store: Store, dsn: Optional[str], schema: str = TDB.SCHEMA, embedder: Optional[Embedder] = None, allow_sql: bool = False,
                  llm_model: Optional[str] = None, judge_model: Optional[str] = None, llm_host: Optional[str] = None, llm_max_seconds: float = 180.0,
-                 default_profile: str = "balanced"):
+                 default_profile: str = "balanced", sessions: Any = None, embed_cache: int = 512, embed_concurrency: int = 2, embed_wait: float = 5.0):
         self.store, self.db, self.embedder, self.allow_sql = store, (TDB.TableDB(dsn, schema) if dsn else None), embedder, allow_sql
         self.llm_model, self.judge_model, self.llm_host, self.llm_max_seconds = llm_model, judge_model, llm_host, llm_max_seconds
-        self.sessions, self.default_profile, self._spec = Sessions(), default_profile, None
+        self.sessions, self.default_profile, self._spec = (sessions if sessions is not None else MemorySessions()), default_profile, None
+        # the embedder (Ollama) is the first thing to saturate under load: remember recent question vectors, cap concurrent calls, and give up
+        # waiting after embed_wait seconds (the search then falls back to lexical matching and says so)
+        self._embed_cache: "OrderedDict[str, list[float]]" = OrderedDict()
+        self._embed_cache_size = max(0, int(embed_cache))
+        self._embed_slots = threading.BoundedSemaphore(max(1, int(embed_concurrency)))
+        self._embed_wait = float(embed_wait)
+        self._embed_lock = threading.Lock()
+        self.embed_stats = {"cache_hits": 0, "calls": 0, "busy": 0}
         if default_profile not in L.PROFILES:
             raise ValueError(f"unknown profile {default_profile!r}")
 
@@ -248,7 +238,27 @@ class TableService:
                 return None, (f"the database was built with embedder {meta['spec']!r} but the server uses {spec!r}; "
                               "vector spaces differ, so lexical matching was used instead")
             self._spec = spec
-            return self.embedder.embed_query(question), None
+            key = f"{spec}\x1f{question}"
+            with self._embed_lock:
+                hit = self._embed_cache.get(key)
+                if hit is not None:
+                    self._embed_cache.move_to_end(key)
+                    self.embed_stats["cache_hits"] += 1
+                    return list(hit), None
+            if not self._embed_slots.acquire(timeout=self._embed_wait):
+                self.embed_stats["busy"] += 1
+                return None, f"the embedder is busy (waited {self._embed_wait:g} s); lexical matching was used instead"
+            try:
+                vec = self.embedder.embed_query(question)
+                self.embed_stats["calls"] += 1
+            finally:
+                self._embed_slots.release()
+            if self._embed_cache_size:
+                with self._embed_lock:
+                    self._embed_cache[key] = list(vec)
+                    while len(self._embed_cache) > self._embed_cache_size:
+                        self._embed_cache.popitem(last=False)
+            return vec, None
         except EmbedError as exc:
             return None, f"embedder unavailable ({exc}); lexical matching was used instead"
 

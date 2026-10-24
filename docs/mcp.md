@@ -13,7 +13,7 @@ HTTP), `uvicorn`/Starlette, `networkx`; for the public URL Caddy, `cloudflared` 
 1. **`src/kg_store.py`** – read-only backend. Loads node-link graphs with networkx (cached by mtime), joins them with
    `meta.json`, per-document `state.json`, `state/alerts.json`, `logs/runs.jsonl` and the `version_tracking` blocks in
    `config/*.json`, and builds the meta-data and disclaimers (paywall, stale capture, OCR pages, not-latest edition…).
-2. **`src/kg_mcp.py`** – FastMCP server (stateless streamable HTTP at `/mcp`, `/healthz` open) with 13 read-only tools
+2. **`src/kg_mcp.py`** – FastMCP server (stateless streamable HTTP at `/mcp`, `/healthz` open) with read-only tools (the full list is in notes/MCP_Server.md)
    and `kg://` resources; a bearer-token ASGI middleware; Host-header allow-list (DNS-rebinding protection); token CLI.
 3. **Provenance on every answer.** Graph tools return `{"provenance": {...}, ...}`: `graph_built`, `sources_last_checked`,
    `age_days`, `stale`, `version_status` (`current | update_available | not_staged | partially_staged | no_local_copy`),

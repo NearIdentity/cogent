@@ -1,0 +1,22 @@
+# cloudflared (named tunnel) in front of the MCP server. Start the MCP server first (cogent-mcp.service).
+#   sudo cp deploy/cogent-tunnel.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now cogent-tunnel
+# Needs /etc/cogent/cloudflared.yml (see deploy/cloudflared/config.yml.example) and the credentials file it names.
+[Unit]
+Description=cogent: Cloudflare named tunnel to the MCP server
+After=network-online.target cogent-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cogent
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel --config /etc/cogent/cloudflared.yml run
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

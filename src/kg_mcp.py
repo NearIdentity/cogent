@@ -25,6 +25,8 @@ import os
 import re
 import secrets
 import sys
+import threading
+import time
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -165,6 +167,124 @@ class BearerAuth:
         return await self.app(scope, receive, send)
 
 
+
+# ---------------------------------------------------------------------------
+# Operations: per-credential rate limit and Prometheus-style metrics
+# ---------------------------------------------------------------------------
+
+
+class Ops:
+    """Outermost pure-ASGI layer.
+
+    * rate limit: a token bucket per credential (the hash of the Authorization / X-API-Key header, or the client address when there is none), so one
+      client cannot starve the others. ``rate_per_min`` requests per minute with a burst of ``burst``; 0 turns it off. ``/healthz`` is never limited.
+      The bucket lives in this process: with W workers a client can get up to W times the rate.
+    * ``/metrics`` (when ``metrics`` is on): Prometheus text for **this process**. It needs a valid token (open only on a ``--no-auth`` loopback server).
+      With several workers behind one port each scrape reaches one of them; give every worker its own port, or aggregate, if you need exact totals.
+    """
+
+    def __init__(self, app, tokens: Optional["TokenStore"] = None, *, rate_per_min: float = 0.0, burst: Optional[float] = None, metrics: bool = False,
+                 store: Optional[Store] = None, tables: Any = None, clock: Callable[[], float] = time.monotonic):
+        self.app, self.tokens, self.metrics, self.store, self.tables, self.clock = app, tokens, metrics, store, tables, clock
+        self.rate = max(0.0, float(rate_per_min)) / 60.0
+        self.burst = float(burst) if burst else max(5.0, float(rate_per_min) / 6.0)
+        self._buckets: dict[str, tuple[float, float]] = {}            # key -> (tokens, last refill)
+        self._lock = threading.Lock()
+        self.started = time.time()
+        self.requests: dict[str, int] = {}
+        self.seconds_sum = 0.0
+        self.seconds_count = 0
+        self.rate_limited = 0
+        self.in_flight = 0
+
+    @staticmethod
+    def _key(scope, headers: dict[str, str]) -> str:
+        cred = headers.get("authorization") or headers.get("x-api-key") or ""
+        if cred:
+            return "c:" + hashlib.sha256(cred.encode()).hexdigest()[:16]
+        return "ip:" + str((scope.get("client") or ["?"])[0])
+
+    def allow(self, key: str) -> tuple[bool, float]:
+        """(allowed, seconds until a request would be allowed)."""
+        if not self.rate:
+            return True, 0.0
+        now = self.clock()
+        with self._lock:
+            tokens, last = self._buckets.get(key, (self.burst, now))
+            tokens = min(self.burst, tokens + (now - last) * self.rate)
+            if tokens >= 1.0:
+                self._buckets[key] = (tokens - 1.0, now)
+                if len(self._buckets) > 10000:                        # forget idle keys
+                    for k in [k for k, (t, ts) in self._buckets.items() if now - ts > 600]:
+                        self._buckets.pop(k, None)
+                return True, 0.0
+            self._buckets[key] = (tokens, now)
+            return False, (1.0 - tokens) / self.rate
+
+    def render(self) -> str:
+        pid = os.getpid()
+        lab = f'pid="{pid}"'
+        out = ["# HELP cogent_http_requests_total HTTP responses by status code (this process).", "# TYPE cogent_http_requests_total counter"]
+        out += [f'cogent_http_requests_total{{{lab},status="{st}"}} {n}' for st, n in sorted(self.requests.items())]
+        out += ["# TYPE cogent_http_request_seconds_sum counter", f"cogent_http_request_seconds_sum{{{lab}}} {self.seconds_sum:.6f}",
+                "# TYPE cogent_http_request_seconds_count counter", f"cogent_http_request_seconds_count{{{lab}}} {self.seconds_count}",
+                "# TYPE cogent_rate_limited_total counter", f"cogent_rate_limited_total{{{lab}}} {self.rate_limited}",
+                "# TYPE cogent_http_in_flight gauge", f"cogent_http_in_flight{{{lab}}} {self.in_flight}",
+                "# TYPE cogent_uptime_seconds gauge", f"cogent_uptime_seconds{{{lab}}} {time.time() - self.started:.0f}"]
+        if self.store is not None:
+            out += ["# TYPE cogent_graph_cache_events_total counter"]
+            out += [f'cogent_graph_cache_events_total{{{lab},event="{k}"}} {v}' for k, v in self.store.cache_stats.items()]
+            out += ["# TYPE cogent_graph_cache_graphs gauge", f"cogent_graph_cache_graphs{{{lab}}} {len(self.store._cache)}"]
+        if self.tables is not None:
+            out += ["# TYPE cogent_embed_events_total counter"]
+            out += [f'cogent_embed_events_total{{{lab},event="{k}"}} {v}' for k, v in self.tables.embed_stats.items()]
+            try:
+                out += ["# TYPE cogent_sessions gauge", f"cogent_sessions{{{lab},store=\"{self.tables.sessions.kind}\"}} {self.tables.sessions.count()}"]
+            except Exception:                                                  # noqa: BLE001 - a broken session store must not break the scrape
+                out += ["# cogent_sessions unavailable"]
+        return "\n".join(out) + "\n"
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        path = scope["path"]
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        if path == "/metrics" and self.metrics:
+            cred = headers.get("authorization", "")
+            token = cred[7:].strip() if cred[:7].lower() == "bearer " else headers.get("x-api-key", "").strip()
+            if self.tokens is not None and not (token and self.tokens.verify(token)):
+                return await _plain(send, 401, "unauthorized: send a valid token to read /metrics")
+            return await _plain(send, 200, self.render(), "text/plain; version=0.0.4")
+        if path != "/healthz":
+            ok, wait = self.allow(self._key(scope, headers))
+            if not ok:
+                self.rate_limited += 1
+                self.requests["429"] = self.requests.get("429", 0) + 1
+                return await _plain(send, 429, "rate limit exceeded; slow down", extra=[(b"retry-after", str(max(1, int(wait + 0.999))).encode())])
+        status = {"code": 0}
+        t0 = time.monotonic()
+
+        async def tap(msg):
+            if msg["type"] == "http.response.start":
+                status["code"] = msg["status"]
+            await send(msg)
+        self.in_flight += 1
+        try:
+            return await self.app(scope, receive, tap)
+        finally:
+            self.in_flight -= 1
+            self.seconds_sum += time.monotonic() - t0
+            self.seconds_count += 1
+            k = str(status["code"] or 500)
+            self.requests[k] = self.requests.get(k, 0) + 1
+
+
+async def _plain(send, status: int, text: str, ctype: str = "text/plain; charset=utf-8", extra: Optional[list] = None) -> None:
+    body = text.encode()
+    await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", ctype.encode()), (b"content-length", str(len(body)).encode())] + (extra or [])})
+    await send({"type": "http.response.body", "body": body})
+
+
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
@@ -172,6 +292,7 @@ class BearerAuth:
 RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 
+_STARTED = time.time()
 _PRIVATE_ROOTS: list[tuple[str, str]] = []          # (absolute path, public replacement), longest first; set by create_server
 
 
@@ -654,7 +775,7 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
     async def healthz(request):                    # noqa: ANN001
         from starlette.responses import JSONResponse
         run = store.last_run()
-        return JSONResponse({"status": "ok", "agent_last_run": (run or {}).get("finished")})
+        return JSONResponse({"status": "ok", "agent_last_run": (run or {}).get("finished"), "pid": os.getpid(), "uptime_s": int(time.time() - _STARTED)})
 
     if oauth is not None:
         @mcp.custom_route("/consent", methods=["GET", "POST"])
@@ -677,6 +798,60 @@ def build_app(store: Store, tokens: Optional[TokenStore], *, issuer_url: Optiona
 
 
 # ---------------------------------------------------------------------------
+# Several worker processes on one port
+# ---------------------------------------------------------------------------
+
+
+def run_workers(n: int, host: str, port: int, make_app: Callable[[], Any], restart_limit: int = 5) -> int:
+    """Bind the port once, fork ``n`` workers that each build their own app and serve on the shared socket, and supervise them: a worker that dies
+    is restarted (at most ``restart_limit`` times per minute, then the supervisor gives up); SIGINT / SIGTERM stop everything."""
+    import multiprocessing
+    import signal
+    import socket
+    import uvicorn
+    sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port))
+    sock.listen(1024)
+    sock.set_inheritable(True)
+    ctx = multiprocessing.get_context("fork")
+
+    def worker() -> None:
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        app = make_app()
+        uvicorn.Server(uvicorn.Config(app, log_level="info", proxy_headers=True, forwarded_allow_ips="127.0.0.1")).run(sockets=[sock])
+
+    procs = [ctx.Process(target=worker, daemon=True) for _ in range(n)]
+    for p in procs:
+        p.start()
+    log.info("%d worker process(es) started: %s", n, ", ".join(str(p.pid) for p in procs))
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    deaths: list[float] = []
+    while not stop.wait(1.0):
+        for i, p in enumerate(procs):
+            if not p.is_alive():
+                now = time.time()
+                deaths = [t for t in deaths if now - t < 60] + [now]
+                log.error("worker %s exited with code %s", p.pid, p.exitcode)
+                if len(deaths) > restart_limit:
+                    log.error("workers keep dying (%d in a minute); stopping", len(deaths))
+                    stop.set()
+                    break
+                procs[i] = ctx.Process(target=worker, daemon=True)
+                procs[i].start()
+                log.info("restarted as %s", procs[i].pid)
+    for p in procs:
+        if p.is_alive():
+            p.terminate()
+    for p in procs:
+        p.join(10)
+    sock.close()
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -688,7 +863,9 @@ def _env(name: str, default: str) -> str:
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--home", type=Path, default=Path(_env("COGENT_HOME", "kg_agent_home")), help="agent home directory")
-    ap.add_argument("--tokens", type=Path, default=None, help="token file (default <home>/mcp/tokens.json)")
+    ap.add_argument("--tokens", type=Path, default=None, help="token file (default <state-dir>/tokens.json)")
+    ap.add_argument("--state-dir", type=Path, default=None, help="where tokens.json and oauth.json live (default <home>/mcp); put it on storage "
+                    "shared by all servers when several hosts serve the same tokens")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="run the server")
@@ -719,6 +896,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     s.add_argument("--allow-sql", action="store_true", help="also expose run_sql (read-only SELECT); use a SELECT-only database role")
     s.add_argument("--no-auth", action="store_true", help="disable authentication (loopback binds only)")
     s.add_argument("--stateful", action="store_true", help="keep per-client sessions (default: stateless)")
+    g = s.add_argument_group("scale-out")
+    g.add_argument("--workers", type=int, default=int(_env("COGENT_WORKERS", "1")), help="server processes sharing the port (Linux/macOS; each loads its own graphs, "
+                   "so memory grows with it). Default 1")
+    g.add_argument("--graph-cache", type=int, default=int(_env("COGENT_GRAPH_CACHE", "64")), help="graphs kept in memory per process, least recently used "
+                   "first out (0 = no limit)")
+    g.add_argument("--session-store", default=_env("COGENT_SESSION_STORE", "memory"), help="where session preferences live: memory (default, per process) | "
+                   "sqlite:/path/sessions.db (shared by the workers of one host) | redis://host:6379/0 (several hosts)")
+    g.add_argument("--session-hours", type=float, default=8.0, help="how long saved session preferences last")
+    g.add_argument("--embed-cache", type=int, default=512, help="recent question embeddings kept per process (0 = off)")
+    g.add_argument("--embed-concurrency", type=int, default=2, help="embedder calls in flight per process")
+    g.add_argument("--embed-wait", type=float, default=5.0, help="seconds a request waits for a free embedder slot before it falls back to lexical search")
+    g.add_argument("--rate-limit", type=float, default=float(_env("COGENT_RATE_LIMIT", "0")), help="requests per minute allowed per credential (0 = off; per process)")
+    g.add_argument("--rate-burst", type=float, default=None, help="burst size of the rate limit (default max(5, limit/6))")
+    g.add_argument("--metrics", action="store_true", help="serve Prometheus-style /metrics (needs a valid token)")
 
     t = sub.add_parser("token", help="manage access tokens")
     ts = t.add_subparsers(dest="tcmd", required=True)
@@ -730,7 +921,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     r.add_argument("--name", required=True)
 
     a = ap.parse_args(argv)
-    tokens = TokenStore(a.tokens or a.home / "mcp" / "tokens.json", os.environ.get("COGENT_MCP_TOKEN"))
+    state_dir = a.state_dir or a.home / "mcp"
+    tokens = TokenStore(a.tokens or state_dir / "tokens.json", os.environ.get("COGENT_MCP_TOKEN"))
 
     if a.cmd == "token":
         if a.tcmd == "create":
@@ -751,16 +943,30 @@ def main(argv: Optional[list[str]] = None) -> int:
         ap.error("--no-auth is only allowed on a loopback bind")
     if not a.no_auth and not tokens.any_configured():
         ap.error("no access token configured: run 'kg_mcp.py token create --name <client>' or set COGENT_MCP_TOKEN")
-    store = Store(a.home, a.standards, a.reports, a.stale_after, a.paywalled_assets)
-    emb = None
-    if a.tabledb_dsn and a.embedder != "none":
-        from kg_embed import get_embedder
-        emb = get_embedder(a.embedder, a.embed_model, a.ollama_host, a.embed_dim)
-    tables = TableService(store, a.tabledb_dsn, a.tabledb_schema, emb, a.allow_sql, a.llm_model, a.judge_model, a.ollama_host, a.llm_max_seconds,
-                          a.default_profile)
-    app = build_app(store, None if a.no_auth else tokens, tables=tables, issuer_url=None if a.no_auth else a.oauth_issuer,
-                    oauth_path=a.home / "mcp" / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host,
-                    stateless=not a.stateful)
+    if a.workers > 1 and not hasattr(os, "fork"):
+        ap.error("--workers > 1 needs fork (Linux/macOS); on this system run several instances on different ports behind a proxy instead")
+    if a.workers > 1 and a.session_store == "memory":
+        log.warning("--workers %d with the in-memory session store: each worker keeps its own session preferences; use --session-store sqlite:<path> "
+                    "to share them", a.workers)
+
+    def runtime():
+        """Store, table service and ASGI app of one process (called once per worker, after the fork)."""
+        from kg_sessions import make_sessions
+        store = Store(a.home, a.standards, a.reports, a.stale_after, a.paywalled_assets, a.graph_cache)
+        emb = None
+        if a.tabledb_dsn and a.embedder != "none":
+            from kg_embed import get_embedder
+            emb = get_embedder(a.embedder, a.embed_model, a.ollama_host, a.embed_dim)
+        tables = TableService(store, a.tabledb_dsn, a.tabledb_schema, emb, a.allow_sql, a.llm_model, a.judge_model, a.ollama_host, a.llm_max_seconds,
+                              a.default_profile, sessions=make_sessions(a.session_store, a.session_hours * 3600), embed_cache=a.embed_cache,
+                              embed_concurrency=a.embed_concurrency, embed_wait=a.embed_wait)
+        app = build_app(store, None if a.no_auth else tokens, tables=tables, issuer_url=None if a.no_auth else a.oauth_issuer,
+                        oauth_path=state_dir / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host, stateless=not a.stateful)
+        if a.rate_limit or a.metrics:
+            app = Ops(app, None if a.no_auth else tokens, rate_per_min=a.rate_limit, burst=a.rate_burst, metrics=a.metrics, store=store, tables=tables)
+        return app, tables
+
+    app, tables = runtime()
     mode = "OFF" if a.no_auth else f"OAuth 2.1 + bearer token (issuer {a.oauth_issuer})" if a.oauth_issuer else "bearer token"
     if tables.has_db:
         h = tables.health()
@@ -769,8 +975,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             log.warning("TABLE DATABASE NOT USABLE: %s. %s The table tools will fail until this is fixed (check with `kg_tabledb.py --dsn <dsn> check`).",
                         h.get("error") or ("no SELECT privilege" if h.get("reachable") else "unknown"), h.get("hint", ""))
-    log.info("serving %s on http://%s:%s/mcp (auth %s)", a.home, a.host, a.port, mode)
-    uvicorn.run(app, host=a.host, port=a.port, log_level="info", proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+    log.info("serving %s on http://%s:%s/mcp (auth %s, %d worker(s), sessions %s, graph cache %s)", a.home, a.host, a.port, mode, a.workers, tables.sessions.kind,
+             a.graph_cache or "unlimited")
+    if a.workers <= 1:
+        uvicorn.run(app, host=a.host, port=a.port, log_level="info", proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+        return 0
+    return run_workers(a.workers, a.host, a.port, lambda: runtime()[0])
     return 0
 
 

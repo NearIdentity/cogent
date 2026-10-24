@@ -1,0 +1,15 @@
+# cloudflared configuration for a NAMED tunnel to the cogent MCP server (stable URL, TLS at Cloudflare, no inbound port).
+# Copy to /etc/cogent/cloudflared.yml (or ~/.cloudflared/config.yml) and fill in the two values printed by `cloudflared tunnel create cogent`.
+# deploy/named-tunnel.sh setup <hostname> does all of this for you.
+tunnel: 00000000-0000-0000-0000-000000000000             # the tunnel UUID
+credentials-file: /etc/cogent/cloudflared-credentials.json   # written by `cloudflared tunnel create` (~/.cloudflared/<UUID>.json); keep it private (mode 600)
+
+# optional: show up in `cloudflared tunnel info`, keep logs quiet
+loglevel: info
+
+ingress:
+  # the public name -> the MCP server on this machine (the server binds to loopback only)
+  - hostname: mcp.example.com
+    service: http://127.0.0.1:8765
+  # everything else: 404 (required last rule)
+  - service: http_status:404
