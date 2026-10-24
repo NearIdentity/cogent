@@ -71,6 +71,9 @@ The database stores every join candidate and every unit hypothesis with its evid
 - **Units:** deduced from headers, cell suffixes, table captions and notes, section text and KG nodes, each with provenance. Nothing is converted.
 - Setup and design trade-offs are in `docs/tabledb.md`.
 
+## Scaling out
+`--workers N` (one port, supervised processes), `--graph-cache N` (graphs per process, LRU), `--session-store memory|sqlite:<file>|redis://…` (session preferences shared by workers or hosts), `--embed-cache` / `--embed-concurrency` / `--embed-wait` (a busy embedder falls back to lexical search), `--rate-limit R` (requests per minute per credential, HTTP 429), `--metrics` (`/metrics`, needs a token), `--state-dir`. `kg_snapshot.py` ships the agent's results to other servers; `deploy/named-tunnel.sh` sets up a free named Cloudflare tunnel. See `docs/scaling.md`.
+
 ## Paywalled content
 - **Detection:** a document counts as paywalled if it is a purchased local copy or comes from a publisher store host.
 - **Figures:** re-rendered with a "REFERENCE ONLY © COPYRIGHTED" watermark and a copyright banner (`src/kg_assets.py`). They are never served as the original bytes.
