@@ -1,0 +1,26 @@
+# Prometheus for the cogent MCP server and agent. Started by docker-compose.observability.yml (host network, so it can reach the
+# server that listens on 127.0.0.1:8765).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # One target shows everything: the MCP server's live metrics (HTTP, tools, cache, embedder, LLM calls it makes) and the daily agent's totals,
+  # which the server merges in from <home>/metrics/ (see docs/observability.md). The server must run with --metrics.
+  - job_name: cogent
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/mcp_token      # a token from `kg_mcp.py token create --name prometheus`
+    static_configs:
+      - targets: ["127.0.0.1:8765"]
+        labels:
+          instance: cogent-mcp
+
+  # Optional: the agent on a host with no MCP server, via a Pushgateway (kg_agent.py run --pushgateway http://127.0.0.1:9091).
+  # - job_name: pushgateway
+  #   honor_labels: true
+  #   static_configs: [{targets: ["127.0.0.1:9091"]}]

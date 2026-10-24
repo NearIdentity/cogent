@@ -34,6 +34,7 @@ from urllib.request import Request, urlopen
 import networkx as nx
 from bs4 import BeautifulSoup
 
+import kg_telemetry as telemetry
 from kg_models import DocEntry, Finding, TrackerState, utcnow
 
 log = logging.getLogger("kg_agent.tools")
@@ -88,26 +89,33 @@ def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45
     if last_modified:
         headers["If-Modified-Since"] = last_modified
     res = FetchResult(url)
-    for attempt in range(retries + 1):
-        _polite(url, min_interval)
-        try:
-            with urlopen(Request(url, headers=headers), timeout=timeout) as r:
-                return FetchResult(url, 200, r.read(), r.headers.get("ETag", ""),
-                                   r.headers.get("Last-Modified", ""),
-                                   r.headers.get("Content-Type", ""), r.geturl())
-        except HTTPError as exc:
-            if exc.code == 304:
-                return FetchResult(url, 304, etag=etag, last_modified=last_modified, final_url=url)
-            res = FetchResult(url, exc.code, error=f"HTTP {exc.code} {exc.reason}")
-            if exc.code in BLOCKED and browser_fallback:
-                return _browser_fetch(url, res)
-            if exc.code < 500 and exc.code != 429:
-                return res
-        except (URLError, TimeoutError, ConnectionError, OSError) as exc:
-            res = FetchResult(url, 0, error=f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}")
-        if attempt < retries:
-            time.sleep(backoff * (attempt + 1))
-    return res
+    with telemetry.span("http.fetch", **{"http.url": url.split("?")[0][:200], "http.request.conditional": bool(etag or last_modified)}) as sp:
+        for attempt in range(retries + 1):
+            _polite(url, min_interval)
+            try:
+                with urlopen(Request(url, headers=headers), timeout=timeout) as r:
+                    sp.set_attribute("http.response.status_code", 200)
+                    return FetchResult(url, 200, r.read(), r.headers.get("ETag", ""),
+                                       r.headers.get("Last-Modified", ""),
+                                       r.headers.get("Content-Type", ""), r.geturl())
+            except HTTPError as exc:
+                sp.set_attribute("http.response.status_code", exc.code)
+                if exc.code == 304:
+                    return FetchResult(url, 304, etag=etag, last_modified=last_modified, final_url=url)
+                res = FetchResult(url, exc.code, error=f"HTTP {exc.code} {exc.reason}")
+                if exc.code in BLOCKED and browser_fallback:
+                    return _browser_fetch(url, res)
+                if exc.code < 500 and exc.code != 429:
+                    return res
+            except (URLError, TimeoutError, ConnectionError, OSError) as exc:
+                res = FetchResult(url, 0, error=f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}")
+            if attempt < retries:
+                telemetry.record_retry("fetch")
+                sp.add_event("retry", {"attempt": attempt + 1})
+                time.sleep(backoff * (attempt + 1))
+        if res.error:
+            sp.set_attribute("error.message", res.error[:200])
+        return res
 
 
 def _browser_fetch(url: str, previous: FetchResult) -> FetchResult:

@@ -37,6 +37,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import kg_telemetry as telemetry  # noqa: E402
 from kg_store import GENERAL_DISCLAIMERS, NotFound, Store  # noqa: E402
 from kg_tableservice import TableService  # noqa: E402
 
@@ -184,8 +185,9 @@ class Ops:
     """
 
     def __init__(self, app, tokens: Optional["TokenStore"] = None, *, rate_per_min: float = 0.0, burst: Optional[float] = None, metrics: bool = False,
-                 store: Optional[Store] = None, tables: Any = None, clock: Callable[[], float] = time.monotonic):
+                 store: Optional[Store] = None, tables: Any = None, clock: Callable[[], float] = time.monotonic, exposition: Any = None):
         self.app, self.tokens, self.metrics, self.store, self.tables, self.clock = app, tokens, metrics, store, tables, clock
+        self.exposition = exposition
         self.rate = max(0.0, float(rate_per_min)) / 60.0
         self.burst = float(burst) if burst else max(5.0, float(rate_per_min) / 6.0)
         self._buckets: dict[str, tuple[float, float]] = {}            # key -> (tokens, last refill)
@@ -242,7 +244,7 @@ class Ops:
                 out += ["# TYPE cogent_sessions gauge", f"cogent_sessions{{{lab},store=\"{self.tables.sessions.kind}\"}} {self.tables.sessions.count()}"]
             except Exception:                                                  # noqa: BLE001 - a broken session store must not break the scrape
                 out += ["# cogent_sessions unavailable"]
-        return "\n".join(out) + "\n"
+        return "\n".join(out) + "\n" + (self.exposition.render() if self.exposition is not None else telemetry.Exposition().render())
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -270,7 +272,13 @@ class Ops:
             await send(msg)
         self.in_flight += 1
         try:
-            return await self.app(scope, receive, tap)
+            # the caller's W3C traceparent (Claude Code, a gateway ...) becomes the parent of this request's span and of the tool spans below it
+            with telemetry.span(f"http {scope['method']} {path}", parent=telemetry.extract_context(headers), **{"http.request.method": scope["method"],
+                                                                                                                "url.path": path}) as hsp:
+                try:
+                    return await self.app(scope, receive, tap)
+                finally:
+                    hsp.set_attribute("http.response.status_code", status["code"] or 500)
         finally:
             self.in_flight -= 1
             self.seconds_sum += time.monotonic() - t0
@@ -322,12 +330,26 @@ def scrub(obj: Any) -> Any:
 
 
 def _tool_errors(fn: Callable) -> Callable:
+    """Wrap a tool: clean paths from its result, turn NotFound into a tool error, and trace / measure the call
+    (span ``mcp.tool <name>``, ``cogent_mcp_tool_calls_total`` and ``cogent_mcp_tool_duration_seconds`` by tool)."""
+    name = fn.__name__
+
     @functools.wraps(fn)
     def inner(*a, **kw):
-        try:
-            return scrub(fn(*a, **kw))
-        except NotFound as exc:
-            raise ValueError(str(exc.args[0])) from None
+        t0, outcome = time.perf_counter(), "ok"
+        ref = next((str(kw[k])[:120] for k in ("ref", "entry", "table_id", "left_table") if kw.get(k)), None)
+        with telemetry.span(f"mcp.tool {name}", **{"mcp.tool.name": name, "cogent.ref": ref}) as sp:
+            try:
+                return scrub(fn(*a, **kw))
+            except NotFound as exc:
+                outcome = "not_found"
+                sp.set_attribute("cogent.outcome", outcome)
+                raise ValueError(str(exc.args[0])) from None
+            except BaseException:
+                outcome = "error"
+                raise
+            finally:
+                telemetry.record_tool(name, outcome, time.perf_counter() - t0)
     return inner
 
 
@@ -909,7 +931,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     g.add_argument("--embed-wait", type=float, default=5.0, help="seconds a request waits for a free embedder slot before it falls back to lexical search")
     g.add_argument("--rate-limit", type=float, default=float(_env("COGENT_RATE_LIMIT", "0")), help="requests per minute allowed per credential (0 = off; per process)")
     g.add_argument("--rate-burst", type=float, default=None, help="burst size of the rate limit (default max(5, limit/6))")
-    g.add_argument("--metrics", action="store_true", help="serve Prometheus-style /metrics (needs a valid token)")
+    g.add_argument("--metrics", action="store_true", help="serve Prometheus-style /metrics (needs a valid token): this process's HTTP, tool, cache and LLM metrics plus the "
+                   "agent's persisted run metrics (<home>/metrics)")
+    g.add_argument("--otlp-endpoint", default=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"), metavar="URL", help="send OpenTelemetry traces (HTTP requests, MCP tool calls, "
+                   "LLM / embedding calls) to this OTLP/HTTP endpoint; needs opentelemetry-sdk and opentelemetry-exporter-otlp-proto-http")
+    g.add_argument("--trace-console", action="store_true", help="print trace spans to the console")
 
     t = sub.add_parser("token", help="manage access tokens")
     ts = t.add_subparsers(dest="tcmd", required=True)
@@ -962,8 +988,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                               embed_concurrency=a.embed_concurrency, embed_wait=a.embed_wait)
         app = build_app(store, None if a.no_auth else tokens, tables=tables, issuer_url=None if a.no_auth else a.oauth_issuer,
                         oauth_path=state_dir / "oauth.json", host=a.host, port=a.port, public_hosts=a.public_host, stateless=not a.stateful)
-        if a.rate_limit or a.metrics:
-            app = Ops(app, None if a.no_auth else tokens, rate_per_min=a.rate_limit, burst=a.rate_burst, metrics=a.metrics, store=store, tables=tables)
+        tracing = telemetry.init("cogent-mcp", a.otlp_endpoint, a.trace_console)
+        if a.rate_limit or a.metrics or tracing:
+            app = Ops(app, None if a.no_auth else tokens, rate_per_min=a.rate_limit, burst=a.rate_burst, metrics=a.metrics, store=store, tables=tables,
+                      exposition=telemetry.Exposition(a.home))
         return app, tables
 
     app, tables = runtime()

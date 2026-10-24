@@ -686,3 +686,72 @@ def test_run_limited_by_only_keeps_the_open_alerts_of_other_entries(tmp_path):
         assert {v["entry"] for v in on_disk.values()} == {"standard:20", "standard:21"}
     finally:
         site.close()
+
+
+# ---------------------------------------------------------------------------------------------------- telemetry of a run
+def _metrics_lines(home):
+    return [json.loads(x) for x in (home / "logs" / "metrics.jsonl").read_text().splitlines()]
+
+
+def test_run_metrics_are_recorded_persisted_and_accumulate(env):
+    import kg_telemetry as KT
+    site, s, sp, rp = env
+    st = kg_agent.run_once(s)
+    rec = st["metrics"]
+    assert rec["success"] and rec["errors"] == 0 and rec["duration_s"] > 0
+    assert {"init", "track", "apply", "sync_docs", "assemble", "versions", "combine", "alerts", "finalize"} <= set(rec["steps"])
+    sync = rec["operations"]["sync_doc"]
+    assert sync["count"] == 3 and 0 < sync["p50"] <= sync["p95"] <= sync["max"] and rec["operations"]["track_url"]["count"] == 4        # 3 documents, 4 tracking pages
+    assert rec["tokens"] == {"input": 0, "output": 0} and rec["cost_usd"] == 0 and rec["failures"] == {}
+    prom = (s.home / "metrics" / "cogent_agent.prom").read_text()
+    assert 'cogent_agent_runs_total{result="ok"} 1' in prom and 'cogent_agent_operation_latency_seconds{op="sync_doc",quantile="0.95"}' in prom
+    assert "cogent_agent_last_run_success 1" in prom and 'cogent_agent_step_duration_seconds_count{step="track"} 1' in prom
+    kg_agent.run_once(s)                                                                      # a second run: counters add up, gauges are the last run
+    total = KT.load_persisted(s.home)
+    assert total.value("cogent_agent_runs_total", result="ok") == 2 and total.count("cogent_agent_step_duration_seconds", step="track") == 2
+    assert len(_metrics_lines(s.home)) == 2
+    assert kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "dry_run": True}))["summary"] and len(_metrics_lines(s.home)) == 2      # a dry run records nothing
+
+
+def test_failed_documents_are_counted_as_failures(env):
+    import kg_telemetry as KT
+    site, s, sp, rp = env
+    kg_agent.run_once(s)
+    orig = site.route
+    site.route = lambda path, q: None if path.endswith("rg1233_rev0.pdf") else orig(path, q)          # one source now 404s
+    st = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "force": True}))
+    rec = st["metrics"]
+    assert not rec["success"] and rec["errors"] >= 1 and rec["failures"]["sync_doc"] == 1
+    total = KT.load_persisted(s.home)
+    assert total.value("cogent_agent_runs_total", result="failed") == 1 and total.value("cogent_agent_operations_total", op="sync_doc", outcome="error") == 1
+    assert total.value("cogent_agent_last_run_success") == 0
+
+
+def test_findings_are_split_into_auto_applied_and_needs_review(env):
+    site, s, sp, rp = env
+    kg_agent.run_once(s)
+    site.day = 3                                                                              # a new RG revision and a new DOE edition appear
+    reviewed = kg_agent.run_once(kg_agent.Settings(**{**s.model_dump(), "auto_apply": False}))["metrics"]
+    assert reviewed["findings"].get("needs_review", 0) >= 1 and reviewed["findings"].get("auto_applied", 0) == 0
+    applied = kg_agent.run_once(s)["metrics"]                                                 # the same findings, now applied automatically
+    assert applied["findings"].get("auto_applied", 0) >= 1
+
+
+def test_run_spans_follow_the_workflow(env):
+    pytest.importorskip("opentelemetry.sdk.trace")
+    import kg_telemetry as KT
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    site, s, sp, rp = env
+    exp = InMemorySpanExporter()
+    KT.init("cogent-agent", exporter=exp)
+    kg_agent.run_once(s)
+    spans = exp.get_finished_spans()
+    root = next(x for x in spans if x.name == "agent.run")
+    steps = [x for x in spans if x.name.startswith("agent.step ")]
+    assert len(steps) == 9 and all(x.parent.span_id == root.context.span_id for x in steps)
+    sync_step = next(x for x in steps if x.name == "agent.step sync_docs")
+    docs = [x for x in spans if x.name == "agent.op sync_doc"]
+    assert len(docs) == 3 and all(x.parent.span_id == sync_step.context.span_id for x in docs)
+    assert any(x.name == "http.fetch" and x.parent.span_id in {d.context.span_id for d in docs} for x in spans)       # the HTTP fetch is a child of its document
+    assert all(x.context.trace_id == root.context.trace_id for x in spans)
+    exp.clear()

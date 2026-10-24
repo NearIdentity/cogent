@@ -31,5 +31,9 @@ Pillow>=10.1   # watermarking of paywalled figures served over MCP
 # table database (kg_tabledb.py, kg_tableservice.py) -- docs/tabledb.md
 psycopg[binary]>=3.1   # PostgreSQL driver; the database needs the pgvector extension; embeddings come from Ollama (e.g. ollama pull nomic-embed-text)
 
+# optional: OpenTelemetry tracing (kg_telemetry.py); metrics need nothing extra -- docs/observability.md
+# opentelemetry-sdk
+# opentelemetry-exporter-otlp-proto-http
+
 # optional: shared session preferences across hosts (kg_mcp.py serve --session-store redis://...)
 # redis

@@ -13,3 +13,5 @@ __pycache__/
 # secrets
 deploy/.env
 .env
+deploy/observability/.env
+deploy/observability/prometheus/mcp_token

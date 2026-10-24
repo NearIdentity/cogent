@@ -12,7 +12,7 @@ availability and a stable URL first, for throughput second. Prices and free-tier
 | Session preferences | in memory, lost on restart | `--session-store sqlite:<file>` (workers of one host) or `redis://…` (several hosts) |
 | Question embeddings (Ollama) | one call per `lookup_values` / `search_tables` | `--embed-cache` (recent vectors), `--embed-concurrency`, `--embed-wait`; when the embedder is saturated the search falls back to lexical matching and says so |
 | Clients | one bad client can starve the rest | `--rate-limit R` requests/minute per credential (token bucket, `--rate-burst`), HTTP 429 with `Retry-After` |
-| Observability | `/healthz` (open; pid, uptime, agent's last run) | `--metrics` adds `/metrics` (Prometheus text; needs a valid token) |
+| Observability | `/healthz` (open; pid, uptime, agent's last run) | `--metrics` adds `/metrics` (Prometheus text; needs a valid token; also carries the agent's run totals); traces via `--otlp-endpoint`; dashboard and alert: [observability.md](observability.md) |
 | Tokens / OAuth state | files in `<home>/mcp` (already safe for several processes on one host) | `--state-dir` moves them to shared storage |
 | Agent | single writer, batch job | keep exactly one; publish its result as a **snapshot** for other hosts |
 
@@ -53,7 +53,7 @@ The tunnel steps were written from Cloudflare's documented commands and could no
 ## Several workers on one host
 `--workers N` binds the port once and forks N processes that each serve on it; a worker that dies is restarted (up to 5 times a minute, then the supervisor
 stops). Each worker holds its own graphs, so memory grows roughly N-fold: lower `--graph-cache` if needed. Use `--session-store sqlite:<file>` so a client
-that reaches different workers keeps its preferences; the rate limit and metrics are per process. Windows has no `fork`: run instances on separate ports instead.
+that reaches different workers keeps its preferences; the rate limit and metrics are per process (a scrape of `/metrics` reaches one worker: for dashboards scrape one worker per port, or run one worker). Windows has no `fork`: run instances on separate ports instead.
 
 ## Several hosts: snapshots
 The agent writes; servers read. After a run the agent publishes a bundle, and each server pulls the newest one and switches to it atomically.

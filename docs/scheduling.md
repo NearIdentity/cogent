@@ -64,6 +64,9 @@ makes every option below safe to use; they differ in *who notices that something
 
 Whatever you choose, the overlap lock (`<home>/.lock`) and the idempotent run mean a double trigger costs time, not data.
 
+## Telemetry of scheduled runs
+Every run (cron, systemd timer or daemon) writes its metrics to `<home>/metrics/` and, with `--pushgateway URL`, pushes them; the daemon's `daemon.run` span is the parent of the agent's `agent.run` span (`COGENT_TRACEPARENT`), and daemon retries are counted (`cogent_agent_retries_total{component="daemon_run"}`). For cron and the timer, set `OTEL_EXPORTER_OTLP_ENDPOINT` / `COGENT_PUSHGATEWAY` in the unit's environment. See [observability.md](observability.md).
+
 ## Forced updates
 
 `kg_agent.py run --force` re-reads every source unconditionally (see the README, "Forced update"). It is meant as a one-off

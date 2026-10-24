@@ -53,6 +53,7 @@ from langgraph.graph import END, StateGraph
 
 import kg_layout as _kg_layout
 import kg_predicates as _pred
+import kg_telemetry as _telemetry
 import kg_tablecheck as _tablecheck
 
 log = logging.getLogger(__name__)
@@ -1084,6 +1085,31 @@ TRIPLES_SCHEMA = {  # JSON schema for Ollama structured outputs
 }
 
 
+_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-]{2,}")
+
+
+def entity_grounded(entity: str, text: str) -> bool:
+    """Is an entity named by an LLM backed by the source text? True when the name occurs in it, or when most of its significant words do (a model may
+    shorten or expand a name, but it should not invent one). A heuristic for the hallucination rate, not a proof either way."""
+    low = text.lower()
+    name = " ".join(entity.lower().split())
+    if not name or name in low:
+        return True
+    words = [w.lower() for w in _WORD.findall(entity)]
+    return bool(words) and sum(w in low for w in words) / len(words) >= 0.6
+
+
+def _check_grounding(triples: list["Triple"], text: str) -> None:
+    """Count the subjects and objects of LLM-made triples that the text does not support (``cogent_llm_outputs_total{kind="triple"}``)."""
+    try:
+        for t in triples:
+            if not t.strict:                                   # produced by a language model, not by the rule-based extractor
+                for ent in (t.subject, t.object):
+                    _telemetry.record_output("triple", not entity_grounded(ent, text))
+    except Exception:                                          # noqa: BLE001 - telemetry never breaks an ingest
+        pass
+
+
 def parse_triples(reply: str) -> list[Triple]:
     """Parse an LLM reply: ``{"triples": [...]}`` or a bare JSON list
     (possibly wrapped in prose or code fences). Raises ValueError if unparseable."""
@@ -1325,6 +1351,7 @@ def make_pipeline(
                     ts += extractor.extract_text(e.caption)
             elif e.kind in ("paragraph", "figure") and e.text and not _pred.is_toc_like(e.text):
                 ts = extractor.extract_text(e.text)
+                _check_grounding(ts, e.text)
             else:
                 ts = []
             out.append((e, ts))

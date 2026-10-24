@@ -71,6 +71,15 @@ The database stores every join candidate and every unit hypothesis with its evid
 - **Units:** deduced from headers, cell suffixes, table captions and notes, section text and KG nodes, each with provenance. Nothing is converted.
 - Setup and design trade-offs are in `docs/tabledb.md`.
 
+## Scaling out
+`--workers N` (one port, supervised processes), `--graph-cache N` (graphs per process, LRU), `--session-store memory|sqlite:<file>|redis://…` (session preferences shared by workers or hosts), `--embed-cache` / `--embed-concurrency` / `--embed-wait` (a busy embedder falls back to lexical search), `--rate-limit R` (requests per minute per credential, HTTP 429), `--metrics` (`/metrics`, needs a token; see Observability), `--otlp-endpoint` / `--trace-console` (tracing), `--state-dir`. `kg_snapshot.py` ships the agent's results to other servers; `deploy/named-tunnel.sh` sets up a free named Cloudflare tunnel. See `docs/scaling.md`.
+
+## Observability
+- **Traces:** every tool call is a span `mcp.tool <name>` (attributes `mcp.tool.name`, `cogent.ref`; exceptions recorded) inside an `http <METHOD> <path>` span whose parent comes from an incoming W3C `traceparent` header. Off unless the OpenTelemetry SDK is installed and `--otlp-endpoint URL` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) is given; `--trace-console` prints spans.
+- **Metrics:** `--metrics` serves `/metrics` (Prometheus text; a valid token is required). It shows this process's HTTP, tool (`cogent_mcp_tool_calls_total{tool,outcome}`, `cogent_mcp_tool_duration_seconds`), cache, rate-limit, embedder and LLM metrics, plus the daily agent's totals read from `<home>/metrics/` (runs, step and operation latency with p50/p95, tokens, cost, findings auto-applied vs human-reviewed, judge agreement, hallucination ratio, failures, retries). One scrape target covers both.
+- **Per process:** with `--workers N` each worker has its own counters and answers `/metrics` at random; use one worker when you look at metrics.
+- **Dashboard and alert:** `deploy/observability/` (Prometheus config, alert `CogentAgentFailureRateHigh`, Grafana dashboard JSON, compose file); definitions, scrape options and limits in `docs/observability.md`; demo steps in `notes/LiveDemo.md` step 8.
+
 ## Paywalled content
 - **Detection:** a document counts as paywalled if it is a purchased local copy or comes from a publisher store host.
 - **Figures:** re-rendered with a "REFERENCE ONLY © COPYRIGHTED" watermark and a copyright banner (`src/kg_assets.py`). They are never served as the original bytes.
@@ -90,12 +99,12 @@ The database stores every join candidate and every unit hypothesis with its evid
 - `docs/mcp.md` has the remote-URL options and client setup for Claude Code, the Claude API and Claude Desktop; `docs/tabledb.md` covers the table database.
 
 ## Tests
-`tests/test_mcp.py` (11 tests) covers store metadata from a real agent run, tokens, the 401/200 gate and Host check, a client round trip, the OAuth flow, and figure and table assets with the watermark and policies. The table features add `tests/test_mcp_tables.py` (9), `tests/test_mcp_tailoring.py` (12), `tests/test_units.py` (5) and `tests/test_llmjoin.py` (7). The table tests need PostgreSQL with pgvector and are skipped otherwise. The full suite is 153 tests.
+`tests/test_mcp.py` (11 tests) covers store metadata from a real agent run, tokens, the 401/200 gate and Host check, a client round trip, the OAuth flow, and figure and table assets with the watermark and policies. The table features add `tests/test_mcp_tables.py` (9), `tests/test_mcp_tailoring.py` (12), `tests/test_units.py` (5) and `tests/test_llmjoin.py` (7). The table tests need PostgreSQL with pgvector and are skipped otherwise. `tests/test_telemetry.py` (12) covers the metrics registry, the `/metrics` merge, cost, token and hallucination counting, spans, trace propagation and the Pushgateway push. The full suite is 307 tests.
 
 ## Not covered
 - **Writing:** it never triggers agent runs or accepts uploads. Session preferences are the only thing a client can change, and they live in memory.
 - **Staleness:** how fresh the data is depends on how often the daemon runs.
-- **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, or a real Ollama model. The LLM join stages were tested with scripted models and a mock Ollama server.
+- **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, a real Ollama model, or a real OTLP collector (Jaeger, Tempo). The LLM join stages were tested with scripted models and a mock Ollama server.
 - **Judge is not ground truth:** the LLM judge's verdicts are evidence only.
 - **Units:** labels with provenance, never converted; broad-mode units are guesses to be checked.
 - **Unverified on real PDFs:** the figure and table assets are tested with hand-built files, not ones extracted from real PDFs.

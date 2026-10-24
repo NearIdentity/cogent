@@ -53,8 +53,10 @@ src/kg_tableservice.py  MCP query front-end of the table database (preferences, 
 src/kg_sessions.py   session-preference stores: memory, sqlite, redis
 src/kg_oauth.py      OAuth 2.1 provider for claude.ai custom connectors
 src/kg_snapshot.py   publish / pull versioned bundles of the agent home for other MCP servers
+src/kg_telemetry.py  OpenTelemetry tracing helpers (optional) and the Prometheus metrics registry used by the agent and the MCP server
 deploy/              systemd units (run timer, daemon, MCP server, tunnel), cron, Caddy, compose files for PostgreSQL + pgvector, tunnel scripts and examples
-docs/                mcp.md · tabledb.md · scaling.md · scheduling.md        notes/  MCP_Server.md · LiveDemo.md        CHANGELOG.md
+deploy/observability/  Prometheus config + failure-rate alert (with promtool test), Grafana provisioning and dashboard JSON, compose file, demo traffic generator
+docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
 tests/               one file per area (agent, ocr, daemon, mcp, tables, units, llm joins, scale-out, …) + mock_site.py (a local mock of the sources)
 requirements.txt     dependencies (optional ones are commented)      venv-setup.sh   uv-based virtualenv setup
 ```
@@ -459,8 +461,15 @@ Setup, schema, embedding recipe, design alternatives and limits: [docs/tabledb.m
 ## Scaling out
 
 `kg_mcp.py serve` takes `--workers`, `--graph-cache`, `--session-store memory|sqlite:<file>|redis://…`, `--embed-cache/--embed-concurrency/--embed-wait`,
-`--rate-limit` and `--metrics`; `kg_snapshot.py` (and `kg_agent.py run --publish-snapshot DIR`) ships the agent's results to other servers. A free, stable URL comes from a
+`--rate-limit`, `--metrics` and `--otlp-endpoint`; `kg_snapshot.py` (and `kg_agent.py run --publish-snapshot DIR`) ships the agent's results to other servers. A free, stable URL comes from a
 named Cloudflare tunnel: `deploy/named-tunnel.sh setup <hostname>`, with systemd units in `deploy/`. Details, limits and a hardening checklist: [docs/scaling.md](docs/scaling.md).
+
+## Observability
+
+The agent and the MCP server emit OpenTelemetry traces (agent steps, LLM calls, fetches, MCP tools) and Prometheus metrics: latency p50/p95, tokens and cost per run, auto-applied versus human-reviewed findings,
+judge agreement, hallucination rate, failures and retries. `deploy/observability/` holds the Prometheus config, one alert (`CogentAgentFailureRateHigh`), and a Grafana dashboard (JSON below, screenshot at
+`docs/img/grafana-dashboard.png`). Quick start: `kg_mcp.py serve --metrics`, a token for Prometheus in `deploy/observability/prometheus/mcp_token`, a password in `deploy/observability/.env`, then `docker compose -f deploy/observability/docker-compose.observability.yml up -d`; tracing needs
+`pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http` and `--otlp-endpoint`. Definitions (the hallucination rate is a heuristic), scrape options and limits: [docs/observability.md](docs/observability.md). A demo with a public Cloudflare address and the dashboard: [notes/LiveDemo.md](notes/LiveDemo.md), step 8.
 
 ## Environment variables
 
@@ -478,6 +487,9 @@ named Cloudflare tunnel: `deploy/named-tunnel.sh setup <hostname>`, with systemd
 | `COGENT_EMBEDDER`, `COGENT_EMBED_MODEL`, `COGENT_LLM_MODEL` | embedder (`ollama` / `hash`), its model, and the Ollama chat model for join inference |
 | `COGENT_MCP_TOKEN` | one extra static access token for the MCP server |
 | `COGENT_WORKERS`, `COGENT_GRAPH_CACHE`, `COGENT_SESSION_STORE`, `COGENT_RATE_LIMIT` | defaults of the scale-out flags (`--workers`, `--graph-cache`, `--session-store`, `--rate-limit`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/HTTP endpoint for traces (same as `--otlp-endpoint`) and service name (needs the OpenTelemetry SDK; without it tracing is off) |
+| `COGENT_PUSHGATEWAY` | Prometheus Pushgateway URL the agent pushes its run metrics to (same as `--pushgateway`) |
+| `COGENT_LLM_PRICES` | per-model prices, USD per million tokens, as JSON or a JSON file: `{"model": {"input": 0.05, "output": 0.15}}`; unset = cost 0 |
 | `COGENT_TEST_PG_DSN` | tests only: a PostgreSQL + pgvector database for the table tests (else a private cluster is started from the installed binaries) |
 
 ## Tests
@@ -494,7 +506,7 @@ python -m pytest tests          # no internet: the agent tests run against tests
   `test_ocr.py`, `test_daemon.py` (schedule maths across a DST change, catch-up, retry backoff, hooks, PID lock, supervision, real `serve` and `start`/`stop` processes).
 * Extraction: `test_identifiers.py`, `test_identity_filenames.py`, `test_predicates.py`, `test_layout.py`, `test_tablecheck.py`, `test_table_footnotes.py`, `test_assets_export.py`.
 * MCP server and table database: `test_mcp.py`, `test_store_api.py`, `test_combine_resolution.py`, `test_tables.py`, `test_tabledb.py`, `test_mcp_tables.py`,
-  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`.
+  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`; observability: `test_telemetry.py` (registry, `/metrics` merge, cost/tokens/hallucination counting, spans, trace propagation, Pushgateway).
 * The table tests need PostgreSQL with the pgvector extension (a private cluster from the installed binaries, or `COGENT_TEST_PG_DSN`); without it they are skipped.
   The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
 
@@ -512,7 +524,7 @@ python -m pytest tests          # no internet: the agent tests run against tests
 * Paywalled standards can only be tracked through their public landing pages; the standard itself needs your local copy.
 * The table, reading-order, footnote and front-matter heuristics were tested on constructed examples and hand-built PDFs. Check `tables_demoted`, `order_warnings` and
   the demoted paragraphs after a forced re-ingest of real scanned documents; the footnote split does not apply to the `pymupdf-layout` engine or to OCR'd pages.
-* The LLM join inference and its judge are evidence, not ground truth. The Cloudflare tunnel steps, Redis sessions and behaviour under real load were not exercised
+* The LLM join inference and its judge are evidence, not ground truth. The hallucination rate and judge agreement on the dashboard are heuristics; the dashboard and alert were run against synthetic demo traffic, and OTLP export was not run against a real collector (docs/observability.md). The Cloudflare tunnel steps, Redis sessions and behaviour under real load were not exercised
   against the real services. See [CHANGELOG.md](CHANGELOG.md) for the known limits of each change.
 * The rule-based extractor is a baseline (capitalised phrases and the words between them). For richer relations use
   `--extractor ollama` or `hybrid`.

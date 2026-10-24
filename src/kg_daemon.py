@@ -44,6 +44,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
+import kg_telemetry as telemetry
+
 try:                                    # POSIX
     import fcntl
 except ImportError:                     # pragma: no cover - Windows
@@ -378,7 +380,17 @@ class Daemon:
         sd_notify(f"STATUS=running the agent ({trigger})")
         log.info("run started (%s)", trigger)
         t0 = time.monotonic()
-        code, reason = self.runner(stop=lambda: self.stop_requested, tick=self._heartbeat)
+        telemetry.init("cogent-daemon")                                        # traces only when OTEL_EXPORTER_OTLP_ENDPOINT is set
+        with telemetry.span("daemon.run", **{"cogent.trigger": trigger}):
+            before = os.environ.get("COGENT_TRACEPARENT")
+            telemetry.inject_env(os.environ)                                   # the agent subprocess continues this trace (COGENT_TRACEPARENT)
+            try:
+                code, reason = self.runner(stop=lambda: self.stop_requested, tick=self._heartbeat)
+            finally:
+                if before is None:
+                    os.environ.pop("COGENT_TRACEPARENT", None)
+                else:
+                    os.environ["COGENT_TRACEPARENT"] = before
         end = self.clock()
         st.running, st.last_end, st.last_exit = False, _iso(end), code
         summary = self._last_run_summary()
@@ -398,6 +410,7 @@ class Daemon:
                 retry = end + timedelta(seconds=delay)
                 if _utc(retry) < _utc(nxt):                                  # never retry into the next slot
                     st.retries_used += 1
+                    telemetry.record_daemon_retry(self.o.home)               # cogent_agent_retries_total{component="daemon_run"}
                     st.retry_at = _iso(retry)
                     log.info("retry %d of %d scheduled at %s", st.retries_used, self.o.retries, st.retry_at)
         st.next_run = _iso(self.next_event(end))
