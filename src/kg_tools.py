@@ -282,6 +282,10 @@ FAMILIES: dict[str, Family] = {f.name: f for f in [
            re.compile(r"RA-S[\s-]*(?P<key>1\.\d{1,2})(?!\d)(?:-(?P<ed>\d{4}))?", re.I),
            lambda k: re.compile(rf"RA-S[\s-]*{re.escape(k)}(?:-(?P<ed>\d{{4}}))?", re.I),
            _int, lambda k, e: f"RA-S-{k}" + (f"-{e}" if e else "")),
+    Family("ANS",                                   # ANSI/ANS-2.26-2004, ANS-58.14, ANSI/ANS 51.1-1983, ASME/ANS ... with a dotted number
+           re.compile(r"(?:(?:ANSI|ASME)\s*/\s*)*ANS[\s-]*(?P<key>\d{1,2}(?:\.\d{1,3})+)(?!\d)(?:\s*-\s*(?P<ed>(?:19|20)\d{2}))?"),
+           lambda k: re.compile(rf"ANS[\s-]*{re.escape(k)}(?!\d)(?:\s*-\s*(?P<ed>(?:19|20)\d{{2}}))?"),
+           _year, lambda k, e: f"ANS {k}" + (f"-{e}" if e else ""), tracks_editions=False),
     Family("NUREG",
            re.compile(r"NUREG-(?P<key>\d{4})(?:/CR-\d+)?(?:\s*,?\s*Rev(?:ision|\.)?\s*(?P<ed>\d+))?"),
            lambda k: re.compile(rf"NUREG-{re.escape(k)}"),

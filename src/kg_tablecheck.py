@@ -166,10 +166,24 @@ _SECTION_NO = re.compile(r"^(?:\d+(?:\.\d+)*\.?|[A-Z]\.?|appendix\s+\w+|annex\s+
 _ACRONYM = re.compile(r"^[A-Z][A-Za-z0-9&/\-]{1,9}$")
 
 
-def front_matter(rows: list[list[str]], caption: str = "") -> Optional[str]:
+_STORE_HEAD = {"price", "item number", "sku", "add to cart", "list price", "member price"}
+_STORE_CELL = re.compile(r"add to (?:cart|basket)|\bcheckout\b|\bin stock\b|\bsign in to (?:buy|purchase)\b|\bbuy now\b", re.I)
+_INDEX_NAME = re.compile(r"\b(?:subject|numerical|alphabetical|keyword|author|interpretations?|general)\s+index\b|^\s*index\b|\bindex of interpretations\b", re.I)
+
+
+def front_matter(rows: list[list[str]], caption: str = "", section: str = "") -> Optional[str]:
     """``'toc'`` for a table of contents (dot leaders, or section numbers with a rising page-number column), ``'glossary'`` for a list of
-    acronyms and their expansions; None for anything else. Such tables describe the document, not its design data."""
+    acronyms and their expansions, ``'index'`` for an index (named so in its caption or section), ``'store'`` for a product / order box of a web
+    shop ('Quantity | Item', 'Add to cart'); None for anything else. Such tables describe the document or the page, not its design data."""
     rows = [[(c or "").strip() for c in r] for r in rows if any((c or "").strip() for c in r)]
+    if rows:
+        head = {c.lower() for c in rows[0] if c}
+        # a shop's order box: shop words in a cell, two shop column names, or the bare 'Quantity | Item' pair of a table without a 'Table N' caption
+        if (len(head & _STORE_HEAD) >= 2 or any(_STORE_CELL.search(c) for r in rows for c in r)
+                or (head == {"quantity", "item"} and len(rows) <= 8 and not _CAPTION.match(caption or ""))):
+            return "store"
+        if _INDEX_NAME.search(caption or "") or _INDEX_NAME.search(section.split(" > ")[-1] if section else ""):
+            return "index"
     if len(rows) < 4:
         return None
     ncols = max(len(r) for r in rows)
@@ -209,14 +223,36 @@ def demote_text(rows: list[list[str]]) -> str:
     return "\n\n".join(cols)
 
 
+def caption_fragment(caption: str) -> bool:
+    """A 'caption' that is really a piece of a header row ('| Millions', 'Rdilid | TABLE 1 Hazard Ca'): no 'Table N' label and too short to describe anything."""
+    c = (caption or "").strip()
+    if not c or _CAPTION.match(c):
+        return False
+    words = re.findall(r"[A-Za-z]{2,}", c)
+    return c.startswith("|") or c.endswith("|") or (len(words) <= 2 and len(c) < 16)
+
+
 def apply(elements: list, renumber=None) -> dict[str, int]:
     """Demote the false tables among ``elements`` (kg_ingest.Element objects) in place; returns counts. ``renumber`` re-assigns ids."""
     stats = {"checked": 0, "demoted": 0, "rosters": 0, "front_matter": 0}
     if not enabled():
         return stats
+    stack: list = []                                      # headings above the current element (level, text)
     for e in elements:
+        if e.kind == "heading":
+            while stack and stack[-1][0] >= e.level:
+                stack.pop()
+            stack.append((e.level, (e.text or "").strip()))
         if e.kind != "table" or not e.table:
             continue
+        section = " > ".join(t for _, t in stack if t)
+        if caption_fragment(e.caption) and stack:        # use the section heading instead of a header-row fragment
+            frag, label = e.caption, stack[-1][1]
+            if e.text == e.caption:
+                e.text = label
+            e.caption = label
+            e.meta["caption_fragment"] = frag
+            stats["captions_replaced"] = stats.get("captions_replaced", 0) + 1
         stats["checked"] += 1
         rows, removed = drop_repeated_headers(e.table)
         if removed:
@@ -225,7 +261,7 @@ def apply(elements: list, renumber=None) -> dict[str, int]:
             stats["header_rows_removed"] = stats.get("header_rows_removed", 0) + removed
             if e.text and not e.caption:
                 e.text = " | ".join(rows[0])
-        fm = front_matter(e.table, e.caption)
+        fm = front_matter(e.table, e.caption, section)
         if fm:                                           # stays in the graph, but is not exported as a data table
             e.meta["front_matter"] = fm
             stats["front_matter"] += 1

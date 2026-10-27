@@ -26,7 +26,7 @@ The MCP server serves the knowledge graphs that the update agent has staged, plu
 |---|---|
 | `list_tables`, `describe_table` | which tables exist; columns, types, units (as the session's unit mode sees them), sample rows |
 | `search_tables` | which tables are about a question (table-level embeddings) |
-| `lookup_values` | two-stage semantic lookup: best tables, then best rows (rows are embedded whole, numbers included). Returns the original cell text, document, page, caption, units and warnings |
+| `lookup_values` | two-stage semantic lookup: best tables, then best rows (rows are embedded whole, numbers included). Returns the original cell text, document, page, caption, units and warnings. When the question names an identifier (A572, RG 1.233) that no returned row contains, it answers `no_confident_match: true` with a message and the closest rows under `nearest_neighbours` instead of `rows`; `match_quality` tells which case applies |
 | `query_table` | exact filters (`= != < <= > >= like in between is_null not_null`), numeric columns compared numerically |
 | `join_tables` | join two tables along an inferred relationship, for the selected join approach |
 | `explain_units` | every unit hypothesis for a column, its evidence, and what strict, broad and off would answer |
@@ -60,6 +60,8 @@ The database stores every join candidate and every unit hypothesis with its evid
 - **Tables:** `kg://tables/{docid}/dictionary`, `kg://tables/{docid}/relationships`, `kg://tables/{docid}/join-evaluation`.
 
 ## Metadata, provenance and warnings
+- **Errors:** an unknown entry key says so and lists the valid ones (`unknown entry 'standard:999' (valid entries: report:1-15, standard:1-30)`), apart from a known entry without a graph; `get_node` suggests only close node ids (similarity of at least 0.8, also on `combined`) and otherwise says "no close node id".
+- **Extraction recipe:** `get_overview` shows `extraction_recipe` and `entries_behind_extraction_recipe`; `get_entry_metadata` shows each document's recipe. Entries behind it still carry the older extraction until the agent's next run rebuilds them.
 - **Provenance:** every graph answer carries a `provenance` block with graph build time, when sources were last checked, age and a `stale` flag (`--stale-after`), `version_status` (current, update available, not staged and so on), latest vs on-board edition, open warnings and caveats.
 - **Table answers** carry `warnings`, `paywalled`, the preferences used (approach, units, retrieval), inferred-unit notes, and a disclaimer that values are machine-extracted and must be checked against the source.
 - **Disclaimers:** general ones plus situational ones for paywalled content, stale captures, OCR pages, failed fetches and not-the-latest editions (`src/kg_store.py`).
@@ -67,7 +69,7 @@ The database stores every join candidate and every unit hypothesis with its evid
 
 ## How the table data is built
 - **Agent:** `src/kg_tabledb.py` runs after the KG agent (`kg_agent.py run --tables`) or on its own. It loads each extracted table CSV into a typed PostgreSQL table with a whole-row `_embedding` column (same Ollama model and dimension everywhere) and a table-level embedding.
-- **Joins:** deterministic scoring (names, value containment, types, KG relations) always runs. With `--llm-joins`, an Ollama suggester and an LLM judge add candidates and verdicts, with agreement and accept-rate metrics.
+- **Joins:** deterministic scoring (names, value containment, types, KG relations) always runs; meaningless headers (`column_1`) carry no name evidence, so joins on such columns rest on the values (at least 5 shared, one side unique), and list numbers or table references are never keys. With `--llm-joins`, an Ollama suggester and an LLM judge add candidates and verdicts, with agreement and accept-rate metrics.
 - **Units:** deduced from headers, cell suffixes, table captions and notes, section text and KG nodes, each with provenance. Nothing is converted.
 - Setup and design trade-offs are in `docs/tabledb.md`.
 

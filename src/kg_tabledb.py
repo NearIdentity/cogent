@@ -858,6 +858,7 @@ class Agent:
         summary = {"run": utcnow(), "embedder": s.embedder.spec, "forced": s.force, "sources": len(state["sources"]),
                    "loaded": len(state.get("loaded", [])), "unchanged": sum(1 for x in state.get("skipped", []) if x["reason"] == "unchanged"),
                    "skipped": sum(1 for x in state.get("skipped", []) if x["reason"] != "unchanged"), "dropped": len(state.get("dropped", [])),
+                   "dropped_tables": list(state.get("dropped", []))[:100],
                    "documents_with_joins": len(state.get("joins", {})), "joins": sum(state.get("joins", {}).values()),
                    "llm_joins": self._llm_summary(state.get("evaluations", {})),
                    "errors": state.get("errors", []), "warnings": state.get("warnings", [])}

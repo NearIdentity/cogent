@@ -52,6 +52,7 @@ from bs4 import BeautifulSoup, Tag
 from langgraph.graph import END, StateGraph
 
 import kg_layout as _kg_layout
+from kg_models import EXTRACTION_RECIPE
 import kg_predicates as _pred
 import kg_telemetry as _telemetry
 import kg_tablecheck as _tablecheck
@@ -95,6 +96,9 @@ class KGState(TypedDict, total=False):
     graph: nx.MultiDiGraph
     assets_dir: str  # where figures/tables were exported (if requested)
     label: str  # display name of the document node (default: file name)
+    scope: str  # keep only the part of the document under a heading that matches this regular expression (see apply_scope)
+    scope_end: str  # optional: a heading matching this ends the scope (default: the next heading of the same or a higher level)
+    scope_info: dict  # what apply_scope did
 
 
 # --------------------------------------------------------------------------
@@ -644,6 +648,26 @@ def _renumber(elements: list[Element]) -> None:
     for e in elements:
         n += 1
         e.id = _eid({"heading": "h", "paragraph": "p", "table": "tbl", "figure": "fig"}[e.kind], n)
+
+
+def apply_scope(elements: list[Element], scope: str, scope_end: str = "") -> tuple[list[Element], dict[str, Any]]:
+    """Keep only the elements under a heading that matches ``scope`` (a case-insensitive regular expression), e.g. ``Appendix B to Part 50`` for an
+    entry that covers one appendix of a page that carries the whole regulation. The scope starts at a matching heading and ends at the next heading
+    that is not itself a match and has the same or a higher level (or, with ``scope_end``, at the first heading matching that expression).
+    Nothing matches: everything is kept and ``matched`` is False, so a wrong pattern never empties a document silently."""
+    rx, end = re.compile(scope, re.I), (re.compile(scope_end, re.I) if scope_end else None)
+    kept, level = [], None
+    for e in elements:
+        if e.kind == "heading":
+            hit = bool(rx.search(e.text or ""))
+            if level is not None and ((end.search(e.text or "") if end else (e.level <= level and not hit))):
+                level = None
+            if level is None and hit:
+                level = e.level
+        if level is not None:
+            kept.append(e)
+    info = {"pattern": scope, "matched": bool(kept), "kept": len(kept), "dropped": len(elements) - len(kept)}
+    return (kept, info) if kept else (elements, {**info, "dropped": 0})
 
 
 def _with_ocr(path: str, elements: list[Element]) -> list[Element]:
@@ -1263,22 +1287,134 @@ def canonical(name: str) -> str:
     return re.sub(r"[^\w\s]", "", name).lower().strip()
 
 
+_NOT_PLURAL = {"series", "species", "news", "bias", "gas", "atlas", "canvas", "lens", "corps", "bus", "alias", "basis", "axis", "chassis", "always", "perhaps", "whereas"}
+
+
+def singular(word: str) -> str:
+    """A rough singular of one lower-case word (``systems`` -> ``system``, ``categories`` -> ``category``, ``sdcs`` -> ``sdc``); words that only look plural are kept."""
+    w = word
+    if len(w) <= 3 or w in _NOT_PLURAL or not w.endswith("s") or w.endswith(("ss", "us", "is", "ics")):
+        return w
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith(("sses", "xes", "zes", "ches", "shes")):
+        return w[:-2]
+    return w[:-1]
+
+
+def entity_key(name: str) -> str:
+    """The key under which surface forms of one entity merge: lower-cased, punctuation stripped, last word singular (SDC / SDCs, SSC / SSCs, system / systems)."""
+    key = canonical(name)
+    head, sep, last = key.rpartition(" ")
+    return head + sep + singular(last)
+
+
 class EntityResolver:
     """Merges surface forms that normalise to the same key (lower-cased,
-    punctuation stripped) and keeps the longest spelling for display."""
+    punctuation stripped, last word singular) and keeps the longest spelling
+    for display; the other spellings are kept as aliases."""
 
     def __init__(self) -> None:
         self.canon: dict[str, str] = {}  # key -> display name
+        self.surface: dict[str, list[str]] = {}  # key -> every spelling seen
 
     def resolve(self, name: str) -> str:
-        key = canonical(name)
+        key = entity_key(name)
         self.canon.setdefault(key, name)
+        if name not in self.surface.setdefault(key, []):
+            self.surface[key].append(name)
         if len(name) > len(self.canon[key]):  # prefer the fuller spelling
             self.canon[key] = name
         return key
 
     def display(self, key: str) -> str:
         return self.canon[key]
+
+    def aliases(self, key: str) -> list[str]:
+        return [s for s in self.surface.get(key, []) if s != self.canon[key]]
+
+
+_STOP_INITIALS = {"of", "and", "for", "the", "in", "to", "on", "a", "an"}
+
+
+def _initials(label: str) -> str:
+    return "".join(w[0] for w in re.findall(r"[A-Za-z][A-Za-z\-]*", label) if w.lower() not in _STOP_INITIALS).upper()
+
+
+def is_abbreviation(short: str, long: str) -> bool:
+    """Is ``short`` the acronym of ``long`` (``SDC`` / ``Seismic Design Category``; plural and hyphenated forms included)?"""
+    s = re.sub(r"[^A-Za-z]", "", short).upper()
+    if s.endswith("S") and s[:-1] == _initials(long) and len(s) > 2:
+        s = s[:-1]
+    return 2 <= len(s) <= 8 and len(long.split()) >= 2 and s == _initials(long)
+
+
+def link_abbreviations(g: nx.MultiDiGraph) -> int:
+    """One ``abbreviation_of`` edge (acronym -> expansion) instead of the pair of ``related_to`` / ``has_value`` edges that the text pattern
+    'Seismic Design Category (SDC)' and a glossary row produce in opposite directions; glossary tables add the edge for every row. Returns edges added."""
+    ents = {n: d for n, d in g.nodes(data=True) if str(n).startswith("ent:")}
+    pairs: dict[tuple[str, str], str] = {}                           # (acronym node, expansion node) -> source element
+    for u, v, k, d in list(g.edges(keys=True, data=True)):
+        if u in ents and v in ents and d.get("relation") in ("related_to", "has_value"):
+            lu, lv = ents[u].get("label", ""), ents[v].get("label", "")
+            if is_abbreviation(lu, lv):
+                pairs.setdefault((u, v), d.get("source", ""))
+            elif is_abbreviation(lv, lu):
+                pairs.setdefault((v, u), d.get("source", ""))
+            else:
+                continue
+            g.remove_edge(u, v, k)
+    for n, d in list(g.nodes(data=True)):                            # glossary tables: acronym | expansion
+        if d.get("type") == "Table" and d.get("front_matter") == "glossary" and d.get("rows"):
+            rows = json.loads(d["rows"]) if isinstance(d["rows"], str) else d["rows"]
+            for r in rows:
+                cells = [c.strip() for c in r if c and c.strip()]
+                if len(cells) >= 2 and is_abbreviation(cells[0], cells[1]):
+                    a, e = "ent:" + entity_key(cells[0]), "ent:" + entity_key(cells[1])
+                    for nid, label in ((a, cells[0]), (e, cells[1])):
+                        if nid not in g:
+                            g.add_node(nid, type="Entity", label=label)
+                    pairs.setdefault((a, e), n)
+    added = 0
+    for (a, e), src in pairs.items():
+        if a != e and not g.has_edge(a, e, "abbreviation_of"):
+            g.add_edge(a, e, key="abbreviation_of", relation="abbreviation_of", **({"source": src} if src else {}))
+            added += 1
+    return added
+
+
+def link_table_entities(g: nx.MultiDiGraph, max_ngram: int = 5) -> int:
+    """MENTIONS edges from each data table to the entities named in its caption, its header and its first column (``SDC-1`` rows, ``Seismic Design
+    Category`` in a caption), so an entity leads to the tables that use it. Single-word entities must be written capitalised or as acronyms
+    in the table. Front-matter tables are left alone. Returns the number of edges added."""
+    ents = {}
+    for n, d in g.nodes(data=True):
+        if str(n).startswith("ent:") and d.get("type") not in ("Value",) and len(str(n)) > 6:
+            ents.setdefault(str(n)[4:], n)
+    if not ents:
+        return 0
+    added = 0
+    for n, d in list(g.nodes(data=True)):
+        if d.get("type") != "Table" or d.get("front_matter") or not d.get("rows"):
+            continue
+        rows = json.loads(d["rows"]) if isinstance(d["rows"], str) else d["rows"]
+        cells = [(c, "caption") for c in [d.get("label", ""), d.get("text", "")] if c]
+        if rows:
+            cells += [(c, "header") for c in rows[0] if c]
+            cells += [(r[0], "key cell") for r in rows[1:] if r and r[0]]
+        for text, via in cells:
+            toks = re.findall(r"[A-Za-z0-9][\w\-]*", str(text))
+            for i in range(len(toks)):
+                for j in range(i + 1, min(len(toks), i + max_ngram) + 1):
+                    gram = toks[i:j]
+                    nid = ents.get(entity_key(" ".join(gram)))
+                    if nid is None or g.has_edge(n, nid, "MENTIONS"):
+                        continue
+                    if len(gram) == 1 and not (gram[0][0].isupper() or any(ch.isupper() for ch in gram[0])):
+                        continue
+                    g.add_edge(n, nid, key="MENTIONS", relation="MENTIONS", via=via)
+                    added += 1
+    return added
 
 
 # --------------------------------------------------------------------------
@@ -1318,13 +1454,18 @@ def make_pipeline(
                 if e.text == e.caption:
                     e.text = fixed
                 e.caption = fixed
+        if state.get("scope"):                  # an entry that covers one part of a larger page (an appendix of a whole regulation)
+            els, info = apply_scope(els, state["scope"], state.get("scope_end", ""))
+            if info["matched"] and info["dropped"]:
+                _renumber(els)
+            state = {**state, "scope_info": info}
         _tablecheck.apply(els, _renumber)       # false tables (two-column prose, sentence lists) go back to paragraphs; TOC / glossary are flagged
         if figure_captioner:  # optional vision model for uncaptioned figures
             for e in els:
                 data = e.meta.get("bytes")
                 if e.kind == "figure" and not e.caption and data:
                     e.text = e.caption = figure_captioner(data)
-        return {"elements": els}
+        return {"elements": els, **({"scope_info": state["scope_info"]} if state.get("scope_info") else {})}
 
     def structure(state: KGState) -> KGState:
         stack: list[Element] = []
@@ -1346,7 +1487,7 @@ def make_pipeline(
         out = []
         for e in state["elements"]:
             if e.kind == "table":
-                ts = extractor.extract_table(e.table)
+                ts = [] if e.meta.get("front_matter") else extractor.extract_table(e.table)     # contents, glossaries, indexes, shop boxes hold no row facts
                 if e.caption:
                     ts += extractor.extract_text(e.caption)
             elif e.kind in ("paragraph", "figure") and e.text and not _pred.is_toc_like(e.text):
@@ -1358,7 +1499,10 @@ def make_pipeline(
         return {"triples": out}
 
     def build(state: KGState) -> KGState:
-        g = nx.MultiDiGraph(source=state["path"])
+        g = nx.MultiDiGraph(source=state["path"], extraction_recipe=EXTRACTION_RECIPE)
+        if state.get("scope_info"):
+            g.graph.update(scope=state["scope_info"]["pattern"], scope_matched=state["scope_info"]["matched"],
+                           scope_kept=state["scope_info"]["kept"], scope_dropped=state["scope_info"]["dropped"])
         if state.get("assets_dir"):
             g.graph["assets_dir"] = state["assets_dir"]
         demoted = sum(1 for e in state["elements"] if e.meta.get("demoted_table"))
@@ -1412,6 +1556,8 @@ def make_pipeline(
                         g.add_node(nid, type=typ, label=resolver.display(key))
                     else:
                         g.nodes[nid]["label"] = resolver.display(key)
+                    if resolver.aliases(key):
+                        g.nodes[nid]["aliases"] = " | ".join(resolver.aliases(key))
                     if not g.has_edge(e.id, nid, "MENTIONS"):
                         g.add_edge(e.id, nid, key="MENTIONS", relation="MENTIONS")
                 if s == o:
@@ -1422,6 +1568,8 @@ def make_pipeline(
                 if not g.has_edge("ent:" + s, "ent:" + o, ekey):
                     g.add_edge("ent:" + s, "ent:" + o, key=ekey, relation=rel,
                                predicate=t.predicate, source=e.id, page=e.page)
+        link_abbreviations(g)
+        link_table_entities(g)
         return {"graph": g}
 
     wf = StateGraph(KGState)
@@ -1451,6 +1599,8 @@ def file_to_knowledge_graph(
     figure_captioner: Optional[Callable[[bytes], str]] = None,
     assets_dir: Optional[str] = None,
     doc_label: Optional[str] = None,
+    scope: Optional[str] = None,
+    scope_end: Optional[str] = None,
 ) -> nx.MultiDiGraph:
     """Convert a PDF or HTML file into a ``networkx.MultiDiGraph``.
 
@@ -1467,7 +1617,7 @@ def file_to_knowledge_graph(
     if not is_url(path) and not Path(path).is_file():
         raise FileNotFoundError(path)
     return make_pipeline(extractor, figure_captioner, assets_dir).invoke(
-        {"path": path, **({"label": doc_label} if doc_label else {})})["graph"]
+        {"path": path, **({"label": doc_label} if doc_label else {}), **({"scope": scope} if scope else {}), **({"scope_end": scope_end} if scope and scope_end else {})})["graph"]
 
 
 def export_graph(g: nx.MultiDiGraph, out_path: str) -> None:
