@@ -13,6 +13,11 @@ Kind = Literal["standard", "report"]
 
 # Publishers that sell standards: a link on one of these hosts is a store/landing page,
 # not the document itself.
+# Version of the extraction recipe (parsers, identifier / relation / table heuristics in kg_ingest, kg_tablecheck, kg_layout, kg_predicates, kg_tools).
+# Every document KG is stamped with it. Bump it whenever a change alters what is extracted from the same source text: the agent then rebuilds every
+# document KG that was built with an older recipe (once, even though its text is unchanged), and the table database follows because the CSVs change.
+EXTRACTION_RECIPE = "9"
+
 PAYWALL_HOSTS = ("ascelibrary.org", "pubs.asce.org", "sp360.asce.org", "webstore.ansi.org",
                  "asme.org", "store.accuristech.com", "ans.org")
 
@@ -109,6 +114,8 @@ class DocState(BaseModel):
     identities: dict[str, Optional[str]] = Field(default_factory=dict)  # "ASCE 43" -> "19" (as stated in the text)
     ocr_pages: list[int] = Field(default_factory=list)                  # pages read by OCR (no text layer)
     last_forced: str = ""                                               # last forced (unconditional) re-read
+    scope: str = ""                                                     # the scope (heading pattern) the KG was built with, "" = whole document
+    extraction_recipe: str = ""                                         # EXTRACTION_RECIPE the KG was built with ("" = built before recipes were recorded)
     forced_runs: int = 0
     last_forced_result: str = ""                                        # created | updated | refreshed | error
 

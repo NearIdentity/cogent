@@ -51,7 +51,7 @@ import kg_combine
 import kg_telemetry as telemetry
 import kg_ingest
 import kg_tools as T
-from kg_models import (Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
+from kg_models import (EXTRACTION_RECIPE, Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
                        RunNarrative, TrackerState, utcnow)
 
 log = logging.getLogger("kg_agent")
@@ -99,6 +99,7 @@ class Settings(BaseModel):
     join_max_pairs: int = 40
     join_max_seconds: Optional[float] = None
     prune: bool = True                  # with force: also purge stale asset files and archive (compressed) orphaned staging data
+    recipe_refresh: bool = True         # rebuild document KGs built with an older EXTRACTION_RECIPE even when their text is unchanged
     force: bool = False                 # forced update: re-read every source directly (no conditional requests,
                                         # no "unchanged" short-cut), rebuild the KGs, and log it all
 
@@ -149,6 +150,7 @@ class Runtime:
         self.started = utcnow()
         self.raw: dict[str, dict] = {}            # "standards"/"reports" -> raw JSON
         self.entries: list[DocEntry] = []
+        self.scopes: dict[str, tuple[str, str]] = {}   # url -> (scope pattern, scope_end pattern) of links that cover only part of a document
         self.tracker_state: dict[str, TrackerState] = {}
         self.ident_state: dict[str, dict[str, dict]] = {}
         self.pending: list[dict] = []
@@ -439,6 +441,9 @@ def make_nodes(rt: Runtime):
             for url, label in entry_sources(rt, e):
                 urls.setdefault(url, []).append(e.key)
                 labels.setdefault(url, label)
+            for l in e.links:
+                if getattr(l, "scope", None):
+                    rt.scopes.setdefault(l.url, (str(l.scope), str(getattr(l, "scope_end", "") or "")))
         out: AgentState = {"doc_actions": [], "errors": []}
         for url, keys in urls.items():
             with telemetry.op("sync_doc", **{"http.url": url.split("?")[0][:200], "cogent.entries": ",".join(keys)}) as dop:
@@ -717,7 +722,7 @@ def _ecfr_date(rt: Runtime, url: str) -> Optional[str]:
     return rt.ecfr_dates[key]
 
 
-def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: Path, kg_path: Path, now: str):
+def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: Path, kg_path: Path, now: str, behind: bool = False):
     """Conditional download of one remote document. Returns (finished_action | None, fetch_url, result)."""
     s = rt.s
     # eCFR pages are a JavaScript app: read the structured XML from the versioner API instead.
@@ -730,7 +735,7 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
             rt.write_json(ddir / "state.json", st.model_dump())
             return DocAction(url=url, entries=keys, action="error", detail="eCFR titles API unavailable"), fetch_url, None
         fetch_url = T.ecfr_api_url(url, date) or url
-    same = st.fetch_url == fetch_url and not s.force      # forced update: never send If-None-Match / If-Modified-Since
+    same = st.fetch_url == fetch_url and not s.force and not behind      # forced update (or KG built with an older recipe): never send If-None-Match / If-Modified-Since
     r = T.fetch(fetch_url, st.etag if same else "", st.last_modified if same else "",
                 min_interval=s.min_interval, accept="application/pdf,text/html,application/xml,*/*;q=0.8")
 
@@ -916,7 +921,9 @@ def _run_tabledb(rt: Runtime, state: AgentState) -> dict[str, Any]:
         return {"error": msg}
     for e in out.get("errors", []):
         state.setdefault("errors", []).append(f"table database: {e}")
-    return {k: out[k] for k in ("embedder", "sources", "loaded", "unchanged", "skipped", "dropped", "joins", "documents_with_joins", "llm_joins", "errors", "warnings")}
+    res = {k: out[k] for k in ("embedder", "sources", "loaded", "unchanged", "skipped", "dropped", "joins", "documents_with_joins", "llm_joins", "errors", "warnings")}
+    res["dropped_tables"] = list(out.get("dropped_tables", []))[:100]       # table ids whose source is gone, so a drop can be checked against the intent
+    return res
 
 
 def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
@@ -927,6 +934,10 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     kg_path = ddir / "kg.json"
     now = utcnow()
     forced = s.force
+    scope, scope_end = rt.scopes.get(url, ("", ""))
+    scope_key = f"{scope}\x1f{scope_end}" if scope else ""
+    behind = bool(kg_path.exists() and not forced and ((s.recipe_refresh and st.extraction_recipe != EXTRACTION_RECIPE)   # built with an older extraction recipe
+                                                       or st.scope != scope_key))                                       # or for a different scope of the page
 
     if url.startswith("file://"):                      # purchased / local copy of a paywalled document
         path = Path(unquote(urlparse(url).path))
@@ -934,7 +945,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
             return DocAction(url=url, entries=keys, action="error", detail=f"local copy missing: {path}")
         fetch_url, r = str(path), T.FetchResult(url, 200, path.read_bytes(), final_url=str(path), via="local")
     else:
-        done, fetch_url, r = _acquire_remote(rt, url, keys, st, ddir, kg_path, now)
+        done, fetch_url, r = _acquire_remote(rt, url, keys, st, ddir, kg_path, now, behind)
         if done is not None:
             return done
 
@@ -943,7 +954,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     st.etag, st.last_modified, st.fetch_url, st.content_kind = r.etag, r.last_modified, fetch_url, kind
     st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
     same_text = kg_path.exists() and st.text_sha == text_sha
-    if same_text and not forced:
+    if same_text and not forced and not behind:
         reissued = raw_sha != st.raw_sha
         st.raw_sha = raw_sha
         rt.write_json(ddir / "state.json", st.model_dump())
@@ -954,14 +965,14 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     old = load_graph_file(kg_path) if kg_path.exists() else None
     if rt.dry:
         return DocAction(url=url, entries=keys, forced=forced, shas=[st.text_sha[:12], text_sha[:12]],
-                         action="created" if old is None else "refreshed" if (forced and same_text) else "updated",
-                         detail="dry run: would rebuild the KG" + (" (forced re-read)" if forced else ""))
+                         action="created" if old is None else "refreshed" if ((forced or behind) and same_text) else "updated",
+                         detail="dry run: would rebuild the KG" + (" (forced re-read)" if forced else " (extraction recipe or scope changed)" if behind else ""))
     kg_ingest.clear_prefetched()
     kg_ingest.prefetch(fetch_url, r.data)
     try:
         g = kg_ingest.file_to_knowledge_graph(
             fetch_url, _extractor(s), assets_dir=str(ddir / "assets") if s.assets else None,
-            doc_label=label)
+            doc_label=label, scope=scope or None, scope_end=scope_end or None)
     finally:
         kg_ingest.clear_prefetched()
     g.graph.update(source=url, fetch_url=fetch_url, text_sha=text_sha, raw_sha=raw_sha, fetched=now,
@@ -975,7 +986,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     diff = T.kg_diff(old, g)
     # a forced re-read of identical text only counts as a new version when the rebuilt KG differs (e.g. parser changes)
     changed_kg = old is None or not same_text or _kg_changed(diff)
-    old_sha = st.text_sha
+    old_sha, old_recipe = st.text_sha, st.extraction_recipe
 
     archived = None
     if old is not None and changed_kg:
@@ -983,6 +994,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
                             f"{now.replace(':', '').replace('-', '')}_{st.text_sha[:8]}")
     rt.save_graph(g, kg_path)
     st.raw_sha, st.text_sha = raw_sha, text_sha
+    st.extraction_recipe, st.scope = EXTRACTION_RECIPE, scope_key
     st.first_seen = st.first_seen or now
     st.kg_built = now
     if changed_kg:
@@ -991,13 +1003,22 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     rt.write_json(ddir / "state.json", st.model_dump())
     _prune_archive(rt, "documents", docid)
     ocr = f"; OCR on page(s) {st.ocr_pages} ({g.graph.get('ocr_engine')})" if st.ocr_pages else ""
+    if scope:
+        if g.graph.get("scope_matched"):
+            ocr += f"; scope {scope!r}: kept {g.graph.get('scope_kept')} element(s), dropped {g.graph.get('scope_dropped')}"
+        else:
+            ocr += f"; WARNING scope {scope!r} matched no heading, the whole document was kept"
+            log.warning("scope %r matched no heading of %s: whole document kept", scope, url)
     purged = {}
     if forced and s.assets and s.prune and g.graph.get("assets_dir"):     # purge assets the new export no longer produced
         purged = _prune_assets(ddir / "assets", Path(g.graph["assets_dir"]))
+    if behind and old is not None and not changed_kg:
+        return DocAction(url=url, entries=keys, action="refreshed", shas=[old_sha[:12], text_sha[:12]], diff=diff, purged=purged,
+                         detail=f"extraction recipe {old_recipe or 'none'} -> {EXTRACTION_RECIPE}: content identical; KG rebuilt ({g.number_of_nodes()} nodes / {g.number_of_edges()} edges){ocr}")
     if forced and old is not None and not changed_kg:
         return DocAction(url=url, entries=keys, action="refreshed", forced=True, shas=[old_sha[:12], text_sha[:12]], diff=diff, purged=purged,
                          detail=f"forced re-read: content identical; KG rebuilt ({g.number_of_nodes()} nodes / {g.number_of_edges()} edges){ocr}")
-    why = ""
+    why = f"extraction recipe {old_recipe or 'none'} -> {EXTRACTION_RECIPE}: " if behind and old is not None else ""
     if forced and old is not None:
         why = "forced re-read: " + ("source text changed; " if old_sha != text_sha else "text identical but the rebuilt KG differs; ")
     return DocAction(url=url, entries=keys, action="created" if old is None else "updated", forced=forced,
@@ -1043,7 +1064,7 @@ def _assemble_one(rt: Runtime, e: DocEntry, names: dict[int, str], changed_urls:
             sig_parts.append([url, "missing"])
         else:
             parts.append((docid[:8], g))
-            sig_parts.append([url, g.graph.get("text_sha", "")])
+            sig_parts.append([url, g.graph.get("text_sha", ""), g.graph.get("extraction_recipe", "")])   # a rebuilt document KG (new recipe) re-assembles its entries
     sig = T._sha(json.dumps([e.name, e.complies_with, e.overlaps, sig_parts], sort_keys=True))
     meta = read_json(edir / "meta.json", {})
     same_sig = meta.get("signature") == sig and (edir / "kg.json").exists()
@@ -1363,7 +1384,7 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
     L.append(f"## Run {rt.run_id}{mode}\n")
     L.append(f"Started {rt.started}, finished {utcnow()}.\n")
     L.append(f"**Summary:** {summary['documents']} document(s) checked: {summary['docs_created']} new, "
-             f"{summary['docs_updated']} updated, " + (f"{summary['docs_refreshed']} re-read unchanged (forced), " if summary.get("forced") else "") +
+             f"{summary['docs_updated']} updated, " + (f"{summary['docs_refreshed']} re-read unchanged ({'forced' if summary.get('forced') else 'new extraction recipe'}), " if summary.get("forced") or summary.get("docs_refreshed") else "") +
              f"{summary['docs_unchanged']} unchanged, {summary['docs_error']} failed. "
              f"{summary['entries_rebuilt']} entry KG(s) rebuilt, {summary['not_current']} entr(ies) not current. {summary['trackers']} tracking page(s) checked "
              f"({summary['trackers_changed']} with changes). {summary['config_changes']} configuration edit(s). "
@@ -1424,6 +1445,8 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
             L.append(f"- {td['sources']} staged table(s): **{td['loaded']} loaded**, {td['unchanged']} unchanged, {td['skipped']} skipped, {td['dropped']} dropped; "
                      f"{td['joins']} join(s) inferred in {td['documents_with_joins']} document(s); embedder `{td['embedder']}`. "
                      f"Details in `logs/tabledb_report.md`; data dictionaries and relationship maps in `tabledb/<docid>/`.")
+            if td.get("dropped_tables"):
+                L.append("- dropped (source gone): " + ", ".join(f"`{t}`" for t in td["dropped_tables"][:20]) + (" ..." if len(td["dropped_tables"]) > 20 else ""))
             lj = td.get("llm_joins")
             if lj:
                 L.append(f"- LLM join inference (suggester `{lj['suggester']}`, judge `{lj['judge']}`; {lj['documents']} document(s) evaluated, status {', '.join(lj['llm_status']) or '-'}): "
@@ -1766,6 +1789,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     r.add_argument("--join-max-pairs", type=int, default=40)
     r.add_argument("--join-max-seconds", type=float, help="time budget per document for the LLM stage")
     r.add_argument("--no-prune", action="store_true", help="with --force: do not purge stale asset files or archive orphaned staging data")
+    r.add_argument("--no-recipe-refresh", action="store_true", help="do not rebuild document KGs built with an older extraction recipe (default: rebuild them once, even when the text is unchanged)")
     r.add_argument("--force", action="store_true", help="forced update: re-read every tracking page and source document directly "
                    "(no conditional requests, no \"unchanged\" short-cut), rebuild the KGs even if nothing changed, pick up "
                    "the latest edition if one is available, and log/report it all (logs/forced.jsonl). Combine with --only to limit it")
@@ -1795,7 +1819,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
-                 force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False),
+                 force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False), recipe_refresh=not getattr(a, "no_recipe_refresh", False),
                  publish_snapshot=getattr(a, "publish_snapshot", None), otlp_endpoint=getattr(a, "otlp_endpoint", None),
                  trace_console=getattr(a, "trace_console", False), pushgateway=getattr(a, "pushgateway", None), snapshot_keep=getattr(a, "snapshot_keep", 5),
                  tables=getattr(a, "tables", False), tabledb_dsn=getattr(a, "tabledb_dsn", None), tabledb_schema=getattr(a, "tabledb_schema", "kgtables"),

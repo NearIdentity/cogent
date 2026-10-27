@@ -126,6 +126,14 @@ def test_lookup_values_semantic(server):
     assert {h["table_id"] for h in only["rows"]} == {s["tables"][0]["table_id"]}
 
 
+def test_lookup_of_an_identifier_no_table_mentions_is_no_confident_match(server):
+    r = server.call("lookup_values", {"question": "allowable stress for ASTM A572 steel", "k": 3})
+    assert r["no_confident_match"] is True and r["match_quality"] == "none" and r["rows"] == []
+    assert "A572" in r["message"] and r["nearest_neighbours"] and r["missing_terms"] == ["A572"]
+    ok = server.call("lookup_values", {"question": "damping for welded steel structures", "k": 3})
+    assert ok["match_quality"] == "semantic" and ok["rows"] and "no_confident_match" not in ok
+
+
 def test_query_describe_and_join(server):
     tabs = {t["caption"][:9]: t["table_id"] for t in server.call("list_tables")["tables"]}
     damp, cat = tabs["Table 4-1"], tabs["Table 3-1"]

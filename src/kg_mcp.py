@@ -58,7 +58,7 @@ Table database (design values, parameters, limits, coefficients that live in tab
 row-type fact ("allowable stress for A572", "damping for welded steel"), do not search the graph text: call lookup_values(question) (by meaning),
 then query_table / describe_table for exact filters, columns and units, and join_tables when the answer spans two tables of one document.
 get_data_dictionary / get_relationship_map explain a document's tables. Always relay `warnings`, `paywalled`, inferred-unit notes and the disclaimer;
-quote the source document, page and caption. Tailor deduction per task: set_session_preferences (or `profile`/`approach`/`units` on a call);
+quote the source document, page and caption. If a lookup result says `no_confident_match` (or `match_quality` is not lexical/semantic), no table row mentions what was asked: say the value was not found and never present `nearest_neighbours` as the answer. Tailor deduction per task: set_session_preferences (or `profile`/`approach`/`units` on a call);
 use strict for compliance-grade answers, exploratory/broad to brainstorm. Prompts: find_design_value, strict_design_lookup.
 """
 

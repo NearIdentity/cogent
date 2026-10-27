@@ -123,7 +123,7 @@ Each entry is a standard or a report format; the agent reads these fields:
 | field | meaning |
 |---|---|
 | `id`, `document` / `report` | numeric id and name. The name carries the edition (`NRC RG 1.233`, `DOE-STD-1271-2025, …`, `ASME NQA-1-2026, …`) |
-| `links` / `template_links` | `[{"text", "url"}]`: the documents to ingest (PDF, HTML or an eCFR page) |
+| `links` / `template_links` | `[{"text", "url", "scope"?, "scope_end"?}]`: the documents to ingest (PDF, HTML or an eCFR page). `scope` (a case-insensitive regular expression) keeps only the part of the page under a matching heading, e.g. `"Appendix B to Part 50"` for an entry that covers one appendix of a page carrying the whole regulation; it ends at the next heading of the same or a higher level, or at the first heading matching `scope_end`. A pattern that matches no heading keeps the whole page and says so in the run report. Changing the scope rebuilds that document |
 | `update_tracking_urls` | pages watched for new editions (see [trackers](#the-update-agent)) |
 | `standards_to_comply_with_ids` | reports → ids of the standards they must comply with (becomes `complies_with` edges) |
 | `paywalled` (standards) | `true` if the document must be bought (see below); also inferred from "paywalled" in `format_of_data` |
@@ -155,7 +155,7 @@ returns a `networkx.MultiDiGraph`. It is a LangGraph pipeline `load → structur
   (local model, JSON-schema output, rule-based fallback), `HybridExtractor` (LLM first, rules fill the gaps), or any
   `prompt → str` function via `LLMExtractor`. Table rows become *row key → column header → value* facts.
   Relation names come from a small vocabulary (`src/kg_predicates.py`): a rule-based predicate must contain a known verb and is reduced to its lemma plus
-  preposition (`is required by` → `require_by`), everything else is `related_to`; table cells are `has_value` (the header is kept as the edge's `predicate`);
+  preposition (`is required by` → `require_by`), everything else is `related_to`; table cells are `has_value` (the header is kept as the edge's `predicate`); an acronym and its expansion are one `abbreviation_of` edge; tables `MENTIONS` the entities of their caption, header and first column;
   table-of-contents lines yield no relations. The raw text is always kept as the edge's `predicate` attribute.
 * **build** – merges duplicate entities, then emits the graph:
   node types `Document, Heading, Paragraph, Table, Figure` and extracted entities;
@@ -227,6 +227,13 @@ servers after the run. Common options: `--standards`, `--reports`, `--home` (def
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
 `--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
+
+### Extraction recipe (rebuild after a parser change)
+
+Every document KG is stamped with `EXTRACTION_RECIPE` (`src/kg_models.py`; recorded in `state.json` and in the KG). When the recipe moves on, the next normal run rebuilds
+each document KG built with an older one **once, even though its text is unchanged**, re-assembles the entries that use it and, with `--tables`, reloads the changed tables.
+Without this, fixes to extraction (identifiers, relations, tables, footnotes) reached only documents whose text had changed. `--no-recipe-refresh` skips it.
+`get_overview` lists `entries_behind_extraction_recipe`; `get_entry_metadata` shows each document's recipe. Developers: bump the constant whenever a change alters what is extracted.
 
 ### Forced update (`run --force`)
 
@@ -479,6 +486,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | `KG_USER_AGENT`, `KG_BROWSER_PATH` | override the browser identity / Chromium executable |
 | `KG_PDF_ENGINE` | `auto` (default), `layout`, `basic` |
 | `KG_OCR`, `KG_OCR_ENGINE`, `KG_OCR_LANG`, `KG_OCR_DPI` | OCR mode / engine / language / render resolution (default 200) |
+| `COGENT_LOOKUP_MIN_SIMILARITY` | MCP server: with a value above 0, `lookup_values` calls its result `no_confident_match` when even the best row is less similar than this (default 0 = off; calibrate against your embedder) |
 | `KG_TABLE_CHECK` | `off` keeps every detected table; default `on` demotes two-column prose and sentence lists to paragraphs (see docs/tabledb.md) |
 | `KG_OUTPUT_DIR`, `KG_ASSETS_DIR` | default folders for saved KGs (`kg_store`) and exported figures/tables (`kg_assets`) |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server (default `http://localhost:11434`) and model (default `llama3.1`) |
@@ -506,7 +514,7 @@ python -m pytest tests          # no internet: the agent tests run against tests
   `test_ocr.py`, `test_daemon.py` (schedule maths across a DST change, catch-up, retry backoff, hooks, PID lock, supervision, real `serve` and `start`/`stop` processes).
 * Extraction: `test_identifiers.py`, `test_identity_filenames.py`, `test_predicates.py`, `test_layout.py`, `test_tablecheck.py`, `test_table_footnotes.py`, `test_assets_export.py`.
 * MCP server and table database: `test_mcp.py`, `test_store_api.py`, `test_combine_resolution.py`, `test_tables.py`, `test_tabledb.py`, `test_mcp_tables.py`,
-  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`; observability: `test_telemetry.py` (registry, `/metrics` merge, cost/tokens/hallucination counting, spans, trace propagation, Pushgateway).
+  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`; round-6 fixes: `test_round6.py` (lookup confidence, extraction recipe, error messages); observability: `test_telemetry.py` (registry, `/metrics` merge, cost/tokens/hallucination counting, spans, trace propagation, Pushgateway).
 * The table tests need PostgreSQL with the pgvector extension (a private cluster from the installed binaries, or `COGENT_TEST_PG_DSN`); without it they are skipped.
   The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
 

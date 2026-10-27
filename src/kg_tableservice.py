@@ -30,6 +30,8 @@ token plus a ``session_id`` the client chooses (``default`` if it gives none).
 from __future__ import annotations
 
 import logging
+import os
+import re
 from collections import OrderedDict
 import threading
 import time
@@ -51,6 +53,66 @@ log = logging.getLogger("kg_tableservice")
 DISCLAIMER = ("Tables were extracted automatically from the source documents; cells can be merged, split or mis-read, units may be missing or inferred, "
               "and column types and join candidates are inferred. Verify design values against the source document before use.")
 RETRIEVAL = ("semantic", "lexical", "hybrid")
+
+# ---- is the answer to a lookup about what was asked? (nearest-neighbour search always returns rows, however unrelated)
+_CODE_A = re.compile(r"\b[A-Za-z]{1,6}-?\d[\w.\-]*")                                   # A572, SA-516, SDC-1, NQA-1, SSE2
+_CODE_B = re.compile(r"\b(?:RG|NEI|NUREG(?:/CR)?|DOE-STD|ANSI|ANS|ASCE|ASME|ASTM|AISC|ACI|IEEE|ISO|API|AWS)[\s-]*(\d[\w.\-]*)", re.I)   # RG 1.233, ANS-2.26
+_NOT_CODES = re.compile(r"^(?:m|mm|cm|km|ft|in|kg|lb|psi|ksi|hz|g|s|h|c|f|k)\d$|^(?:h2o|co2|o2|n2|u235|u238|pu239)$", re.I)
+
+
+def _norm(s: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+
+def code_tokens(question: str) -> list[str]:
+    """Identifier-like terms of a question that a relevant table must contain literally ('A572', 'SA-516', 'RG 1.233' -> its number)."""
+    out: list[str] = []
+    for m in _CODE_B.finditer(question):
+        out.append(m.group(1))
+    for m in _CODE_A.finditer(question):
+        t = m.group(0).rstrip(".-")
+        if not _NOT_CODES.match(t) and not re.match(r"(?:rg|nei|nureg|ans|ansi|asce|asme|astm|aisc|aci|ieee|iso|api|aws|doe)[-\d]", t, re.I):
+            out.append(t)
+    seen, res = set(), []
+    for t in out:
+        n = _norm(t)
+        if len(n) >= 3 and n not in seen:
+            seen.add(n)
+            res.append(t)
+    return res
+
+
+def assess_lookup(question: str, rows: list[dict[str, Any]], min_similarity: float = 0.0) -> dict[str, Any]:
+    """Judge a lookup's rows against the question. ``rows`` need ``values`` and ``table`` (caption, source.section/document).
+
+    * the question names identifiers (A572, RG 1.233): a row counts only when every one occurs in its cells, column names, caption or section;
+      no such row = ``no_confident_match`` and all rows are demoted to ``nearest_neighbours``
+    * otherwise, when ``min_similarity`` > 0 and even the best row is less similar than that: ``weak``
+    * else ``semantic`` (nothing to check beyond the ranking).
+    """
+    toks = code_tokens(question)
+    if toks:
+        want = [_norm(t) for t in toks]
+
+        def hay(r: dict[str, Any]) -> str:
+            t, src = r.get("table") or {}, (r.get("table") or {}).get("source") or {}
+            vals = r.get("values") or {}
+            return _norm(" ".join([str(t.get("caption") or ""), str(src.get("section") or ""), str(src.get("document") or "")] + [f"{k} {v}" for k, v in vals.items()]))
+
+        hits = [r for r in rows if all(w in hay(r) for w in want)]
+        found = [t for t, w in zip(toks, want) if any(w in hay(r) for r in rows)]
+        if hits:
+            return {"match_quality": "lexical", "rows": hits, "nearest_neighbours": [r for r in rows if r not in hits], "matched_terms": found}
+        return {"match_quality": "none", "no_confident_match": True, "rows": [], "nearest_neighbours": rows, "matched_terms": found,
+                "missing_terms": [t for t in toks if t not in found] or toks,
+                "message": f"no table row mentions {', '.join(repr(t) for t in toks)}; the rows under 'nearest_neighbours' are only the closest by meaning and are "
+                           "probably about something else. Do not present them as an answer; try search_tables, other wording, or say the value was not found."}
+    best = max((r.get("similarity") or 0.0 for r in rows), default=0.0)
+    if rows and min_similarity > 0 and best < min_similarity:
+        return {"match_quality": "weak", "no_confident_match": True, "rows": [], "nearest_neighbours": rows,
+                "message": f"the best row has similarity {best:.2f}, below the confidence floor {min_similarity:.2f}; the rows under 'nearest_neighbours' are only the closest by meaning."}
+    return {"match_quality": "semantic", "rows": rows, "nearest_neighbours": []}
+
 
 
 @dataclass
@@ -362,7 +424,17 @@ class TableService:
             hit_tables = {h["table_id"] for h in res["rows"] if h["table_id"] in tabs}
             units = self._row_units(c, {t: [] for t in hit_tables}, prefs) if prefs.units != "off" or hit_tables else {}
             rows = [{**h, "table": {k2: tabs[h["table_id"]][k2] for k2 in ("caption", "source", "paywalled")}, **units.get(h["table_id"], {})} for h in res["rows"] if h["table_id"] in tabs]
-            return self._wrap(c, {"question": question, "mode": res["mode"], **({"note": note} if note else {}), "rows": rows,
+            try:
+                floor = float(os.environ.get("COGENT_LOOKUP_MIN_SIMILARITY", "0") or 0)
+            except ValueError:
+                floor = 0.0
+            judged = assess_lookup(question, rows, floor)
+            extra = {k: judged[k] for k in ("match_quality", "no_confident_match", "message", "matched_terms", "missing_terms") if k in judged}
+            if judged["nearest_neighbours"]:
+                extra["nearest_neighbours"] = [{"table_id": r["table_id"], "row": r.get("row"), "similarity": r.get("similarity"), "caption": r["table"]["caption"]}
+                                               for r in judged["nearest_neighbours"][:5]]
+            rows = judged["rows"]
+            return self._wrap(c, {"question": question, "mode": res["mode"], **({"note": note} if note else {}), **extra, "rows": rows,
                                   "tables_searched": [{"table_id": t["table_id"], "caption": t["caption"], **({"similarity": t["similarity"]} if "similarity" in t else {})}
                                                       for t in tabs.values()]}, cache, {tabs[t]["docid"] for t in hit_tables}, prefs)
 

@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 import networkx as nx
 
-from kg_models import PAYWALL_HOSTS
+from kg_models import EXTRACTION_RECIPE, PAYWALL_HOSTS
 
 KINDS = {"standard": "standards", "report": "reports"}
 TEXT_LIMIT = 1200           # characters of node text returned unless full text is requested
@@ -121,6 +121,15 @@ class Store:
                 out[f"{kind}:{item['id']}"] = {**item, "_kind": kind}
         return out
 
+    def _docs_behind(self, meta: dict[str, Any]) -> list[str]:
+        """Documents of an entry whose KG was built with an extraction recipe other than the current one (or before recipes were recorded)."""
+        out = []
+        for d in meta.get("documents", []):
+            st = _read_json(self.home / "staging" / "documents" / d["docid"] / "state.json", {}) or {}
+            if st and (st.get("extraction_recipe") or "") != EXTRACTION_RECIPE:
+                out.append(d["docid"])
+        return out
+
     def _entry_dir(self, key: str) -> Path:
         try:
             kind, ident = key.split(":", 1)
@@ -128,11 +137,29 @@ class Store:
         except (ValueError, KeyError):
             raise NotFound(f"bad entry key {key!r}; use 'standard:<id>' or 'report:<id>'") from None
 
+    def _check_entry(self, key: str) -> None:
+        """Raise "unknown entry" (with the valid keys) for an entry key the configuration does not contain; a known entry passes."""
+        if ":" not in key or key == "combined":
+            return
+        cfg = self._config()
+        if not cfg or key in cfg:
+            return
+        kinds: dict[str, list[int]] = {}
+        for k in cfg:
+            kind, _, ident = k.partition(":")
+            if ident.isdigit():
+                kinds.setdefault(kind, []).append(int(ident))
+        valid = ", ".join(f"{kind}:{min(v)}-{max(v)}" for kind, v in sorted(kinds.items()))
+        import difflib
+        near = difflib.get_close_matches(key, list(cfg), n=3, cutoff=0.8)
+        raise NotFound(f"unknown entry {key!r} (valid entries: {valid})" + (f"; did you mean {', '.join(repr(x) for x in near)}?" if near else ""))
+
     # ------------------------------------------------------------------ graphs
     def graph(self, ref: str) -> nx.MultiDiGraph:
         """``ref`` is an entry key ('standard:2') or a document id (16 hex characters)."""
         path = self._graph_path(ref)
         if not path.exists():
+            self._check_entry(ref)
             raise NotFound(f"no knowledge graph staged for {ref!r}")
         mtime = path.stat().st_mtime
         with self._lock:
@@ -205,10 +232,12 @@ class Store:
                 continue
             meta = _read_json(self._entry_dir(key) / "meta.json", {}) or {}
             vt = item.get("version_tracking") or {}
+            behind = self._docs_behind(meta)
             rows.append({
                 "entry": key, "kind": item["_kind"], "id": item["id"], "name": name,
                 "group": item.get("group_title"), "has_graph": (self._entry_dir(key) / "kg.json").exists(),
                 "graph_built": meta.get("built"), "nodes": meta.get("nodes"), "edges": meta.get("edges"),
+                "extraction_recipe_behind": bool(behind) if meta.get("documents") else None,
                 "paywalled": bool(item.get("paywalled")) or "paywalled" in item.get("format_of_data", "").lower(),
                 "version_status": vt.get("status"), "open_warnings": open_alerts.get(key, 0)})
         return rows
@@ -217,6 +246,7 @@ class Store:
     def entry_metadata(self, key: str) -> dict[str, Any]:
         item = self._config().get(key)
         if item is None:
+            self._check_entry(key)
             raise NotFound(f"unknown entry {key!r}")
         edir = self._entry_dir(key)
         meta = _read_json(edir / "meta.json", {}) or {}
@@ -233,7 +263,8 @@ class Store:
                 "forced_rereads": st.get("forced_runs", 0), "last_forced_result": st.get("last_forced_result") or None, "nodes": st.get("kg_nodes"), "edges": st.get("kg_edges"),
                 "editions_stated_in_text": {k: v for k, v in (st.get("identities") or {}).items() if v},
                 "ocr_pages": st.get("ocr_pages") or [], "consecutive_errors": st.get("consecutive_errors", 0),
-                "last_error": st.get("last_error") or None, "text_sha": (st.get("text_sha") or "")[:12]})
+                "last_error": st.get("last_error") or None, "text_sha": (st.get("text_sha") or "")[:12],
+                "extraction_recipe": st.get("extraction_recipe") or None, "extraction_recipe_current": (st.get("extraction_recipe") or "") == EXTRACTION_RECIPE})
         archive = sorted(p.name for p in (self.home / "archive" / "entries" / key.replace(":", "_")).glob("*")) \
             if (self.home / "archive" / "entries").exists() else []
         alerts = self.alerts(key)
@@ -245,6 +276,7 @@ class Store:
             "source_links": item.get("links") or item.get("template_links") or [],
             "update_tracking_urls": item.get("update_tracking_urls", []),
             "graph": {"available": (edir / "kg.json").exists(), "built": meta.get("built"),
+                      "extraction_recipe": EXTRACTION_RECIPE, "documents_behind_recipe": self._docs_behind(meta),
                       "nodes": meta.get("nodes"), "edges": meta.get("edges"), "missing_documents": meta.get("missing", []),
                       "superseded_versions_archived": archive},
             "capture": {"documents_last_checked": captured, "age_days": _age_days(captured),
@@ -316,7 +348,11 @@ class Store:
         for r in cat:
             by_status[r["version_status"] or "unknown"] = by_status.get(r["version_status"] or "unknown", 0) + 1
         run = self.last_run()
-        return {"run_errors": self.run_errors(run), "document_errors": self.document_errors(), "entries": len(cat), "with_graph": sum(r["has_graph"] for r in cat),
+        behind = [r["entry"] for r in cat if r.get("extraction_recipe_behind")]
+        return {"extraction_recipe": EXTRACTION_RECIPE, "entries_behind_extraction_recipe": behind,
+                **({"note": f"{len(behind)} entr{'y was' if len(behind) == 1 else 'ies were'} built with an older extraction recipe; the next agent run rebuilds them "
+                            "(fixes to extraction apply only after that)"} if behind else {}),
+                "run_errors": self.run_errors(run), "document_errors": self.document_errors(), "entries": len(cat), "with_graph": sum(r["has_graph"] for r in cat),
                 "version_status_counts": by_status, "open_warnings": sum(1 for a in self.alerts() if a.get("severity") == "warning"),
                 "agent_last_run": (run or {}).get("finished"), "agent_last_forced_run": self.last_forced_run(), "agent_last_run_summary": (run or {}).get("summary"),
                 "disclaimers": GENERAL_DISCLAIMERS}
@@ -342,9 +378,28 @@ class Store:
         for alt in ("entry:" + node_id, node_id[len("entry:"):] if node_id.startswith("entry:") else None):
             if alt and alt in g:
                 return alt
+        near = Store._near_ids(g, node_id)
+        raise NotFound(f"node {node_id!r} not in {ref}" + (f"; did you mean {', '.join(repr(x) for x in near)}?" if near else "; no close node id"))
+
+    @staticmethod
+    def _near_ids(g: nx.MultiDiGraph, node_id: str, n: int = 3) -> list[str]:
+        """Node ids that plausibly were meant: the same name ignoring the ``ent:`` / ``entry:`` style prefix and case, with an edit-similarity of at least 0.8
+        (or the typed text as a whole word-start of a longer id). 'nonexistent' therefore no longer suggests 'ent:consistent'."""
         import difflib
-        near = difflib.get_close_matches(node_id, [str(n) for n in g.nodes], n=3, cutoff=0.6)
-        raise NotFound(f"node {node_id!r} not in {ref}" + (f"; did you mean {', '.join(repr(x) for x in near)}?" if near else ""))
+        strip = lambda s: re.sub(r"^(?:entry:)?(?:[a-z]+:)", "", s.lower()) if ":" in s else s.lower()
+        want, pre = strip(node_id), node_id.split(":", 1)[0] if ":" in node_id else ""
+        scored = []
+        for nid in g.nodes:
+            s = str(nid)
+            have = strip(s)
+            ratio = difflib.SequenceMatcher(None, node_id.lower(), s.lower()).ratio()
+            if min(len(want), len(have)) >= 4:                      # the bare names only count when long enough to mean something
+                ratio = max(ratio, difflib.SequenceMatcher(None, want, have).ratio())
+            if len(want) >= 4 and (have.startswith(want) or want.startswith(have) and len(have) >= 4):
+                ratio = max(ratio, 0.85)
+            if ratio >= 0.8:
+                scored.append((-(ratio + (0.05 if pre and s.startswith(pre + ":") else 0)), s))
+        return [s for _, s in sorted(scored)[:n]]
 
     def _node(self, g: nx.MultiDiGraph, nid: str, full: bool = False) -> dict[str, Any]:
         a = dict(g.nodes[nid])
@@ -634,6 +689,7 @@ class Store:
             return [self.resolve_docid(ref)]
         meta = _read_json(self._entry_dir(ref) / "meta.json")
         if meta is None:
+            self._check_entry(ref)
             raise NotFound(f"no staged entry {ref!r}")
         return [d["docid"] for d in meta.get("documents", [])]
 
