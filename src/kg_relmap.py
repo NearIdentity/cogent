@@ -46,7 +46,7 @@ def norm_name(header: str) -> str:
     return " ".join(out)
 
 
-_PLACEHOLDER = re.compile(r"^(?:column|col|c|field|unnamed|f)[\s_:-]*\d+$", re.I)
+_PLACEHOLDER = re.compile(r"^(?:column|col|field|unnamed)[\s_:-]*\d+$|^c_\d+$", re.I)     # names the extractor generates; "C1" / "f1" can be real variables
 _ORDINAL = re.compile(r"^\(?\d{1,3}[.)]?$")
 _XREF = re.compile(r"^(?:tables?|figures?|fig\.?|sections?|appendix|see|entire|refer)\b", re.I)
 _TABLE_REF = re.compile(r"\btable\s*([a-z]?\d+(?:[-.]\d+)*)", re.I)
@@ -55,7 +55,7 @@ _TABLE_REF = re.compile(r"\btable\s*([a-z]?\d+(?:[-.]\d+)*)", re.I)
 def placeholder(header: str) -> bool:
     """A header that only numbers the column (``column_1``, ``c_4``, empty): it says nothing about what the column holds."""
     h = (header or "").strip()
-    return not h or bool(_PLACEHOLDER.match(h))
+    return not h or bool(_PLACEHOLDER.match(h)) or bool(_ORDINAL.match(h))      # a header that is only a list number ("1.", "2)") numbers the column too
 
 
 def junk_values(common: set[str]) -> tuple[bool, bool]:

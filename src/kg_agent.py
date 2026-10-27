@@ -435,6 +435,7 @@ def make_nodes(rt: Runtime):
     def sync_docs(state: AgentState) -> AgentState:
         urls: dict[str, list[str]] = {}
         labels: dict[str, str] = {}
+        seen_scopes: dict[str, dict[tuple[str, str], list[str]]] = {}
         for e in rt.entries:
             if not rt.selected(e):
                 continue
@@ -442,9 +443,16 @@ def make_nodes(rt: Runtime):
                 urls.setdefault(url, []).append(e.key)
                 labels.setdefault(url, label)
             for l in e.links:
-                if getattr(l, "scope", None):
-                    rt.scopes.setdefault(l.url, (str(l.scope), str(getattr(l, "scope_end", "") or "")))
+                want = (str(getattr(l, "scope", "") or ""), str(getattr(l, "scope_end", "") or ""))
+                seen_scopes.setdefault(l.url, {}).setdefault(want, []).append(e.key)
         out: AgentState = {"doc_actions": [], "errors": []}
+        for url, variants in seen_scopes.items():
+            if len(variants) > 1:                      # one document KG per URL: two entries asking for different parts of it cannot both be served
+                out["errors"].append(f"document {url}: entries disagree about its scope ("
+                                     + "; ".join(f"{', '.join(k)}: {sc[0] or 'whole page'}" for sc, k in variants.items()) + "); the first is used, fix the configuration")
+            first = next(iter(variants))
+            if first[0]:
+                rt.scopes.setdefault(url, first)
         for url, keys in urls.items():
             with telemetry.op("sync_doc", **{"http.url": url.split("?")[0][:200], "cogent.entries": ",".join(keys)}) as dop:
                 try:

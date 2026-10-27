@@ -1287,12 +1287,17 @@ def canonical(name: str) -> str:
     return re.sub(r"[^\w\s]", "", name).lower().strip()
 
 
+_IRREGULAR_PLURAL = {"axes": "axis", "bases": "basis", "criteria": "criterion", "phenomena": "phenomenon", "matrices": "matrix", "indices": "index", "vertices": "vertex"}
 _NOT_PLURAL = {"series", "species", "news", "bias", "gas", "atlas", "canvas", "lens", "corps", "bus", "alias", "basis", "axis", "chassis", "always", "perhaps", "whereas"}
 
 
 def singular(word: str) -> str:
     """A rough singular of one lower-case word (``systems`` -> ``system``, ``categories`` -> ``category``, ``sdcs`` -> ``sdc``); words that only look plural are kept."""
     w = word
+    if w in _IRREGULAR_PLURAL:
+        return _IRREGULAR_PLURAL[w]
+    if w.endswith(("yses", "theses", "noses")) and len(w) > 5:                  # analyses, hypotheses, diagnoses
+        return w[:-2] + "is"
     if len(w) <= 3 or w in _NOT_PLURAL or not w.endswith("s") or w.endswith(("ss", "us", "is", "ics")):
         return w
     if w.endswith("ies") and len(w) > 4:
@@ -1337,16 +1342,18 @@ class EntityResolver:
 _STOP_INITIALS = {"of", "and", "for", "the", "in", "to", "on", "a", "an"}
 
 
-def _initials(label: str) -> str:
-    return "".join(w[0] for w in re.findall(r"[A-Za-z][A-Za-z\-]*", label) if w.lower() not in _STOP_INITIALS).upper()
+def _initials(label: str, split_hyphens: bool = True) -> str:
+    words = re.findall(r"[A-Za-z]+" if split_hyphens else r"[A-Za-z][A-Za-z\-]*", label)
+    return "".join(w[0] for w in words if w.lower() not in _STOP_INITIALS).upper()
 
 
 def is_abbreviation(short: str, long: str) -> bool:
     """Is ``short`` the acronym of ``long`` (``SDC`` / ``Seismic Design Category``; plural and hyphenated forms included)?"""
     s = re.sub(r"[^A-Za-z]", "", short).upper()
-    if s.endswith("S") and s[:-1] == _initials(long) and len(s) > 2:
+    forms = {_initials(long, True), _initials(long, False)}                      # 'Design-Basis Accident': DBA (split at the hyphen) or DA (one word)
+    if s.endswith("S") and s[:-1] in forms and len(s) > 2:
         s = s[:-1]
-    return 2 <= len(s) <= 8 and len(long.split()) >= 2 and s == _initials(long)
+    return 2 <= len(s) <= 8 and len(re.findall(r"[A-Za-z]+", long)) >= 2 and s in forms
 
 
 def link_abbreviations(g: nx.MultiDiGraph) -> int:
@@ -1385,8 +1392,8 @@ def link_abbreviations(g: nx.MultiDiGraph) -> int:
 
 def link_table_entities(g: nx.MultiDiGraph, max_ngram: int = 5) -> int:
     """MENTIONS edges from each data table to the entities named in its caption, its header and its first column (``SDC-1`` rows, ``Seismic Design
-    Category`` in a caption), so an entity leads to the tables that use it. Single-word entities must be written capitalised or as acronyms
-    in the table. Front-matter tables are left alone. Returns the number of edges added."""
+    Category`` in a caption), so an entity leads to the tables that use it. Single-word entities must be acronyms, contain a digit or an inner capital
+    (`SDC`, `SDC-1`, `NuScale`), not just a capitalised noun. Front-matter tables are left alone. Returns the number of edges added."""
     ents = {}
     for n, d in g.nodes(data=True):
         if str(n).startswith("ent:") and d.get("type") not in ("Value",) and len(str(n)) > 6:
@@ -1410,8 +1417,8 @@ def link_table_entities(g: nx.MultiDiGraph, max_ngram: int = 5) -> int:
                     nid = ents.get(entity_key(" ".join(gram)))
                     if nid is None or g.has_edge(n, nid, "MENTIONS"):
                         continue
-                    if len(gram) == 1 and not (gram[0][0].isupper() or any(ch.isupper() for ch in gram[0])):
-                        continue
+                    if len(gram) == 1 and not (any(ch.isdigit() for ch in gram[0]) or gram[0].isupper() or any(ch.isupper() for ch in gram[0][1:])):
+                        continue                                   # a lone common noun ('Category', 'Table', 'Return') is not evidence
                     g.add_edge(n, nid, key="MENTIONS", relation="MENTIONS", via=via)
                     added += 1
     return added

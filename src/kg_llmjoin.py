@@ -37,15 +37,15 @@ STYLES = ("balanced", "names", "values")
 W_DET, W_LLM, W_JUDGE = 0.35, 0.25, 0.40
 
 PROFILES: dict[str, dict[str, Any]] = {
-    "fast": {"approach": "deterministic", "min_score": 0.55, "include_rejected": False, "retrieval": "semantic", "units": "strict",
+    "fast": {"approach": "deterministic", "min_score": 0.55, "include_rejected": False, "retrieval": "semantic", "units": "strict", "min_similarity": 0.0,
              "description": "heuristic joins only (names + values + KG); no LLM evidence needed"},
-    "balanced": {"approach": "hybrid", "min_score": 0.55, "include_rejected": False, "retrieval": "semantic", "units": "strict",
+    "balanced": {"approach": "hybrid", "min_score": 0.55, "include_rejected": False, "retrieval": "semantic", "units": "strict", "min_similarity": 0.0,
                  "description": "heuristic and LLM-suggested joins, minus those the judge rejects (default)"},
-    "strict": {"approach": "consensus", "min_score": 0.60, "include_rejected": False, "retrieval": "semantic", "units": "strict",
+    "strict": {"approach": "consensus", "min_score": 0.60, "include_rejected": False, "retrieval": "semantic", "units": "strict", "min_similarity": 0.70,
                "description": "only joins found by both methods and accepted by the judge: fewest false joins"},
-    "exploratory": {"approach": "hybrid", "min_score": 0.30, "include_rejected": True, "retrieval": "hybrid", "units": "broad",
+    "exploratory": {"approach": "hybrid", "min_score": 0.30, "include_rejected": True, "retrieval": "hybrid", "units": "broad", "min_similarity": 0.0,
                     "description": "everything plausible: rejected / disputed joins (flagged), inferred units with alternatives, hybrid retrieval: for review"},
-    "llm": {"approach": "llm", "min_score": 0.50, "include_rejected": False, "retrieval": "semantic", "units": "broad",
+    "llm": {"approach": "llm", "min_score": 0.50, "include_rejected": False, "retrieval": "semantic", "units": "broad", "min_similarity": 0.0,
             "description": "LLM-suggested joins that the judge did not reject (finds semantic joins the heuristics miss)"},
 }
 

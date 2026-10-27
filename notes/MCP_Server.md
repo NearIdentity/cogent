@@ -26,7 +26,7 @@ The MCP server serves the knowledge graphs that the update agent has staged, plu
 |---|---|
 | `list_tables`, `describe_table` | which tables exist; columns, types, units (as the session's unit mode sees them), sample rows |
 | `search_tables` | which tables are about a question (table-level embeddings) |
-| `lookup_values` | two-stage semantic lookup: best tables, then best rows (rows are embedded whole, numbers included). Returns the original cell text, document, page, caption, units and warnings. When the question names an identifier (A572, RG 1.233) that no returned row contains, it answers `no_confident_match: true` with a message and the closest rows under `nearest_neighbours` instead of `rows`; `match_quality` tells which case applies |
+| `lookup_values` | two-stage semantic lookup: best tables, then best rows (rows are embedded whole, numbers included). Returns the original cell text, document, page, caption, units and warnings. When the question names a subject identifier (A572, Cs-137, RG 1.233) that no returned row contains (category labels such as HC-3 only rank rows), it answers `no_confident_match: true` with a message and the closest rows under `nearest_neighbours` instead of `rows`; `match_quality` tells which case applies |
 | `query_table` | exact filters (`= != < <= > >= like in between is_null not_null`), numeric columns compared numerically |
 | `join_tables` | join two tables along an inferred relationship, for the selected join approach |
 | `explain_units` | every unit hypothesis for a column, its evidence, and what strict, broad and off would answer |
