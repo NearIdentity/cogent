@@ -232,6 +232,9 @@ marks them `available: false` in `list_assets`; `allow` serves them unmarked, on
 is served unchanged. Tables and text nodes of paywalled documents inside the graph tools are *not* watermarked; use `block`
 or do not stage purchased copies on a server you expose if your licence forbids redistribution.
 
+### Metrics and traces
+`serve --metrics` adds `/metrics` (needs a token; the Prometheus config in `deploy/observability/` sends one) and `--otlp-endpoint` exports a span per tool call. `/metrics` on a public tunnel address is protected by the same token check as `/mcp`; keep Prometheus and Grafana on loopback unless you add authentication (Grafana has its own login). See [observability.md](observability.md) and `notes/LiveDemo.md` step 8.
+
 ## 6. Security notes
 Read-only tools; refs are validated (no path traversal); body size limited by the SDK; Host-header allow-list; rate
 limiting and IP allow-lists belong in the proxy (Caddy `rate_limit` plugin, Cloudflare). Content is third-party text:

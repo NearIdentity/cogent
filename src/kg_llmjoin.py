@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import kg_relmap as R
+import kg_telemetry as telemetry
 from kg_llm import LLM, LLMError
 from kg_tables import Col
 
@@ -218,6 +219,14 @@ def _stage_notes(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optiona
 
 def evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LLM], judge_llm: Optional[LLM] = None, cfg: Optional[Config] = None) -> dict[str, Any]:
     """Run suggest -> collect -> judge -> reconcile for one document. ``llm=None`` returns the deterministic relationships as candidates."""
+    with telemetry.span("joins.evaluate", **{"cogent.tables": len(tables), "cogent.llm": llm is not None}) as sp:
+        ev = _evaluate(tables, det_rels, llm, judge_llm, cfg)
+        sp.set_attribute("cogent.candidates", len(ev["candidates"]))
+        sp.set_attribute("cogent.hallucination_rate", ev["metrics"].get("hallucination_rate") or 0.0)
+        return ev
+
+
+def _evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LLM], judge_llm: Optional[LLM] = None, cfg: Optional[Config] = None) -> dict[str, Any]:
     cfg = cfg or Config()
     judge_llm = judge_llm or llm
     t0 = time.time()
@@ -276,7 +285,9 @@ def evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LL
                         conf = 0.5
                     if ca is None or cb is None:
                         status["invalid_suggestions"] += 1
+                        telemetry.record_output("join_suggestion", True)          # names a column that does not exist: a hallucination
                         continue
+                    telemetry.record_output("join_suggestion", False)
                     if conf < cfg.min_confidence:
                         continue
                     c = _new_candidate(a, ca, b, cb, boost)
@@ -333,6 +344,9 @@ def evaluate(tables: list[R.T], det_rels: list[dict[str, Any]], llm: Optional[LL
                 conf = [x for v, x in zip(votes, confs) if v == verdict] or confs
                 c["judge"] = {"verdict": verdict, "confidence": round(sum(conf) / len(conf), 3), "votes": tally, "runs": len(votes),
                               "consistency": round(top / len(votes), 3), "reasons": list(dict.fromkeys(reasons))[:4], "problems": list(dict.fromkeys(problems))[:4]}
+                if len(votes) >= 2:                                                # agreement between judge runs only means something with two or more
+                    is_det, is_llm = c["deterministic"]["proposed"], bool(c["llm"] and c["llm"]["proposed_by"])
+                    telemetry.record_judge(top == len(votes), verdict, "both" if is_det and is_llm else "llm_only" if is_llm else "deterministic_only")
 
     for c in cands.values():
         c["status"], c["final_score"] = classify(c), final_score(c)

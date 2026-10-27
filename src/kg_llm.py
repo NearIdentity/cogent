@@ -13,6 +13,8 @@ from typing import Any, Callable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import kg_telemetry as telemetry
+
 log = logging.getLogger("kg_llm")
 DEFAULT_HOST = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "llama3.1:8b"
@@ -75,23 +77,40 @@ class OllamaLLM(LLM):
         body = {"model": self.model, "stream": False, "options": opts, "format": schema or "json",
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         last: Exception = LLMError("no attempt")
-        for attempt in range(self.retries + 1):
-            try:
+        t0 = time.perf_counter()
+        tokens_in = tokens_out = 0
+        with telemetry.span("llm.chat", **{"gen_ai.system": "ollama", "gen_ai.request.model": self.model, "gen_ai.operation.name": "chat",
+                                           "gen_ai.request.temperature": temperature, "cogent.llm.task": task or "chat"}) as sp:
+            for attempt in range(self.retries + 1):
+                if attempt:
+                    telemetry.record_retry("llm")
+                    sp.add_event("retry", {"attempt": attempt})
                 try:
-                    out = self._post(body)
-                except HTTPError as exc:
-                    if exc.code == 400 and schema is not None:          # server without structured-output support
-                        body["format"] = "json"
+                    try:
                         out = self._post(body)
-                    else:
-                        raise
-                return parse_json(out["message"]["content"])
-            except (URLError, HTTPError, TimeoutError, ConnectionError, KeyError, ValueError, LLMError) as exc:
-                last = exc
-                log.warning("ollama chat attempt %d/%d failed (%s): %s", attempt + 1, self.retries + 1, self.model, exc)
-                time.sleep(min(2.0 ** attempt, 8.0))
-        raise LLMError(f"Ollama at {self.host} (model {self.model}) gave no usable answer: {last}. Is it running and is the model pulled "
-                       f"(ollama pull {self.model})?")
+                    except HTTPError as exc:
+                        if exc.code == 400 and schema is not None:          # server without structured-output support
+                            body["format"] = "json"
+                            out = self._post(body)
+                        else:
+                            raise
+                    tin, tout = int(out.get("prompt_eval_count") or 0), int(out.get("eval_count") or 0)
+                    tokens_in, tokens_out = tokens_in + tin, tokens_out + tout
+                    answer = parse_json(out["message"]["content"])
+                    sp.set_attribute("gen_ai.usage.input_tokens", tokens_in)
+                    sp.set_attribute("gen_ai.usage.output_tokens", tokens_out)
+                    telemetry.record_llm(self.model, task or "chat", tokens_in, tokens_out, time.perf_counter() - t0, "ok")
+                    return answer
+                except (URLError, HTTPError, TimeoutError, ConnectionError, KeyError, ValueError, LLMError) as exc:
+                    last = exc
+                    log.warning("ollama chat attempt %d/%d failed (%s): %s", attempt + 1, self.retries + 1, self.model, exc)
+                    time.sleep(min(2.0 ** attempt, 8.0))
+            sp.set_attribute("gen_ai.usage.input_tokens", tokens_in)
+            sp.set_attribute("gen_ai.usage.output_tokens", tokens_out)
+            telemetry.record_llm(self.model, task or "chat", tokens_in, tokens_out, time.perf_counter() - t0, "error")
+            telemetry.record_failure("llm")
+            raise LLMError(f"Ollama at {self.host} (model {self.model}) gave no usable answer: {last}. Is it running and is the model pulled "
+                           f"(ollama pull {self.model})?")
 
 
 class FakeLLM(LLM):

@@ -27,6 +27,7 @@ is used there, or to narrate the already-structured run results). Layout of ``--
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import re
@@ -47,6 +48,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 import kg_combine
+import kg_telemetry as telemetry
 import kg_ingest
 import kg_tools as T
 from kg_models import (Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
@@ -78,6 +80,9 @@ class Settings(BaseModel):
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
     tables: bool = False                # after staging: build / refresh the table database (PostgreSQL + pgvector), see kg_tabledb.py
+    otlp_endpoint: Optional[str] = None      # OpenTelemetry: OTLP/HTTP base URL for traces (default $OTEL_EXPORTER_OTLP_ENDPOINT)
+    trace_console: bool = False              # print spans to stderr
+    pushgateway: Optional[str] = None        # push the run's metrics to a Prometheus Pushgateway (default $COGENT_PUSHGATEWAY)
     publish_snapshot: Optional[str] = None   # after the run: write a bundle of the agent home here for other MCP servers to pull (kg_snapshot.py)
     snapshot_keep: int = 5
     tabledb_dsn: Optional[str] = None   # default $COGENT_TABLEDB_DSN
@@ -353,11 +358,14 @@ def make_nodes(rt: Runtime):
         out: AgentState = {"findings": [], "tracker_log": [], "errors": []}
         for url, ents in watchers.items():
             tr = T.tracker_for(url)
-            try:
-                res = tr.check(url, rt.tracker_state.get(url), ents, rt.ctx)
-            except Exception as exc:                      # a broken tracker must not stop the run
-                log.exception("tracker %s failed on %s", tr.name, url)
-                res = tr._error(url, rt.tracker_state.get(url), f"{type(exc).__name__}: {exc}")
+            with telemetry.op("track_url", **{"cogent.tracker": tr.name, "http.url": url[:200]}) as top:
+                try:
+                    res = tr.check(url, rt.tracker_state.get(url), ents, rt.ctx)
+                except Exception as exc:                      # a broken tracker must not stop the run
+                    log.exception("tracker %s failed on %s", tr.name, url)
+                    res = tr._error(url, rt.tracker_state.get(url), f"{type(exc).__name__}: {exc}")
+                if res.error:
+                    top.error(res.error)
             if s.force:
                 res.state.last_forced, res.state.forced_runs = utcnow(), res.state.forced_runs + 1
             rt.tracker_state[url] = res.state
@@ -407,12 +415,17 @@ def make_nodes(rt: Runtime):
                     out["config_changes"] += [c.model_dump() for c in changes]
                     for c in changes:
                         rt.append(p.changes, c.model_dump_json() + "\n")
-            if not f.applied:
+            if f.applied:
+                telemetry.record_finding("auto_applied")
+            else:
+                telemetry.record_finding("needs_review")       # low confidence, no link, --no-auto-apply, or a dry run: a human decides
                 _remember_pending(rt, f)
         persist_config(rt, touched)
         if touched:
             rt.entries, _ = parse_entries(rt.raw)
         # resolved pending items drop out
+        resolved = [x for x in rt.pending if _pending_resolved(rt, x)]
+        telemetry.record_finding("human_resolved", len(resolved))      # a person edited the configuration since the finding was made
         rt.pending = [x for x in rt.pending if not _pending_resolved(rt, x)]
         return out
 
@@ -428,11 +441,14 @@ def make_nodes(rt: Runtime):
                 labels.setdefault(url, label)
         out: AgentState = {"doc_actions": [], "errors": []}
         for url, keys in urls.items():
-            try:
-                act = _sync_one(rt, url, keys, labels[url])
-            except Exception as exc:
-                log.exception("sync failed for %s", url)
-                act = DocAction(url=url, entries=keys, action="error", detail=f"{type(exc).__name__}: {exc}")
+            with telemetry.op("sync_doc", **{"http.url": url.split("?")[0][:200], "cogent.entries": ",".join(keys)}) as dop:
+                try:
+                    act = _sync_one(rt, url, keys, labels[url])
+                except Exception as exc:
+                    log.exception("sync failed for %s", url)
+                    act = DocAction(url=url, entries=keys, action="error", detail=f"{type(exc).__name__}: {exc}")
+                if act.action == "error":
+                    dop.error(act.detail)
             if s.force:
                 act.forced = True
                 _stamp_forced(rt, act)
@@ -455,12 +471,14 @@ def make_nodes(rt: Runtime):
         for e in rt.entries:
             if not rt.selected(e):
                 continue
-            try:
-                out["entry_actions"].append(_assemble_one(rt, e, names, changed_urls).model_dump())
-            except Exception as exc:
-                log.exception("assemble failed for %s", e.key)
-                out["entry_actions"].append(EntryAction(entry=e.key, action="error", detail=str(exc)).model_dump())
-                out["errors"].append(f"entry {e.key}: {exc}")
+            with telemetry.op("assemble_entry", **{"cogent.entry": e.key}) as aop:
+                try:
+                    out["entry_actions"].append(_assemble_one(rt, e, names, changed_urls).model_dump())
+                except Exception as exc:
+                    log.exception("assemble failed for %s", e.key)
+                    out["entry_actions"].append(EntryAction(entry=e.key, action="error", detail=str(exc)).model_dump())
+                    out["errors"].append(f"entry {e.key}: {exc}")
+                    aop.error(str(exc))
         return out
 
     # 5b ------------------------------------------------------- version tracking
@@ -538,7 +556,10 @@ def make_nodes(rt: Runtime):
         rt.write_json(p.state / "pending.json", rt.pending)
         state["orphans"] = _track_orphans(rt, state)
         if s.tables:
-            state["tabledb"] = _run_tabledb(rt, state)
+            with telemetry.op("tabledb_build") as tdop:
+                state["tabledb"] = _run_tabledb(rt, state)
+                if (state["tabledb"] or {}).get("error"):
+                    tdop.error(state["tabledb"]["error"])
         summary = summarize(state)
         narrative = narrate(rt, state, summary)
         text = render_report(rt, state, summary, narrative)
@@ -554,12 +575,21 @@ def make_nodes(rt: Runtime):
     return init, track, apply, sync_docs, assemble, versions, combine, alerts, finalize
 
 
+def _traced(name: str, fn):
+    """Run a workflow step inside the span ``agent.step <name>`` and time it (``cogent_agent_step_duration_seconds{step}``)."""
+    @functools.wraps(fn)
+    def inner(state):
+        with telemetry.step(name):
+            return fn(state)
+    return inner
+
+
 def build_workflow(rt: Runtime):
     nodes = make_nodes(rt)
     wf = StateGraph(AgentState)
     names = ("init", "track", "apply", "sync_docs", "assemble", "versions", "combine", "alerts", "finalize")
     for n, fn in zip(names, nodes):
-        wf.add_node(n, fn)
+        wf.add_node(n, _traced(n, fn))
     wf.set_entry_point("init")
     for a, b in zip(names, names[1:]):
         wf.add_edge(a, b)
@@ -1508,12 +1538,22 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
 def run_once(settings: Settings, llm: Any = None) -> AgentState:
     """Run the whole agent once and return the final LangGraph state."""
     rt = Runtime(settings, llm)
-    try:
-        final = build_workflow(rt).invoke({})
-    except BaseException:
-        if not rt.dry and rt.p.lock.exists():
-            rt.p.lock.unlink()
-        raise
+    telemetry.init("cogent-agent", settings.otlp_endpoint, settings.trace_console)
+    with telemetry.Run(settings.home, rt.run_id, settings.pushgateway) as mrun, \
+            telemetry.span("agent.run", parent=telemetry.env_context(), **{"cogent.run_id": rt.run_id, "cogent.forced": settings.force, "cogent.dry_run": rt.dry,
+                                                                             "cogent.only": ",".join(settings.only)}) as sp:
+        try:
+            final = build_workflow(rt).invoke({})
+        except BaseException:
+            if not rt.dry and rt.p.lock.exists():
+                rt.p.lock.unlink()
+            if not rt.dry:
+                mrun.commit(False, 1)
+            raise
+        errors = int((final.get("summary") or {}).get("errors") or 0)
+        sp.set_attribute("cogent.errors", errors)
+        if not rt.dry:                                                # a dry run writes nothing, metrics included
+            final["metrics"] = mrun.commit(errors == 0, errors)
     if settings.publish_snapshot and not rt.dry:                 # scale-out: other servers pull this bundle (never fails the run)
         try:
             import kg_snapshot
@@ -1703,6 +1743,11 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("-v", "--verbose", action="store_true")
     r = sub.add_parser("run", parents=[common], help="run once")
     r.add_argument("--dry-run", action="store_true", help="check only; write nothing, print the report")
+    r.add_argument("--otlp-endpoint", default=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"), metavar="URL", help="send OpenTelemetry traces to this OTLP/HTTP endpoint "
+                   "(needs opentelemetry-sdk and opentelemetry-exporter-otlp-proto-http); see docs/observability.md")
+    r.add_argument("--trace-console", action="store_true", help="print the trace spans of the run")
+    r.add_argument("--pushgateway", default=os.environ.get("COGENT_PUSHGATEWAY"), metavar="URL", help="push this run's metrics to a Prometheus Pushgateway "
+                   "(they are always written to <home>/metrics/ as well)")
     r.add_argument("--publish-snapshot", metavar="DIR", help="after the run, write a bundle of the agent home to DIR (a shared mount or a folder served over HTTP) "
                    "for other MCP servers to pull with kg_snapshot.py; see docs/scaling.md")
     r.add_argument("--snapshot-keep", type=int, default=5, help="bundles kept in DIR")
@@ -1751,7 +1796,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
                  force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False),
-                 publish_snapshot=getattr(a, "publish_snapshot", None), snapshot_keep=getattr(a, "snapshot_keep", 5),
+                 publish_snapshot=getattr(a, "publish_snapshot", None), otlp_endpoint=getattr(a, "otlp_endpoint", None),
+                 trace_console=getattr(a, "trace_console", False), pushgateway=getattr(a, "pushgateway", None), snapshot_keep=getattr(a, "snapshot_keep", 5),
                  tables=getattr(a, "tables", False), tabledb_dsn=getattr(a, "tabledb_dsn", None), tabledb_schema=getattr(a, "tabledb_schema", "kgtables"),
                  embedder=getattr(a, "embedder", "ollama"), embed_model=getattr(a, "embed_model", None), kg_context=not getattr(a, "no_kg_context", False),
                  row_mode=getattr(a, "row_mode", "full"), llm_joins=getattr(a, "llm_joins", False), join_model=getattr(a, "join_model", None),

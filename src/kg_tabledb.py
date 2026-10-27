@@ -41,6 +41,7 @@ import networkx as nx
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kg_llmjoin as L  # noqa: E402
 import kg_relmap as R  # noqa: E402
+import kg_telemetry as telemetry  # noqa: E402
 import kg_tables as K  # noqa: E402
 import kg_units as U  # noqa: E402
 from kg_embed import Embedder, EmbedError, get_embedder  # noqa: E402
@@ -727,9 +728,10 @@ class Agent:
                         conn.commit()
                         out["skipped"].append({"table_id": src.table_id, "reason": "unchanged"})
                         continue
-                    self.embed(rec)
-                    db.load_table(conn, rec, dim)
-                    conn.commit()
+                    with telemetry.op("tabledb_load_table", **{"cogent.table": src.table_id, "cogent.rows": len(rec.rows)}):
+                        self.embed(rec)
+                        db.load_table(conn, rec, dim)
+                        conn.commit()
                     out["docs_changed"].add(src.docid)
                     out["loaded"].append({"table_id": src.table_id, "rows": len(rec.rows), "cols": len(rec.cols), "caption": rec.ctx.caption[:80],
                                           "action": "reloaded" if old else "created"})
@@ -777,8 +779,9 @@ class Agent:
                     if docid not in changed and prev_sig == sig and not s.force:
                         continue
                     tables = [R.T(r.table_id, r.src.asset_id, r.cols, r.rows, r.ctx) for r in recs]
-                    det = R.infer(tables)
-                    ev = L.evaluate(tables, det, s.llm, s.judge_llm, s.llm_cfg)
+                    with telemetry.op("join_inference", **{"cogent.docid": docid, "cogent.tables": len(tables), "cogent.llm": s.llm is not None}):
+                        det = R.infer(tables)
+                        ev = L.evaluate(tables, det, s.llm, s.judge_llm, s.llm_cfg)
                     cands = ev["candidates"]
                     rels = L.candidates_to_relations(L.select(cands, "hybrid")) + [r for r in det if r["kind"] == "same_schema"]
                     url = srcs[0].url

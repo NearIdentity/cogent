@@ -1,0 +1,18 @@
+groups:
+  - name: cogent
+    rules:
+      # The one alert: more than a quarter of the agent's operations failed over the last 24 hours.
+      # An operation is a fetch of one document, one tracker page, one entry rebuild, one table load, one join inference ...
+      # (cogent_agent_operations_total{outcome="error"}); a source that is down, a blocked site or a broken parser shows up here.
+      - alert: CogentAgentFailureRateHigh
+        expr: |
+          (sum(increase(cogent_agent_operations_total{outcome="error"}[24h])) or vector(0))
+            / clamp_min(sum(increase(cogent_agent_operations_total[24h])), 1) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cogent agent: {{ $value | humanizePercentage }} of operations failed in the last 24 h"
+          description: >-
+            More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard "cogent: agent and MCP server",
+            at the report (logs/report.md) and at <home>/logs/metrics.jsonl for the last run.

@@ -1,0 +1,41 @@
+# promtool test rules deploy/observability/prometheus/alerts_test.yml   (run from deploy/observability/prometheus)
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  # healthy: 100 operations a day, 5 of them failing -> 5 %
+  - interval: 1h
+    input_series:
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="ok"}'
+        values: "0+4x30"
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="error"}'
+        values: "0+0.2x30"
+    alert_rule_test:
+      - eval_time: 29h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts: []
+  # a bad stretch: half of the operations fail for hours -> the alert is pending, then firing after the 5 minute hold
+  - interval: 1h
+    input_series:
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="ok"}'
+        values: "0+4x10 40+1x20"
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="error"}'
+        values: "0+0.2x10 2+6x20"
+    alert_rule_test:
+      - eval_time: 16h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "cogent agent: 41.56% of operations failed in the last 24 h"
+              description: "More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard \"cogent: agent and MCP server\", at the report (logs/report.md) and at <home>/logs/metrics.jsonl for the last run."
+  # no data at all (agent never ran): no alert
+  - interval: 1h
+    input_series:
+      - series: 'up{job="cogent"}'
+        values: "1x30"
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts: []

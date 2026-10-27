@@ -16,7 +16,7 @@ the same files. A destination holds ``cogent-snapshot-<UTC>-<sha8>.tar.gz`` bund
 so a server started with ``--home <link>`` never sees a half-written tree (it re-reads a graph when its file changes). Older snapshots are pruned.
 
 What goes in: ``staging/`` (graphs, metadata, exported tables and figures, the combined graph), ``tabledb/`` (data dictionaries, relationship maps),
-``state/alerts.json``, ``logs/runs.jsonl`` and the two configuration files. What never goes in: ``local/`` (purchased copies), ``archive/``, ``mcp/`` (tokens,
+``state/alerts.json``, ``logs/runs.jsonl``, the agent's ``metrics/`` and the two configuration files. What never goes in: ``local/`` (purchased copies), ``archive/``, ``mcp/`` (tokens,
 OAuth state), other logs and lock files. The bundle contains the staged text of paywalled documents: publish it only to places where the server itself may run.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ log = logging.getLogger("kg_snapshot")
 LATEST = "latest.json"
 PREFIX = "cogent-snapshot-"
 CONFIG_DIR = "config"
-INCLUDE = ("staging", "tabledb", "state/alerts.json", "logs/runs.jsonl")
+INCLUDE = ("staging", "tabledb", "state/alerts.json", "logs/runs.jsonl", "metrics/agent_metrics.json", "metrics/cogent_agent.prom")
 
 
 def _utc() -> str:

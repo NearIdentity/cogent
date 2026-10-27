@@ -1,0 +1,48 @@
+# Prometheus + Grafana (+ optional Jaeger for traces) for the cogent agent and MCP server. See docs/observability.md.
+#   cp deploy/observability/env.example deploy/observability/.env                  # set GRAFANA_ADMIN_PASSWORD
+#   python3 src/kg_mcp.py --home kg_agent_home token create --name prometheus      # then put the token in deploy/observability/prometheus/mcp_token
+#   docker compose -f deploy/observability/docker-compose.observability.yml up -d  # add --profile traces for Jaeger
+# Grafana: http://127.0.0.1:3000 (user admin), Prometheus: http://127.0.0.1:9090. Both use the host network and listen on loopback, because the MCP
+# server listens on 127.0.0.1:8765 and must be started with --metrics. Put a reverse proxy / tunnel in front of Grafana to share it.
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+      - --web.listen-address=127.0.0.1:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/mcp_token:/etc/prometheus/mcp_token:ro
+      - prometheus_data:/prometheus
+  grafana:
+    image: grafana/grafana:11.3.0
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/observability/.env}
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+  # Traces (optional): docker compose ... --profile traces up -d, then run the agent / server with --otlp-endpoint http://127.0.0.1:4318
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    profiles: [traces]
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"   # UI
+      - "127.0.0.1:4318:4318"     # OTLP/HTTP
+volumes:
+  prometheus_data: {}
+  grafana_data: {}

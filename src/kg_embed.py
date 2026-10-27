@@ -19,6 +19,8 @@ from typing import Optional, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import kg_telemetry as telemetry
+
 log = logging.getLogger("kg_embed")
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
@@ -113,23 +115,35 @@ class OllamaEmbedder(Embedder):
     def _call(self, texts: list[str]) -> list[list[float]]:
         texts = [t[:MAX_CHARS] or " " for t in texts]
         last: Exception = EmbedError("no attempt")
-        for attempt in range(self.retries):
-            try:
+        t0 = time.perf_counter()
+        with telemetry.span("embed", **{"gen_ai.system": "ollama", "gen_ai.request.model": self.model, "gen_ai.operation.name": "embeddings",
+                                        "cogent.embed.texts": len(texts)}) as sp:
+            for attempt in range(self.retries):
+                if attempt:
+                    telemetry.record_retry("embed")
+                    sp.add_event("retry", {"attempt": attempt})
                 try:
-                    out = self._post("/api/embed", {"model": self.model, "input": texts, "truncate": True})["embeddings"]
-                except HTTPError as exc:
-                    if exc.code != 404:
-                        raise
-                    out = [self._post("/api/embeddings", {"model": self.model, "prompt": t})["embedding"] for t in texts]
-                if len(out) != len(texts):
-                    raise EmbedError(f"expected {len(texts)} embeddings, got {len(out)}")
-                return [_normalise(v) for v in out]
-            except (URLError, HTTPError, TimeoutError, ConnectionError, KeyError, ValueError, EmbedError) as exc:
-                last = exc
-                log.warning("ollama embed attempt %d/%d failed: %s", attempt + 1, self.retries, exc)
-                time.sleep(min(2.0 ** attempt, 8.0))
-        raise EmbedError(f"Ollama at {self.host} (model {self.model}) did not return embeddings: {last}. "
-                         f"Is it running and is the model pulled (ollama pull {self.model})?")
+                    tokens = 0
+                    try:
+                        resp = self._post("/api/embed", {"model": self.model, "input": texts, "truncate": True})
+                        out, tokens = resp["embeddings"], int(resp.get("prompt_eval_count") or 0)
+                    except HTTPError as exc:
+                        if exc.code != 404:
+                            raise
+                        out = [self._post("/api/embeddings", {"model": self.model, "prompt": t})["embedding"] for t in texts]
+                    if len(out) != len(texts):
+                        raise EmbedError(f"expected {len(texts)} embeddings, got {len(out)}")
+                    sp.set_attribute("gen_ai.usage.input_tokens", tokens)
+                    telemetry.record_llm(self.model, "embed", tokens, 0, time.perf_counter() - t0, "ok")
+                    return [_normalise(v) for v in out]
+                except (URLError, HTTPError, TimeoutError, ConnectionError, KeyError, ValueError, EmbedError) as exc:
+                    last = exc
+                    log.warning("ollama embed attempt %d/%d failed: %s", attempt + 1, self.retries, exc)
+                    time.sleep(min(2.0 ** attempt, 8.0))
+            telemetry.record_llm(self.model, "embed", 0, 0, time.perf_counter() - t0, "error")
+            telemetry.record_failure("embed")
+            raise EmbedError(f"Ollama at {self.host} (model {self.model}) did not return embeddings: {last}. "
+                             f"Is it running and is the model pulled (ollama pull {self.model})?")
 
     def embed_docs(self, texts):
         out: list[list[float]] = []
