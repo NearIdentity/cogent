@@ -486,7 +486,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | `KG_USER_AGENT`, `KG_BROWSER_PATH` | override the browser identity / Chromium executable |
 | `KG_PDF_ENGINE` | `auto` (default), `layout`, `basic` |
 | `KG_OCR`, `KG_OCR_ENGINE`, `KG_OCR_LANG`, `KG_OCR_DPI` | OCR mode / engine / language / render resolution (default 200) |
-| `COGENT_LOOKUP_MIN_SIMILARITY` | MCP server: with a value above 0, `lookup_values` calls its result `no_confident_match` when even the best row is less similar than this (default 0 = off; calibrate against your embedder) |
+| `COGENT_LOOKUP_MIN_SIMILARITY` | MCP server: a server-wide minimum for the `min_similarity` preference (0..1; profile `strict` sets 0.70). With a value above 0, `lookup_values` calls its result `no_confident_match` when even the best row is less similar than this (default 0 = off; calibrate against your embedder) |
 | `KG_TABLE_CHECK` | `off` keeps every detected table; default `on` demotes two-column prose and sentence lists to paragraphs (see docs/tabledb.md) |
 | `KG_OUTPUT_DIR`, `KG_ASSETS_DIR` | default folders for saved KGs (`kg_store`) and exported figures/tables (`kg_assets`) |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server (default `http://localhost:11434`) and model (default `llama3.1`) |

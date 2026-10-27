@@ -21,6 +21,7 @@ include_rejected  bool                                                  also lis
 min_agreement  0..1                                                     LLM approach: share of suggestion runs that proposed it
 units          strict | broad | off                                     narrow (explicit + declared) vs diverse (inferred) unit deduction
 retrieval      semantic | lexical | hybrid                              how lookup_values / search_tables match the question
+min_similarity 0..1                                                     lookup_values: below this the best row is only a nearest neighbour (0 = off)
 =============  =======================================================  ====================================================
 
 Resolution order, last wins: server default (profile ``balanced``) < the session's saved preferences < a ``profile`` named in the
@@ -55,9 +56,13 @@ DISCLAIMER = ("Tables were extracted automatically from the source documents; ce
 RETRIEVAL = ("semantic", "lexical", "hybrid")
 
 # ---- is the answer to a lookup about what was asked? (nearest-neighbour search always returns rows, however unrelated)
-_CODE_A = re.compile(r"\b[A-Za-z]{1,6}-?\d[\w.\-]*")                                   # A572, SA-516, SDC-1, NQA-1, SSE2
-_CODE_B = re.compile(r"\b(?:RG|NEI|NUREG(?:/CR)?|DOE-STD|ANSI|ANS|ASCE|ASME|ASTM|AISC|ACI|IEEE|ISO|API|AWS)[\s-]*(\d[\w.\-]*)", re.I)   # RG 1.233, ANS-2.26
-_NOT_CODES = re.compile(r"^(?:m|mm|cm|km|ft|in|kg|lb|psi|ksi|hz|g|s|h|c|f|k)\d$|^(?:h2o|co2|o2|n2|u235|u238|pu239)$", re.I)
+_CODE_A = re.compile(r"\b[A-Za-z]{1,4}-?\d[\w.\-]*")                                   # A572, SA-516, Cs-137, SDC-1, NQA-1, SSE2
+_CODE_B = re.compile(r"\b(?:RG|NEI|NUREG(?:/CR)?|DOE-STD|ANSI|ANS|ASCE|ASME|ASTM|AISC|ACI|IEEE|ISO|API|AWS|RA-S)[\s-]*(\d[\w.\-]*)", re.I)   # RG 1.233, ANS-2.26, RA-S-1.4
+_NOT_CODES = re.compile(r"^(?:m|mm|cm|km|ft|in|kg|lb|psi|ksi|hz|g|s|h|c|f|k)\d$|^(?:h2o|co2|o2|n2)$", re.I)       # units and molecules; nuclides (U235, Pu239) are subjects
+_FAMILY_PREFIX = re.compile(r"(?:rg|nei|nureg|ans|ansi|asce|asme|astm|aisc|aci|ieee|iso|api|aws|doe|ra)[-\d]", re.I)
+# labels of a category or qualifier ('HC-3', 'SDC-2'): tables rarely spell them this way ('Hazard Category 3'), so they rank rows but never gate them
+_CATEGORY = re.compile(r"^(?:hc|sdc|ndc|fdc|pdc|wdc|vdc|ldc|edc|risc|ql)-?\d+$", re.I)
+_EXPAND = {"hc": "hazard category", "sdc": "seismic design category", "risc": "risk informed safety class"}
 
 
 def _norm(s: Any) -> str:
@@ -65,54 +70,105 @@ def _norm(s: Any) -> str:
 
 
 def code_tokens(question: str) -> list[str]:
-    """Identifier-like terms of a question that a relevant table must contain literally ('A572', 'SA-516', 'RG 1.233' -> its number)."""
+    """Identifier-like terms of a question that a relevant table should contain literally ('A572', 'SA-516', 'Cs-137', 'HC-3', 'RG 1.233' -> its number)."""
     out: list[str] = []
+    spans = []
     for m in _CODE_B.finditer(question):
         out.append(m.group(1))
+        spans.append(m.span())
     for m in _CODE_A.finditer(question):
         t = m.group(0).rstrip(".-")
-        if not _NOT_CODES.match(t) and not re.match(r"(?:rg|nei|nureg|ans|ansi|asce|asme|astm|aisc|aci|ieee|iso|api|aws|doe)[-\d]", t, re.I):
+        if any(m.start() < b and m.end() > a for a, b in spans):                 # already read as part of 'RA-S-1.4', 'RG 1.233'
+            continue
+        if not _NOT_CODES.match(t) and not _FAMILY_PREFIX.match(t):
             out.append(t)
     seen, res = set(), []
     for t in out:
         n = _norm(t)
-        if len(n) >= 3 and n not in seen:
+        if (len(n) >= 3 or (len(n) >= 2 and "." in t)) and n not in seen:
             seen.add(n)
             res.append(t)
     return res
 
 
+def split_tokens(question: str) -> tuple[list[str], list[str]]:
+    """(subject identifiers, category labels): A572, Cs-137, RG 1.233 name what is asked about; HC-3, SDC-2 only qualify it."""
+    toks = code_tokens(question)
+    return [t for t in toks if not _CATEGORY.match(t)], [t for t in toks if _CATEGORY.match(t)]
+
+
+def _needles(token: str) -> list[str]:
+    """What to look for in a normalised field: the token itself and, for a category label, its spelled-out form ('HC-3' -> 'hazardcategory3')."""
+    n = [_norm(token)]
+    m = re.match(r"^([A-Za-z]+)-?(\d+)$", token)
+    if m and m.group(1).lower() in _EXPAND:
+        n.append(_norm(_EXPAND[m.group(1).lower()]) + m.group(2))
+    return n
+
+
+def _fields(r: dict[str, Any]) -> list[str]:
+    """The texts of a row (lower-cased), each on its own, so that neighbouring cells can never join into a false hit."""
+    t = r.get("table") or {}
+    src = t.get("source") or {}
+    raw = [t.get("caption"), src.get("section"), src.get("document")] + [x for k, v in (r.get("values") or {}).items() for x in (k, v)]
+    return [str(x).lower() for x in raw if x and str(x).strip()]
+
+
+def _is_bare_number(token: str) -> bool:
+    """'1.4' (from RA-S-1.4), '1.233' (RG), '18-04' (NEI), '1271-2025': the number of a document without its family name."""
+    return bool(re.match(r"^\d", token))
+
+
+def _in_fields(token: str, fields: list[str]) -> bool:
+    """Does ``token`` occur in one of the (lower-cased) fields? A bare document number only counts as a whole token ('1.4' is not '140', '2014' or '1.40'),
+    anything else as a substring once punctuation and spaces are ignored ('A572' = 'A-572' = 'ASTM A 572')."""
+    if _is_bare_number(token):
+        rx = re.compile(r"(?<![\w.])(?<!\d-)" + re.escape(token.lower()) + r"(?![\w]|\.\d)")
+        return any(rx.search(f) for f in fields)
+    need = _needles(token)
+    return any(n in _norm(f) for n in need for f in fields)
+
+
 def assess_lookup(question: str, rows: list[dict[str, Any]], min_similarity: float = 0.0) -> dict[str, Any]:
     """Judge a lookup's rows against the question. ``rows`` need ``values`` and ``table`` (caption, source.section/document).
 
-    * the question names identifiers (A572, RG 1.233): a row counts only when every one occurs in its cells, column names, caption or section;
-      no such row = ``no_confident_match`` and all rows are demoted to ``nearest_neighbours``
+    * the question names a subject identifier (A572, Cs-137, RG 1.233): a row counts when at least one occurs in one of its cells, column names, caption or
+      section (``lexical`` when every identifier of the question does, ``partial`` when some are missing, e.g. 'HC-3' where the table says 'Hazard Category 3');
+      rows with more matches come first. No such row = ``no_confident_match``, and all rows are demoted to ``nearest_neighbours``
     * otherwise, when ``min_similarity`` > 0 and even the best row is less similar than that: ``weak``
     * else ``semantic`` (nothing to check beyond the ranking).
     """
-    toks = code_tokens(question)
-    if toks:
-        want = [_norm(t) for t in toks]
+    subjects, cats = split_tokens(question)
+    if subjects:
+        toks = subjects + cats
 
-        def hay(r: dict[str, Any]) -> str:
-            t, src = r.get("table") or {}, (r.get("table") or {}).get("source") or {}
-            vals = r.get("values") or {}
-            return _norm(" ".join([str(t.get("caption") or ""), str(src.get("section") or ""), str(src.get("document") or "")] + [f"{k} {v}" for k, v in vals.items()]))
+        def found(r: dict[str, Any]) -> list[str]:
+            fs = _fields(r)
+            return [t for t in toks if _in_fields(t, fs)]
 
-        hits = [r for r in rows if all(w in hay(r) for w in want)]
-        found = [t for t, w in zip(toks, want) if any(w in hay(r) for r in rows)]
+        got = [(r, found(r)) for r in rows]
+        hits = [(r, f) for r, f in got if any(t in f for t in subjects)]
+        hits.sort(key=lambda x: -len(x[1]))                                          # stable: most identifiers matched first, then the original ranking
+        matched = [t for t in toks if any(t in f for _, f in got)]
         if hits:
-            return {"match_quality": "lexical", "rows": hits, "nearest_neighbours": [r for r in rows if r not in hits], "matched_terms": found}
-        return {"match_quality": "none", "no_confident_match": True, "rows": [], "nearest_neighbours": rows, "matched_terms": found,
-                "missing_terms": [t for t in toks if t not in found] or toks,
-                "message": f"no table row mentions {', '.join(repr(t) for t in toks)}; the rows under 'nearest_neighbours' are only the closest by meaning and are "
+            best = hits[0][1]
+            miss = [t for t in toks if t not in best]
+            out = {"match_quality": "lexical" if not miss else "partial", "rows": [r for r, _ in hits], "nearest_neighbours": [r for r, f in got if (r, f) not in hits],
+                   "matched_terms": best}
+            if miss:
+                out["missing_terms"] = miss
+                out["message"] = (f"the best rows mention {', '.join(repr(t) for t in best)} but no row mentions {', '.join(repr(t) for t in miss)} literally "
+                                  "(a table may spell it out, e.g. 'Hazard Category 3'); check the row's table and caption before using the value.")
+            return out
+        return {"match_quality": "none", "no_confident_match": True, "rows": [], "nearest_neighbours": rows, "matched_terms": matched,
+                "missing_terms": subjects,
+                "message": f"no table row mentions {', '.join(repr(t) for t in subjects)}; the rows under 'nearest_neighbours' are only the closest by meaning and are "
                            "probably about something else. Do not present them as an answer; try search_tables, other wording, or say the value was not found."}
-    best = max((r.get("similarity") or 0.0 for r in rows), default=0.0)
-    if rows and min_similarity > 0 and best < min_similarity:
+    best_sim = max((r.get("similarity") or 0.0 for r in rows), default=0.0)
+    if rows and min_similarity > 0 and best_sim < min_similarity:
         return {"match_quality": "weak", "no_confident_match": True, "rows": [], "nearest_neighbours": rows,
-                "message": f"the best row has similarity {best:.2f}, below the confidence floor {min_similarity:.2f}; the rows under 'nearest_neighbours' are only the closest by meaning."}
+                "message": f"the best row has similarity {best_sim:.2f}, below the confidence floor {min_similarity:.2f}; the rows under 'nearest_neighbours' are only the closest by meaning."}
     return {"match_quality": "semantic", "rows": rows, "nearest_neighbours": []}
-
 
 
 @dataclass
@@ -124,6 +180,7 @@ class Prefs:
     min_agreement: float = 0.0
     units: str = "strict"
     retrieval: str = "semantic"
+    min_similarity: float = 0.0
 
     def validate(self) -> "Prefs":
         if self.approach not in L.APPROACHES:
@@ -132,12 +189,12 @@ class Prefs:
             raise NotFound(f"units must be one of {U.MODES}")
         if self.retrieval not in RETRIEVAL:
             raise NotFound(f"retrieval must be one of {RETRIEVAL}")
-        if not 0 <= self.min_score <= 1 or not 0 <= self.min_agreement <= 1:
-            raise NotFound("min_score and min_agreement must be between 0 and 1")
+        if not 0 <= self.min_score <= 1 or not 0 <= self.min_agreement <= 1 or not 0 <= self.min_similarity <= 1:
+            raise NotFound("min_score, min_agreement and min_similarity must be between 0 and 1")
         return self
 
 
-FIELDS = ("approach", "min_score", "include_rejected", "min_agreement", "units", "retrieval")
+FIELDS = ("approach", "min_score", "include_rejected", "min_agreement", "units", "retrieval", "min_similarity")
 
 
 def _overlay(base: dict[str, Any], profile: Optional[str], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -205,6 +262,7 @@ class TableService:
                           "broad": "diverse: also units mentioned in the section, KG entities, the document's dominant unit and the customary unit of the quantity, flagged inferred, with alternatives",
                           "off": "no deduced unit: only what the header or the cells say explicitly"},
                 "retrieval": {"semantic": "vector similarity", "lexical": "full-text match (exact words and codes)", "hybrid": "both, fused by reciprocal rank"},
+                "min_similarity": "lookup_values: when even the best row is less similar than this, the answer is flagged no_confident_match and the rows are returned as nearest_neighbours (0 = off)",
                 "llm_inference_on_request": bool(self.llm_model)}
 
     # ------------------------------------------------------------------------------------------------ plumbing
@@ -425,9 +483,9 @@ class TableService:
             units = self._row_units(c, {t: [] for t in hit_tables}, prefs) if prefs.units != "off" or hit_tables else {}
             rows = [{**h, "table": {k2: tabs[h["table_id"]][k2] for k2 in ("caption", "source", "paywalled")}, **units.get(h["table_id"], {})} for h in res["rows"] if h["table_id"] in tabs]
             try:
-                floor = float(os.environ.get("COGENT_LOOKUP_MIN_SIMILARITY", "0") or 0)
+                floor = max(prefs.min_similarity, float(os.environ.get("COGENT_LOOKUP_MIN_SIMILARITY", "0") or 0))
             except ValueError:
-                floor = 0.0
+                floor = prefs.min_similarity
             judged = assess_lookup(question, rows, floor)
             extra = {k: judged[k] for k in ("match_quality", "no_confident_match", "message", "matched_terms", "missing_terms") if k in judged}
             if judged["nearest_neighbours"]:

@@ -554,12 +554,12 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
     def set_session_preferences(ctx: Context, profile: Optional[str] = None, approach: Optional[Literal["deterministic", "llm", "hybrid", "consensus"]] = None,
                                 min_score: Optional[float] = None, include_rejected: Optional[bool] = None, min_agreement: Optional[float] = None,
                                 units: Optional[Literal["strict", "broad", "off"]] = None, retrieval: Optional[Literal["semantic", "lexical", "hybrid"]] = None,
-                                session_id: Optional[str] = None) -> dict[str, Any]:
+                                min_similarity: Optional[float] = None, session_id: Optional[str] = None) -> dict[str, Any]:
         """Set how join inference, unit deduction and retrieval behave for the rest of this session (saved server-side for 8 hours, in memory).
         Start from a `profile` and/or set options individually; every later tool call can still override them (arguments of the call, or a
         `profile` named in the call). Pass a stable `session_id` if several conversations share one token. Does not change any stored data."""
         out = svc.set_session(skey(ctx, session_id), profile, approach=approach, min_score=min_score, include_rejected=include_rejected,
-                              min_agreement=min_agreement, units=units, retrieval=retrieval)
+                              min_agreement=min_agreement, units=units, retrieval=retrieval, min_similarity=min_similarity)
         if not session_id:
             out["warning"] = ("saved for every conversation that uses this token without a session_id (key '%s'); pass a unique session_id here and in later "
                               "calls to keep this conversation's settings separate, or run the server with --stateful" % out["session"])
@@ -693,11 +693,12 @@ def create_server(store: Store, *, host: str = "127.0.0.1", port: int = 8765, pu
         @_tool_errors
         def lookup_values(ctx: Context, question: str, ref: Optional[str] = None, table_ids: Optional[list[str]] = None, k: int = 10, candidate_tables: int = 5,
                           retrieval: Optional[Literal["semantic", "lexical", "hybrid"]] = None, units: Optional[Literal["strict", "broad", "off"]] = None,
-                          profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
+                          min_similarity: Optional[float] = None, profile: Optional[str] = None, session_id: Optional[str] = None) -> dict[str, Any]:
             """Look up design values / parameters in the tables: finds the best tables, then the best rows (rows are embedded whole, numbers included),
             and returns them with their original cell text, source document, page, caption and the units of the numeric columns (per `units`: strict
-            = narrow, broad = diverse with inference notes, off). Use query_table for exact filters."""
-            return tables.lookup_values(question, ref, table_ids, k, candidate_tables, prefs_for(ctx, session_id, profile, retrieval=retrieval, units=units))
+            = narrow, broad = diverse with inference notes, off). If the question names an identifier (A572, Cs-137) that no row contains, the result says
+            no_confident_match and returns the closest rows only as nearest_neighbours; `min_similarity` (0..1) adds a similarity floor. Use query_table for exact filters."""
+            return tables.lookup_values(question, ref, table_ids, k, candidate_tables, prefs_for(ctx, session_id, profile, retrieval=retrieval, units=units, min_similarity=min_similarity))
 
         @mcp.tool(annotations=RO)
         @_tool_errors

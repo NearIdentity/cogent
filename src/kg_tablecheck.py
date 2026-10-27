@@ -168,7 +168,8 @@ _ACRONYM = re.compile(r"^[A-Z][A-Za-z0-9&/\-]{1,9}$")
 
 _STORE_HEAD = {"price", "item number", "sku", "add to cart", "list price", "member price"}
 _STORE_CELL = re.compile(r"add to (?:cart|basket)|\bcheckout\b|\bin stock\b|\bsign in to (?:buy|purchase)\b|\bbuy now\b", re.I)
-_INDEX_NAME = re.compile(r"\b(?:subject|numerical|alphabetical|keyword|author|interpretations?|general)\s+index\b|^\s*index\b|\bindex of interpretations\b", re.I)
+_INDEX_NAME = re.compile(r"^\s*(?:(?:subject|numerical|alphabetical|keyword|author|general|interpretations?)\s+)?index(?:\s+of\s+interpretations)?(?:\s*\(continued\))?\s*$", re.I)
+_SECTION_NUM = re.compile(r"^\s*(?:\d+(?:\.\d+)*|[A-Z])[.)]?\s+")
 
 
 def front_matter(rows: list[list[str]], caption: str = "", section: str = "") -> Optional[str]:
@@ -182,7 +183,8 @@ def front_matter(rows: list[list[str]], caption: str = "", section: str = "") ->
         if (len(head & _STORE_HEAD) >= 2 or any(_STORE_CELL.search(c) for r in rows for c in r)
                 or (head == {"quantity", "item"} and len(rows) <= 8 and not _CAPTION.match(caption or ""))):
             return "store"
-        if _INDEX_NAME.search(caption or "") or _INDEX_NAME.search(section.split(" > ")[-1] if section else ""):
+        last = _SECTION_NUM.sub("", section.split(" > ")[-1]) if section else ""
+        if not _CAPTION.match(caption or "") and (_INDEX_NAME.match(caption or "") or _INDEX_NAME.match(last)):      # the title IS 'Subject Index'; 'Index Properties of Soils' is data
             return "index"
     if len(rows) < 4:
         return None
@@ -223,13 +225,37 @@ def demote_text(rows: list[list[str]]) -> str:
     return "\n\n".join(cols)
 
 
-def caption_fragment(caption: str) -> bool:
-    """A 'caption' that is really a piece of a header row ('| Millions', 'Rdilid | TABLE 1 Hazard Ca'): no 'Table N' label and too short to describe anything."""
+def _flat_norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def caption_fragment(caption: str, first_row: Optional[list[str]] = None) -> bool:
+    """A 'caption' that is really a piece of the header row ('| Millions', 'Rdilid | TABLE 1 Hazard Ca | -1: THRESHOL ...'): it starts or ends with a
+    column separator, has two or more inner separators (cells joined together), or is the start of the header row's own text. A short real caption
+    ('Damping Values') and anything labelled 'Table N' are not fragments."""
     c = (caption or "").strip()
     if not c or _CAPTION.match(c):
         return False
-    words = re.findall(r"[A-Za-z]{2,}", c)
-    return c.startswith("|") or c.endswith("|") or (len(words) <= 2 and len(c) < 16)
+    if c.startswith("|") or c.endswith("|") or c.count("|") >= 2:
+        return True
+    if first_row:
+        row, cap = _flat_norm(" ".join(x or "" for x in first_row)), _flat_norm(c)
+        if len(cap) >= 4 and row.startswith(cap):
+            return True
+    return False
+
+
+_LABEL_PAIR = re.compile(r"\bTABLE\s*([A-Z]?\d+)(?:[^|\n]{0,30}\|\s*|\s*)-\s*(\d+)\b", re.I)
+_LABEL_WHOLE = re.compile(r"\bTABLE\s*([A-Z]?\d+(?:[-.]\d+)+)\b", re.I)
+
+
+def recover_label(fragment: str) -> str:
+    """The 'Table N-M' label hidden in a garbled header-row fragment ('... | TABLE 1 Hazard Ca | -1: ...' -> 'Table 1-1'), or ''."""
+    m = _LABEL_WHOLE.search(fragment or "")
+    if m:
+        return f"Table {m.group(1)}"
+    m = _LABEL_PAIR.search(fragment or "")
+    return f"Table {m.group(1)}-{m.group(2)}" if m else ""
 
 
 def apply(elements: list, renumber=None) -> dict[str, int]:
@@ -246,8 +272,12 @@ def apply(elements: list, renumber=None) -> dict[str, int]:
         if e.kind != "table" or not e.table:
             continue
         section = " > ".join(t for _, t in stack if t)
-        if caption_fragment(e.caption) and stack:        # use the section heading instead of a header-row fragment
+        if caption_fragment(e.caption, e.table[0] if e.table else None) and stack:        # use the section heading instead of a header-row fragment
             frag, label = e.caption, stack[-1][1]
+            tag = recover_label(frag)                      # the 'Table 1-1' that the garbled caption still carries
+            if tag:
+                label = f"{tag} ({label})"
+                e.meta["recovered_label"] = tag
             if e.text == e.caption:
                 e.text = label
             e.caption = label

@@ -11,13 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Kind = Literal["standard", "report"]
 
-# Publishers that sell standards: a link on one of these hosts is a store/landing page,
-# not the document itself.
 # Version of the extraction recipe (parsers, identifier / relation / table heuristics in kg_ingest, kg_tablecheck, kg_layout, kg_predicates, kg_tools).
 # Every document KG is stamped with it. Bump it whenever a change alters what is extracted from the same source text: the agent then rebuilds every
 # document KG that was built with an older recipe (once, even though its text is unchanged), and the table database follows because the CSVs change.
-EXTRACTION_RECIPE = "9"
+EXTRACTION_RECIPE = "10"
 
+# Publishers that sell standards: a link on one of these hosts is a store/landing page,
+# not the document itself.
 PAYWALL_HOSTS = ("ascelibrary.org", "pubs.asce.org", "sp360.asce.org", "webstore.ansi.org",
                  "asme.org", "store.accuristech.com", "ans.org")
 
