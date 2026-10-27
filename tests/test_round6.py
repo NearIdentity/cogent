@@ -429,3 +429,34 @@ def test_conflicting_scopes_for_one_url_are_reported(env):
     sp.write_text(json.dumps(cfg))
     st = kg_agent.run_once(s)
     assert "disagree about its scope" in st["report"] or any("disagree about its scope" in e for e in st["summary"].get("error_messages", []))
+
+
+# ------------------------------------------------------------------ PR 10 review follow-ups
+def test_bare_document_numbers_match_whole_tokens_only():
+    """N1: 'RA-S-1.4' is reduced to '1.4'; '140', '2014' and '1.40' must not match it, '1.9' must not match '19.5'."""
+    for cell in ("140", "2014", "1.40", "1.4.2.1"):
+        assert TS.assess_lookup("RA-S-1.4 requirements", [_row("Table 1", "s", v=cell)])["match_quality"] == "none", cell
+    for cell in ("RA-S-1.4", "ASME/ANS RA-S-1.4-2013", "section 1.4"):
+        assert TS.assess_lookup("RA-S-1.4 requirements", [_row("Table 1", "s", v=cell)])["match_quality"] == "lexical", cell
+    assert TS.assess_lookup("RG 1.9 requirements", [_row("Table 1", "s", v="19.5")])["match_quality"] == "none"
+    assert TS.assess_lookup("RG 1.9 requirements", [_row("Table 1", "s", v="Regulatory Guide 1.9")])["match_quality"] == "lexical"
+    assert TS.assess_lookup("RG 1.28 requirements", [_row("Table 1", "s", v="128")])["match_quality"] == "none"
+    assert TS.assess_lookup("NEI 18-04 guidance", [_row("Table 1", "s", v="NEI 18-04 Rev. 1")])["match_quality"] == "lexical"
+    assert TS.assess_lookup("NEI 18-04 guidance", [_row("Table 1", "s", v="1804")])["match_quality"] == "none"
+    assert TS.assess_lookup("DOE-STD-1271-2025", [_row("Table 1", "s", v="DOE-STD-1271-2025")])["match_quality"] == "lexical"
+
+
+def test_nuclides_without_a_hyphen_are_subjects():
+    """N2: 'U235', 'U238' and 'Pu239' name what is asked about; units and molecules still do not."""
+    assert TS.split_tokens("threshold for U235 in grams") == (["U235"], [])
+    assert TS.code_tokens("Pu239 and U238") == ["Pu239", "U238"] and TS.code_tokens("H2O at 25 mm2") == []
+    assert TS.assess_lookup("threshold for U235", [_row("Table 1-1", "s", Radionuclide="U-235")])["match_quality"] == "lexical"
+    assert TS.assess_lookup("threshold for U235", [_row("Table 1-1", "s", Radionuclide="Co-60")])["match_quality"] == "none"
+
+
+def test_more_abbreviations_and_risc_label():
+    assert KI.is_abbreviation("DID", "Defense-in-Depth") and KI.is_abbreviation("DiD", "Defense in Depth") and KI.is_abbreviation("DBA", "Design-Basis Accident")
+    assert not KI.is_abbreviation("DID", "Design Basis")
+    row = _row("Table 2 Risk-informed safety class assignments", "s", Class="RISC-2 items")
+    assert TS.assess_lookup("RISC-3 treatment for Cs-137", [_row("Table 4", "s", Radionuclide="Cs-137", Note="Risk Informed Safety Class 3")])["match_quality"] == "lexical"
+    assert row

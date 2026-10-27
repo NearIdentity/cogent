@@ -1342,15 +1342,15 @@ class EntityResolver:
 _STOP_INITIALS = {"of", "and", "for", "the", "in", "to", "on", "a", "an"}
 
 
-def _initials(label: str, split_hyphens: bool = True) -> str:
+def _initials(label: str, split_hyphens: bool = True, keep_connectors: bool = False) -> str:
     words = re.findall(r"[A-Za-z]+" if split_hyphens else r"[A-Za-z][A-Za-z\-]*", label)
-    return "".join(w[0] for w in words if w.lower() not in _STOP_INITIALS).upper()
+    return "".join(w[0] for w in words if keep_connectors or w.lower() not in _STOP_INITIALS).upper()
 
 
 def is_abbreviation(short: str, long: str) -> bool:
     """Is ``short`` the acronym of ``long`` (``SDC`` / ``Seismic Design Category``; plural and hyphenated forms included)?"""
     s = re.sub(r"[^A-Za-z]", "", short).upper()
-    forms = {_initials(long, True), _initials(long, False)}                      # 'Design-Basis Accident': DBA (split at the hyphen) or DA (one word)
+    forms = {_initials(long, True), _initials(long, False), _initials(long, True, True)}     # 'Design-Basis Accident': DBA (split at the hyphen) or DA (one word); 'Defense-in-Depth': DID keeps the 'in'
     if s.endswith("S") and s[:-1] in forms and len(s) > 2:
         s = s[:-1]
     return 2 <= len(s) <= 8 and len(re.findall(r"[A-Za-z]+", long)) >= 2 and s in forms

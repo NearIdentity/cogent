@@ -58,11 +58,11 @@ RETRIEVAL = ("semantic", "lexical", "hybrid")
 # ---- is the answer to a lookup about what was asked? (nearest-neighbour search always returns rows, however unrelated)
 _CODE_A = re.compile(r"\b[A-Za-z]{1,4}-?\d[\w.\-]*")                                   # A572, SA-516, Cs-137, SDC-1, NQA-1, SSE2
 _CODE_B = re.compile(r"\b(?:RG|NEI|NUREG(?:/CR)?|DOE-STD|ANSI|ANS|ASCE|ASME|ASTM|AISC|ACI|IEEE|ISO|API|AWS|RA-S)[\s-]*(\d[\w.\-]*)", re.I)   # RG 1.233, ANS-2.26, RA-S-1.4
-_NOT_CODES = re.compile(r"^(?:m|mm|cm|km|ft|in|kg|lb|psi|ksi|hz|g|s|h|c|f|k)\d$|^(?:h2o|co2|o2|n2|u235|u238|pu239)$", re.I)
+_NOT_CODES = re.compile(r"^(?:m|mm|cm|km|ft|in|kg|lb|psi|ksi|hz|g|s|h|c|f|k)\d$|^(?:h2o|co2|o2|n2)$", re.I)       # units and molecules; nuclides (U235, Pu239) are subjects
 _FAMILY_PREFIX = re.compile(r"(?:rg|nei|nureg|ans|ansi|asce|asme|astm|aisc|aci|ieee|iso|api|aws|doe|ra)[-\d]", re.I)
 # labels of a category or qualifier ('HC-3', 'SDC-2'): tables rarely spell them this way ('Hazard Category 3'), so they rank rows but never gate them
 _CATEGORY = re.compile(r"^(?:hc|sdc|ndc|fdc|pdc|wdc|vdc|ldc|edc|risc|ql)-?\d+$", re.I)
-_EXPAND = {"hc": "hazard category", "sdc": "seismic design category"}
+_EXPAND = {"hc": "hazard category", "sdc": "seismic design category", "risc": "risk informed safety class"}
 
 
 def _norm(s: Any) -> str:
@@ -107,11 +107,26 @@ def _needles(token: str) -> list[str]:
 
 
 def _fields(r: dict[str, Any]) -> list[str]:
-    """The texts of a row, each normalised on its own, so that neighbouring cells can never join into a false hit."""
+    """The texts of a row (lower-cased), each on its own, so that neighbouring cells can never join into a false hit."""
     t = r.get("table") or {}
     src = t.get("source") or {}
     raw = [t.get("caption"), src.get("section"), src.get("document")] + [x for k, v in (r.get("values") or {}).items() for x in (k, v)]
-    return [f for f in (_norm(x) for x in raw if x) if f]
+    return [str(x).lower() for x in raw if x and str(x).strip()]
+
+
+def _is_bare_number(token: str) -> bool:
+    """'1.4' (from RA-S-1.4), '1.233' (RG), '18-04' (NEI), '1271-2025': the number of a document without its family name."""
+    return bool(re.match(r"^\d", token))
+
+
+def _in_fields(token: str, fields: list[str]) -> bool:
+    """Does ``token`` occur in one of the (lower-cased) fields? A bare document number only counts as a whole token ('1.4' is not '140', '2014' or '1.40'),
+    anything else as a substring once punctuation and spaces are ignored ('A572' = 'A-572' = 'ASTM A 572')."""
+    if _is_bare_number(token):
+        rx = re.compile(r"(?<![\w.])(?<!\d-)" + re.escape(token.lower()) + r"(?![\w]|\.\d)")
+        return any(rx.search(f) for f in fields)
+    need = _needles(token)
+    return any(n in _norm(f) for n in need for f in fields)
 
 
 def assess_lookup(question: str, rows: list[dict[str, Any]], min_similarity: float = 0.0) -> dict[str, Any]:
@@ -126,11 +141,10 @@ def assess_lookup(question: str, rows: list[dict[str, Any]], min_similarity: flo
     subjects, cats = split_tokens(question)
     if subjects:
         toks = subjects + cats
-        need = {t: _needles(t) for t in toks}
 
         def found(r: dict[str, Any]) -> list[str]:
             fs = _fields(r)
-            return [t for t in toks if any(n in f for n in need[t] for f in fs)]
+            return [t for t in toks if _in_fields(t, fs)]
 
         got = [(r, found(r)) for r in rows]
         hits = [(r, f) for r, f in got if any(t in f for t in subjects)]

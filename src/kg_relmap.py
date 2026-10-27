@@ -55,7 +55,9 @@ _TABLE_REF = re.compile(r"\btable\s*([a-z]?\d+(?:[-.]\d+)*)", re.I)
 def placeholder(header: str) -> bool:
     """A header that only numbers the column (``column_1``, ``c_4``, empty): it says nothing about what the column holds."""
     h = (header or "").strip()
-    return not h or bool(_PLACEHOLDER.match(h)) or bool(_ORDINAL.match(h))      # a header that is only a list number ("1.", "2)") numbers the column too
+    # A header that is only a number ("1.", "2)", "100") numbers the column too. Note that tables with temperature columns ("100", "200", ...) therefore
+    # get no name-based join between them; only the values can then carry one.
+    return not h or bool(_PLACEHOLDER.match(h)) or bool(_ORDINAL.match(h))
 
 
 def junk_values(common: set[str]) -> tuple[bool, bool]:
