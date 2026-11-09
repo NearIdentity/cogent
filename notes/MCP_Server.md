@@ -1,10 +1,10 @@
-The MCP server serves the knowledge graphs that the update agent has staged, plus the table database built from the tables in those documents, plus the metadata an agent needs to judge them. It never changes the agent home or the graphs. The only state it keeps is each session's saved preferences, in memory. Line numbers below refer to the current checkout.
+The MCP server serves the knowledge graphs that the update agent has staged, plus the table database built from the tables in those documents, plus the metadata an agent needs to judge them. It never changes the agent home or the graphs. The only state it keeps is each session's saved preferences, in memory.
 
 ## What it serves
-- **Transport:** streamable HTTP at `/mcp` and an open `/healthz` (`src/kg_mcp.py`, `create_server` at `:184`, `build_app` at `:618`).
+- **Transport:** streamable HTTP at `/mcp` and an open `/healthz` (`src/kg_mcp.py`, `create_server`, `build_app`).
   - It is stateless by default (`--stateful` switches that off).
   - It runs behind your own HTTPS proxy or tunnel (`docs/mcp.md`, section 3).
-- **Instructions to the client:** the server's built-in guidance tells an agent how to use the tools and to relay warnings (`INSTRUCTIONS`, `kg_mcp.py:42`). When a table database is configured, it adds `TABLE_INSTRUCTIONS` (`:52`): ask for numbers and row-type facts through `lookup_values`, then `query_table` or `describe_table`, and relay warnings, paywall flags, inferred-unit notes and the disclaimer.
+- **Instructions to the client:** the server's built-in guidance tells an agent how to use the tools and to relay warnings (`INSTRUCTIONS` in `kg_mcp.py`). When a table database is configured, it adds `TABLE_INSTRUCTIONS`: ask for numbers and row-type facts through `lookup_values`, then `query_table` or `describe_table`, relay warnings, paywall flags, inferred-unit notes and the disclaimer, and when a lookup answers `no_confident_match` say the value was not found instead of presenting `nearest_neighbours`.
 - **Two back ends:**
   - the graph store (`src/kg_store.py`), which reads the staged files;
   - the table service (`src/kg_tableservice.py`), which queries PostgreSQL + pgvector. It is enabled with `--tabledb-dsn` (or `COGENT_TABLEDB_DSN`).
@@ -48,11 +48,12 @@ The database stores every join candidate and every unit hypothesis with its evid
 | `min_score` | 0 to 1 | score floor (default 0.55, which hides weakly supported LLM-only joins) |
 | `include_rejected`, `min_agreement` | flag, 0 to 1 | show judge-rejected candidates, marked; demand agreement across LLM runs |
 | `units` | `strict`, `broad`, `off` | narrow (explicit header, cell and declared units only; a conflict gives no unit), diverse (adds section text, KG entities, the document's dominant unit and the customary unit, flagged as inferred, with alternatives), or only what the header and cells say |
-| `retrieval` | `vector`, `lexical`, `hybrid` | how `lookup_values` and `search_tables` rank (hybrid fuses the two) |
+| `retrieval` | `semantic`, `lexical`, `hybrid` | how `lookup_values` and `search_tables` rank (hybrid fuses the two) |
+| `min_similarity` | 0 to 1 | `lookup_values`: below this similarity even the best row is only a nearest neighbour (`no_confident_match`); 0 = off; profile `strict` sets 0.70 (provisional, not calibrated); `COGENT_LOOKUP_MIN_SIMILARITY` is a server-wide minimum |
 
 - **Profiles:** `fast`, `balanced` (default), `strict`, `exploratory`, `llm`; the server default is set with `--default-profile`.
 - **Resolution order, last wins:** server default profile, then the session's saved preferences, then a `profile` in the call, then explicit arguments in the call (`approach`, `min_score`, `units` and so on).
-- **Sessions:** keyed by the token or OAuth subject plus the client's `session_id` (or the MCP session id when stateful), held in memory for 8 hours.
+- **Sessions:** keyed by the token or OAuth subject plus the client's `session_id` (or the MCP session id when stateful), held for 8 hours (`--session-hours`): in memory by default, or in SQLite / Redis with `--session-store` so that workers or hosts share them.
 - **Prompts:** `find_design_value`, `strict_design_lookup`, `explore_table_relationships` and `audit_units` set a posture for a task.
 
 ## Resources
@@ -89,7 +90,7 @@ The database stores every join candidate and every unit hypothesis with its evid
 - **Limit:** the older graph tools (`get_table`, `search_graph`, `export_graph`) do not watermark or block paywalled text.
 
 ## Authentication
-- **Bearer tokens:** `TokenStore` (`kg_mcp.py:71`) keeps only hashes in a `0600` file, with expiry and revocation, plus one extra token from `COGENT_MCP_TOKEN`. `BearerAuth` (`:140`) checks them on every request and also accepts `X-API-Key`. The `token create`, `list` and `revoke` commands are in `main`.
+- **Bearer tokens:** `TokenStore` (`kg_mcp.py`) keeps only hashes in a `0600` file, with expiry and revocation, plus one extra token from `COGENT_MCP_TOKEN`. `BearerAuth` checks them on every request and also accepts `X-API-Key`. The `token create`, `list` and `revoke` commands are in `main`.
 - **OAuth 2.1 (optional, for claude.ai connectors):** turned on with `--oauth-issuer` (`src/kg_oauth.py`). It supports dynamic client registration, PKCE (S256), a consent page where you approve a client with one of your tokens, and refresh-token rotation. Static tokens still work, and revoking an approving token cuts off its OAuth tokens.
 - **Hardening:** a Host-header allow-list (`--public-host`; `'*'` turns it off for random tunnel names), lockout after 5 wrong consent attempts, and `--no-auth` only on a loopback bind.
 - **Database access:** connect the server with the SELECT-only role (`deploy/tabledb-readonly-role.sql`). Passwords come from the environment, not from the repo.
@@ -101,10 +102,10 @@ The database stores every join candidate and every unit hypothesis with its evid
 - `docs/mcp.md` has the remote-URL options and client setup for Claude Code, the Claude API and Claude Desktop; `docs/tabledb.md` covers the table database.
 
 ## Tests
-`tests/test_mcp.py` (11 tests) covers store metadata from a real agent run, tokens, the 401/200 gate and Host check, a client round trip, the OAuth flow, and figure and table assets with the watermark and policies. The table features add `tests/test_mcp_tables.py` (9), `tests/test_mcp_tailoring.py` (12), `tests/test_units.py` (5) and `tests/test_llmjoin.py` (7). The table tests need PostgreSQL with pgvector and are skipped otherwise. `tests/test_telemetry.py` (12) covers the metrics registry, the `/metrics` merge, cost, token and hallucination counting, spans, trace propagation and the Pushgateway push. The full suite is 307 tests.
+`tests/test_mcp.py` (13 tests) covers store metadata from a real agent run, tokens, the 401/200 gate and Host check, a client round trip, the OAuth flow, and figure and table assets with the watermark and policies. The table features add `tests/test_mcp_tables.py` (11), `tests/test_mcp_tailoring.py` (13), `tests/test_units.py` (5) and `tests/test_llmjoin.py` (9); the table tests need PostgreSQL with pgvector and are skipped otherwise. `tests/test_telemetry.py` (12) covers the metrics registry, the `/metrics` merge, cost, token and hallucination counting, spans, trace propagation and the Pushgateway push; `tests/test_round6.py` covers the lookup confidence gate, the extraction recipe, join inference, captions, scopes and entity linking. Counts are `def test_` functions, not parametrised cases. The full suite was 341 tests on 2026-11-09, of which 42 need pgvector and 4 need the OpenTelemetry SDK.
 
 ## Not covered
-- **Writing:** it never triggers agent runs or accepts uploads. Session preferences are the only thing a client can change, and they live in memory.
+- **Writing:** it never triggers agent runs or accepts uploads. Session preferences are the only thing a client can change; they live in the session store (memory by default, see `--session-store`).
 - **Staleness:** how fresh the data is depends on how often the daemon runs.
 - **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, a real Ollama model, or a real OTLP collector (Jaeger, Tempo). The LLM join stages were tested with scripted models and a mock Ollama server.
 - **Judge is not ground truth:** the LLM judge's verdicts are evidence only.

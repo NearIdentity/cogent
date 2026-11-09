@@ -38,7 +38,7 @@ The daemon passes its trace to the agent it starts through the environment varia
 
 `src/kg_telemetry.py` holds a small registry (counters, gauges, histograms) written in the standard library; there is no `prometheus_client` dependency. Both kinds of process use it:
 
-* **The agent is a batch job.** At the end of each run it merges its numbers into `<home>/metrics/agent.json` (cumulative counters, gauges for the last run) and writes `<home>/metrics/agent.prom` (Prometheus text format, for the node_exporter textfile collector). With `--pushgateway URL` it also pushes them.
+* **The agent is a batch job.** At the end of each run it merges its numbers into `<home>/metrics/agent_metrics.json` (cumulative counters, gauges for the last run) and writes `<home>/metrics/cogent_agent.prom` (Prometheus text format, for the node_exporter textfile collector). With `--pushgateway URL` it also pushes them.
 * **The MCP server** (`serve --metrics`) exposes `/metrics` (a token is required). It prints its own live metrics and merges the agent's persisted totals, so **one scrape target shows everything**.
 
 ### What is recorded
@@ -48,9 +48,10 @@ The daemon passes its trace to the agent it starts through the environment varia
 | **Latency p50 / p95** | `cogent_agent_run_duration_seconds`, `cogent_agent_step_duration_seconds{step}`, `cogent_agent_operation_duration_seconds{op}`, `cogent_mcp_tool_duration_seconds{tool}`, `cogent_llm_call_duration_seconds` are histograms: use `histogram_quantile(0.95, sum by (le) (rate(..._bucket[1h])))`. `cogent_agent_operation_latency_seconds{op,quantile="0.5"|"0.95"}` is the **exact** p50/p95 of the last run, computed from the raw samples (a run has too few samples for histogram buckets to be accurate). |
 | **Tokens and cost per run** | `cogent_llm_tokens_total{model,direction}`, `cogent_llm_cost_usd_total{model}`, `cogent_llm_calls_total{model,outcome}`; last run: `cogent_agent_last_run_tokens{direction}` and `cogent_agent_last_run_cost_usd`. Tokens are the `prompt_eval_count` and `eval_count` that Ollama returns. Cost = tokens x price from `COGENT_LLM_PRICES`. |
 | **Auto-applied vs human-reviewed** | `cogent_agent_findings_total{outcome}` with `auto_applied` (the agent applied the change), `needs_review` (it left the finding for a person), `human_resolved` (a person resolved a finding that was waiting). |
-| **Judge agreement** | `cogent_join_judge_agreement_ratio` (share of candidates on which all judge runs agreed; only counted when the judge ran at least twice), `cogent_join_judge_verdicts_total{verdict}`, `cogent_join_judge_candidates_total`, `cogent_join_judge_llm_vs_deterministic_total{result}` (does the judge confirm what the heuristics found). |
+| **Judge agreement** | `cogent_join_judge_agreement_ratio` (share of candidates on which all judge runs agreed; only counted when the judge ran at least twice), `cogent_join_judge_verdicts_total{verdict}`, `cogent_join_judge_candidates_total`, `cogent_join_llm_vs_deterministic_total{result}` (does the judge confirm what the heuristics found). |
 | **Hallucination rate** | `cogent_llm_outputs_total{kind,grounded}` and `cogent_llm_hallucination_ratio{kind}`. See the definition below. |
 | **Failures and retries** | `cogent_agent_failures_total{stage}`, `cogent_agent_retries_total{component}`, `cogent_agent_operations_total{op,outcome}`, `cogent_agent_runs_total{outcome}`. Stages: fetch, llm, embed, tabledb, daemon_run ... |
+| **Last run (gauges)** | `cogent_agent_last_run_success` (1 = no errors), `cogent_agent_last_run_timestamp_seconds`, `cogent_agent_last_run_duration_seconds`, `cogent_agent_last_run_errors`, `cogent_agent_last_run_findings{outcome}`, `cogent_agent_last_run_tokens{direction}`, `cogent_agent_last_run_cost_usd`. Each run also appends one line to `<home>/logs/metrics.jsonl`. |
 | MCP server | `cogent_mcp_tool_calls_total{tool,outcome}`, HTTP request counters, rate-limited requests, graph-cache and embedder gauges |
 
 ### Definitions you should know before trusting a number
@@ -66,7 +67,7 @@ The daemon passes its trace to the agent it starts through the environment varia
 Pick one:
 
 1. **Scrape the MCP server** (default in `deploy/observability/prometheus/prometheus.yml`): start it with `--metrics`, create a token with `kg_mcp.py token create --name prometheus` and put it in `deploy/observability/prometheus/mcp_token` (git-ignored). Agent totals appear on the same target.
-2. **Textfile collector**: point node_exporter's `--collector.textfile.directory` at `<home>/metrics/` (it picks up `agent.prom`).
+2. **Textfile collector**: point node_exporter's `--collector.textfile.directory` at `<home>/metrics/` (it picks up `cogent_agent.prom`).
 3. **Pushgateway**: `kg_agent.py run --pushgateway http://host:9091` (or `COGENT_PUSHGATEWAY`); a failed push is logged and never fails the run. Scrape the gateway with `honor_labels: true`.
 
 ## 4. Dashboard and alert

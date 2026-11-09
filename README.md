@@ -181,7 +181,8 @@ save_knowledge_graph(kg)
 
 A single self-contained HTML page (vis-network): search, node-type and edge-group filters (hierarchy / reading order /
 mentions / extracted relations), counts, and a details panel with every attribute of the clicked node or edge (tables are
-rendered as tables) so a fact can be traced back to its source element and page. `--png` writes a static matplotlib image.
+rendered as tables) so a fact can be traced back to its source element and page. `--png` writes a static matplotlib image (`--png-structure` draws the document structure instead of
+the extracted relations); `--kg-dir` names the folder of saved KGs (default `$KG_OUTPUT_DIR` or `./kg_store`), `--assets-dir` the exported figures and tables, `--open` opens the page.
 
 ## The update agent
 
@@ -200,7 +201,7 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    * **identifier watcher** (any other page: NRC regulatory-guide lists, DOE standards and directives libraries, NRC
      pages, publisher pages): finds the table rows / list items that mention the entry's identifiers and compares the
      edition shown with the one on record. Families: `RG`, `NEI`, `DOE-STD`/`NE-STD`, `DOE O`, `ASCE/SEI`, `QME`, `NQA`,
-     `RA-S`, `NUREG`, `10 CFR`. Editions compare numerically (revisions, years, order letters); `43-19` equals `43-2019`.
+     `RA-S`, `NUREG`, `10 CFR`. (`ANSI/ANS-2.26-2004`-style references are recognised as identifiers in document text, but their editions are not tracked.) Editions compare numerically (revisions, years, order letters); `43-19` equals `43-2019`.
      A higher edition with a link in the same row is a `new_edition` finding.
 3. **apply** – a `new_edition` finding with a link and confidence ≥ 0.8 rewrites the entry's link (URL and text) and the
    edition in its name, and every other entry that shared the old URL (e.g. reports). Lower-confidence findings go to
@@ -222,8 +223,9 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
 Subcommands: `run [--dry-run] [--force [--no-prune]]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
 check a tracker against a live page), `status`, `local` and `add-local` (purchased copies, below). Table database options of `run`: `--tables`
 (after staging, load the tables; needs `COGENT_TABLEDB_DSN` or `--tabledb-dsn`), `--embedder`, `--embed-model`, `--row-mode full|text`, `--llm-joins` with
-`--join-model`, `--join-judge-model`, `--join-samples`, `--join-judge-runs`, `--join-max-pairs`, `--join-max-seconds`; `--publish-snapshot DIR` writes a bundle for other
-servers after the run. Common options: `--standards`, `--reports`, `--home` (default
+`--join-model`, `--join-judge-model`, `--join-samples`, `--join-judge-runs`, `--join-max-pairs`, `--join-max-seconds`, plus `--tabledb-schema` (default `kgtables`) and
+`--no-kg-context` (leave the KG neighbourhood out of the embedded text); `--publish-snapshot DIR` writes a bundle for other
+servers after the run (`--snapshot-keep N` bundles are kept, default 5). Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
 `--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
@@ -400,6 +402,7 @@ Everything after `--` is passed to `kg_agent.py run` (so `--no-auto-apply`, `--o
   then SIGKILL after `--stop-grace`. A crash or hang in the agent cannot take the daemon down.
 * **Signals** – `SIGTERM`/`SIGINT` stop gracefully, `SIGUSR1` runs now, `SIGHUP` reopens the log after rotation.
 * **One daemon per `--home`** – a PID file held with `flock` (no stale locks). State is in `<home>/daemon/state.json`.
+* **Files and timeouts** – `--log-file FILE` (default `<home>/logs/daemon.log` for `start`; `serve` logs to stderr), `--stop-timeout SECONDS` (how long `stop` waits, default 60).
 * **Hooks** – `--on-failure CMD` (when a run failed for good) and `--on-warnings CMD` (a run left paywall / review warnings);
   the command gets `COGENT_EXIT`, `COGENT_REASON`, `COGENT_WARNINGS`, `COGENT_FAILURES`, `COGENT_REPORT`, `COGENT_HOME`.
 * **systemd** – `serve` speaks `sd_notify` (`READY=1`, `STATUS=`, `WATCHDOG=1`), so `Type=notify` + `WatchdogSec=` work.
@@ -427,6 +430,9 @@ python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host kg.exa
 * **Authentication** – bearer tokens (`token create|list|revoke`), optionally OAuth 2.1 for the Claude web app (`--oauth-issuer https://kg.example.com`). Use the
   SELECT-only database login (`deploy/tabledb-readonly-role.sql`) for `--tabledb-dsn`. `get_overview` reports `table_database` (reachable, built, can_select) and the
   start-up log says whether the database is usable; check a login with `python src/kg_tabledb.py --dsn <dsn> check`.
+* **More options** – `--tokens FILE` / `--state-dir DIR` (where `tokens.json` and `oauth.json` live; share the directory when several hosts serve the same tokens), `--session-hours` (how long saved
+  session preferences last, default 8), `--tabledb-schema`, `--embed-dim` (dimension of `--embedder hash`), `--judge-model` and `--llm-max-seconds` (the `evaluate_joins` judge and its time budget,
+  default 180 s, cap 600), `--stale-after DAYS`, `--default-profile`. `python src/kg_mcp.py serve --help` lists everything.
 * **Public URL** – quick demo without an account: `deploy/demo-tunnel.sh` (Cloudflare quick tunnel, the address changes every time). A stable free URL:
   `deploy/named-tunnel.sh setup <hostname>` ([docs/scaling.md](docs/scaling.md)). Other options, Claude Code / API / Desktop instructions and the authentication notes:
   [docs/mcp.md](docs/mcp.md).
@@ -503,7 +509,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (291 tests at the time of writing)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (341 tests collected on 2026-11-09; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
@@ -520,7 +526,8 @@ python -m pytest tests          # no internet: the agent tests run against tests
 
 ## Status and limits
 
-* The committed `config/*.json` carry `version_tracking` blocks from a full run against the live sites on 2026-10-12. The
+* The committed `config/*.json` carry `version_tracking` blocks written by runs between 2026-10-12 and 2026-10-21 (most documents were last fetched on 2026-10-12; the blocks record
+  dates and editions, not the findings or their confidences, and no run report is committed). The
   agent's trackers were written from the public API documentation of eCFR and the Federal Register and from the general
   structure of the NRC / DOE pages: use `kg_agent.py probe <url>` to see what a tracker parses from a page and adjust
   `src/kg_tools.py` if a layout differs. Review the first runs with `--dry-run` or `--no-auto-apply`.
