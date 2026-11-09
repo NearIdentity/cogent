@@ -1,0 +1,44 @@
+{
+ "tool": "get_node",
+ "args": {
+  "ref": "combined",
+  "node_id": "entry:standard:1"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "combined",
+   "built": "2026-11-09T03:25:44Z",
+   "run_id": "20261109T032544Z",
+   "age_days": 0.0,
+   "nodes": 5,
+   "edges": 5,
+   "entries_without_graph": [],
+   "derived": true,
+   "notes": [
+    "Derived from the per-entry graphs and the configuration; rebuilt by every agent run.",
+    "'declared' relations come from the configuration (curated). 'inferred' ones come from text matching and may be wrong or incomplete.",
+    "Contains entry-level relations only, no document text."
+   ],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "node": {
+   "id": "entry:standard:1",
+   "type": "Standard",
+   "label": "10 CFR 50.69",
+   "kind": "standard",
+   "paywalled": false,
+   "has_graph": true,
+   "graph_built": "2026-11-09T03:25:44Z",
+   "version_status": "current",
+   "latest_available": [
+    "eCFR as of 2026-09-01"
+   ],
+   "on_board": [],
+   "degree": {
+    "in": 3,
+    "out": 0
+   }
+  }
+ }
+}

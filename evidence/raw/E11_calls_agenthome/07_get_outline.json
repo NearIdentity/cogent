@@ -1,0 +1,48 @@
+{
+ "tool": "get_outline",
+ "args": {
+  "ref": "standard:1"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "entry": "standard:1",
+   "name": "10 CFR 50.69",
+   "graph_built": "2026-11-09T03:25:44Z",
+   "sources_last_checked": "2026-11-09T03:25:44Z",
+   "age_days": 0.0,
+   "stale": false,
+   "version_status": "current",
+   "version_summary": "On board matches the latest available (eCFR as of 2026-09-01).",
+   "latest_available": [
+    "eCFR as of 2026-09-01"
+   ],
+   "warnings": [],
+   "caveats": [],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "outline": [
+   {
+    "id": "571fc376:h0001",
+    "level": 1,
+    "page": null,
+    "title": "PART 50 DOMESTIC LICENSING",
+    "doc": "571fc376"
+   },
+   {
+    "id": "571fc376:h0002",
+    "level": 2,
+    "page": null,
+    "title": "\u00a7 50.69 Risk-informed categorization and treatment of SSCs.",
+    "doc": "571fc376"
+   },
+   {
+    "id": "571fc376:h0005",
+    "level": 2,
+    "page": null,
+    "title": "\u00a7 50.2 Definitions.",
+    "doc": "571fc376"
+   }
+  ]
+ }
+}

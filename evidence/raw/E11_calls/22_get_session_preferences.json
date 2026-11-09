@@ -1,0 +1,30 @@
+{
+ "tool": "get_session_preferences",
+ "args": {
+  "session_id": "ev-expl"
+ },
+ "isError": false,
+ "result": {
+  "session": "evidence:ev-expl",
+  "saved": {
+   "approach": "hybrid",
+   "min_score": 0.3,
+   "include_rejected": true,
+   "retrieval": "hybrid",
+   "units": "broad",
+   "min_similarity": 0.0,
+   "profile": "exploratory"
+  },
+  "effective": {
+   "profile": "exploratory",
+   "approach": "hybrid",
+   "min_score": 0.3,
+   "include_rejected": true,
+   "min_agreement": 0.0,
+   "units": "broad",
+   "retrieval": "hybrid",
+   "min_similarity": 0.0
+  },
+  "server_default_profile": "balanced"
+ }
+}

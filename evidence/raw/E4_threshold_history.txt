@@ -1,0 +1,38 @@
+collected 2026-11-09T03:24:51Z on origin/main 1f237f0
+== current definition
+74:    auto_apply: bool = True             # apply high-confidence config updates
+75:    min_confidence: float = 0.8
+411:            ok = s.auto_apply and f.confidence >= s.min_confidence and f.new_url and not rt.dry
+1827:                 auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
+
+== git log -S'min_confidence' (first introduction, oldest first)
+c3c26a8 2026-10-12T20:01:52-04:00 NearIdentity Initial commit -- staging agent for Knowledge Graphs
+64f8cc3 2026-10-20T18:07:41-04:00 NearIdentity PGVector DB for extracted tabular data + MCP services
+== git log -S'auto_apply'
+c3c26a8 2026-10-12T20:01:52-04:00 NearIdentity Initial commit -- staging agent for Knowledge Graphs
+== git log -S'0.8' in src/kg_agent.py
+c3c26a8 2026-10-12T20:01:52-04:00 NearIdentity Initial commit -- staging agent for Knowledge Graphs
+== review queue: pending / needs_review / review in first commit
+10:* apply      turn high-confidence findings into configuration edits (new edition ->
+69:    auto_apply: bool = True             # apply high-confidence config updates
+70:    min_confidence: float = 0.8
+124:        self.pending: list[dict] = []
+301:        rt.pending = read_json(p.state / "pending.json", [])
+342:        for x in rt.pending:
+348:            if f.type == "new_edition" and _pending_resolved(rt, {"entry": f.entry, "identity": f.identity, "new": f.new}):
+356:            ok = s.auto_apply and f.confidence >= s.min_confidence and f.new_url and not rt.dry
+366:                _remember_pending(rt, f)
+370:        # resolved pending items drop out
+371:        rt.pending = [x for x in rt.pending if not _pending_resolved(rt, x)]
+454:        rt.write_json(p.state / "pending.json", rt.pending)
+578:def _remember_pending(rt: Runtime, f: Finding) -> None:
+580:    if not any((x["entry"], x["identity"], x["new"]) == sig for x in rt.pending):
+581:        rt.pending.append({**f.model_dump(), "first_seen": utcnow()})
+584:def _pending_resolved(rt: Runtime, item: dict) -> bool:
+1103:                mark = "needs review"
+1114:    if rt.pending:
+1115:        L.append("### Pending (needs human review)\n")
+1116:        L += [f"- {x['entry']} {x['identity']}: {x['old']} → {x['new']} (confidence {x['confidence']}, "
+1117:              f"first seen {x['first_seen']}) {x.get('new_url') or 'no link found'}" for x in rt.pending]
+1228:    common.add_argument("--no-auto-apply", action="store_true", help="never edit the configuration; list as pending")
+1257:                 auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,

@@ -1,0 +1,11 @@
+{
+ "tool": "get_figure",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "asset_id": "aaaaaaaaaaaaaaaa/fig0001"
+ },
+ "isError": true,
+ "result": [
+  "Error executing tool get_figure: no figure 'aaaaaaaaaaaaaaaa/fig0001'"
+ ]
+}

@@ -1,0 +1,92 @@
+{
+ "tool": "get_subgraph",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "center": "h0002"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "center": "h0002",
+  "truncated": false,
+  "nodes": [
+   {
+    "id": "p0005",
+    "type": "Paragraph",
+    "label": "Note: probabilities are annual frequencies of exceedance."
+   },
+   {
+    "id": "h0002",
+    "type": "Heading",
+    "label": "3 Seismic Categories",
+    "level": 2
+   },
+   {
+    "id": "tbl0004",
+    "type": "Table",
+    "label": "Table 3-1: Seismic design categories",
+    "rows": "(table; use get_table)",
+    "file": "tables/tbl0004_table-3-1-seismic-design-categories.csv"
+   },
+   {
+    "id": "p0003",
+    "type": "Paragraph",
+    "label": "Table 3-1 lists the seismic design categories and their limit state definitions."
+   },
+   {
+    "id": "h0001",
+    "type": "Heading",
+    "label": "Seismic Design Criteria for Nuclear Facilities",
+    "level": 1
+   }
+  ],
+  "edges": [
+   {
+    "source": "h0002",
+    "target": "p0003",
+    "relation": "CONTAINS"
+   },
+   {
+    "source": "h0002",
+    "target": "p0003",
+    "relation": "NEXT"
+   },
+   {
+    "source": "h0002",
+    "target": "tbl0004",
+    "relation": "CONTAINS"
+   },
+   {
+    "source": "h0002",
+    "target": "p0005",
+    "relation": "CONTAINS"
+   },
+   {
+    "source": "tbl0004",
+    "target": "p0005",
+    "relation": "NEXT"
+   },
+   {
+    "source": "p0003",
+    "target": "tbl0004",
+    "relation": "NEXT"
+   },
+   {
+    "source": "h0001",
+    "target": "h0002",
+    "relation": "CONTAINS"
+   },
+   {
+    "source": "h0001",
+    "target": "h0002",
+    "relation": "NEXT"
+   }
+  ]
+ }
+}

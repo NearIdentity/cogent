@@ -1,0 +1,55 @@
+{
+ "tool": "list_assets",
+ "args": {
+  "ref": "standard:2"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "entry": "standard:2",
+   "name": "ASME NQA-1-2026 (fixture)",
+   "graph_built": null,
+   "sources_last_checked": "2026-10-01T00:00:00Z",
+   "age_days": 39.14,
+   "stale": true,
+   "version_status": null,
+   "version_summary": "Version status not recorded (the agent has not run with version tracking yet).",
+   "latest_available": [],
+   "warnings": [
+    "standard:2: a new edition is on sale"
+   ],
+   "caveats": [
+    "Paywalled source: the graph contains only the purchased copy placed on board (if any), never content fetched behind a paywall. Redistribution may be restricted by the publisher's licence.",
+    "Stale capture: sources were last checked 39.14 days ago (threshold 3).",
+    "No graph is staged for this entry yet.",
+    "A newer edition is on sale than the one on board; answers may rest on a superseded edition."
+   ],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "ref": "standard:2",
+  "paywalled_assets_policy": "watermark",
+  "documents": [
+   {
+    "document_id": "bbbbbbbbbbbbbbbb",
+    "source": "local:NQA-1.html",
+    "paywalled": true,
+    "warnings": [
+     "\u00a9 Copyrighted material of the publisher of ASME NQA-1-2026 (fixture), taken from a purchased copy. Reproduced for reference only; not for redistribution, publication or reliance in place of the original standard.",
+     "Paywalled source (purchased local copy). Server policy for such assets: watermark.",
+     "standard:2: a new edition is on sale"
+    ],
+    "assets": [
+     {
+      "asset_id": "bbbbbbbbbbbbbbbb/tbl0003",
+      "kind": "table",
+      "page": null,
+      "caption": "Table 2-1: Quality levels",
+      "rows": 4,
+      "cols": 3,
+      "available": true
+     }
+    ]
+   }
+  ]
+ }
+}

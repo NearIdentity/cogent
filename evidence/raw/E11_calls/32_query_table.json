@@ -1,0 +1,10 @@
+{
+ "tool": "query_table",
+ "args": {
+  "table_id": "aaaaaaaaaaaaaaaa/tbl0008"
+ },
+ "isError": true,
+ "result": [
+  "Error executing tool query_table: table database not reachable: OperationalError: connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?"
+ ]
+}

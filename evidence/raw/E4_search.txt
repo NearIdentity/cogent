@@ -1,0 +1,49 @@
+collected 2026-11-09T03:24:29Z on origin/main 1f237f0
+== tracked files matching agent-home artefacts
+(none above = none tracked)
+== all branches/history: any path ever tracked matching those
+(end)
+== machine search (find) for agent-home artefacts, excluding the scratchpad venv/worktree
+/tmp/pytest-of-root/pytest-1/assets0/home/state/alerts.json
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/config/changes.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/logs/report.md
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/state/alerts.json
+/tmp/pytest-of-root/pytest-1/api0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_metrics_are_recorded_0/home/config/changes.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_metrics_are_recorded_0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_metrics_are_recorded_0/home/logs/report.md
+/tmp/pytest-of-root/pytest-1/test_run_metrics_are_recorded_0/home/state/alerts.json
+/tmp/pytest-of-root/pytest-1/test_report_renders_with_skipp0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_report_renders_with_skipp0/home/logs/report.md
+/tmp/pytest-of-root/pytest-1/test_report_renders_with_skipp0/home/state/alerts.json
+/tmp/pytest-of-root/pytest-1/mcp0/home/config/changes.jsonl
+/tmp/pytest-of-root/pytest-1/mcp0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/mcp0/home/logs/report.md
+/tmp/pytest-of-root/pytest-1/mcp0/home/state/alerts.json
+/tmp/pytest-of-root/pytest-1/test_agent_publishes_a_snapsho0/home/config/changes.jsonl
+/tmp/pytest-of-root/pytest-1/test_agent_publishes_a_snapsho0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_agent_publishes_a_snapsho0/home/logs/report.md
+(end find)
+== README statements about the live run
+59:docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
+223:check a tracker against a live page), `status`, `local` and `add-local` (purchased copies, below). Table database options of `run`: `--tables`
+479:`pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http` and `--otlp-endpoint`. Definitions (the hallucination rate is a heuristic), scrape options and limits: [docs/observability.md](docs/observability.md). A demo with a public Cloudflare ad
+523:* The committed `config/*.json` carry `version_tracking` blocks from a full run against the live sites on 2026-10-12. The
+== machine search excluding pytest temp dirs from the E1 run
+(end)
+== any home-dir / other dirs with kg or cogent in name
+ls: cannot access '/root/kg*': No such file or directory
+ls: cannot access '/root/cogent*': No such file or directory
+ls: cannot access '/opt/cogent': No such file or directory
+ls: cannot access '/var/lib/cogent': No such file or directory
+ls: cannot access '/srv/*': No such file or directory
+== sed README 520-530
+
+## Status and limits
+
+* The committed `config/*.json` carry `version_tracking` blocks from a full run against the live sites on 2026-10-12. The
+  agent's trackers were written from the public API documentation of eCFR and the Federal Register and from the general
+  structure of the NRC / DOE pages: use `kg_agent.py probe <url>` to see what a tracker parses from a page and adjust
+  `src/kg_tools.py` if a layout differs. Review the first runs with `--dry-run` or `--no-auto-apply`.
+* The identifier watcher needs the identifier in the page text; a page that changes without one is reported as

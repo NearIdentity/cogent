@@ -1,0 +1,35 @@
+collected 2026-11-09T03:25:14Z
+== *.pdf tracked in the repo (main)
+(end tracked)
+== any PDF anywhere on this machine (excluding pytest temp from E1, venv, proc)
+/usr/lib/libreoffice/share/xpdfimport/xpdfimport_err.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/forward.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/hand.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/back.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/qt4_editor_options.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/home.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/move.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/matplotlib.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/subplots.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/filesave.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/help.pdf
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv/lib/python3.13/site-packages/matplotlib/mpl-data/images/zoom_to_rect.pdf
+(end find)
+== PDFs the tests create (reportlab/fitz builders)
+tests/mock_site.py:14:from reportlab.lib.styles import getSampleStyleSheet
+tests/mock_site.py:15:from reportlab.platypus import Paragraph, SimpleDocTemplate
+tests/mock_site.py:23:    src = pymupdf.open(stream=make_pdf(title, body), filetype="pdf")
+tests/mock_site.py:24:    out = pymupdf.open()
+tests/mock_site.py:31:def make_pdf(title: str, body: str) -> bytes:
+tests/test_assets_export.py:68:def test_pdf_native_mode_keeps_true_extension(tmp_path):
+tests/test_assets_export.py:70:    doc = pymupdf.open()
+tests/test_layout.py:73:def test_basic_pdf_parser_reads_a_two_column_page_in_order(tmp_path):
+tests/test_layout.py:77:    doc = pymupdf.open()
+tests/test_ocr.py:54:def test_text_pdf_is_never_ocred(tmp_path, monkeypatch):
+tests/test_ocr.py:61:def test_scanned_pdf_is_read_by_ocr(tmp_path, monkeypatch):
+tests/test_ocr.py:80:    a = pymupdf.open(stream=make_pdf("Text Page", "Real text layer here. " * 6), filetype="pdf")
+tests/test_ocr.py:81:    b = pymupdf.open(stream=make_scan("x", "picture page. " * 6), filetype="pdf")
+tests/test_ocr.py:132:    again = pymupdf.open(stream=a, filetype="pdf")
+tests/test_table_footnotes.py:12:def table_pdf(path, cells):
+== staging/documents folders anywhere?
+(end)

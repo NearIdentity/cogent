@@ -1,0 +1,8 @@
+{
+ "tool": "list_tables",
+ "args": {},
+ "isError": true,
+ "result": [
+  "Error executing tool list_tables: table database not reachable: OperationalError: connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?"
+ ]
+}

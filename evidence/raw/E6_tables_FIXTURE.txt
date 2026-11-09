@@ -1,0 +1,52 @@
+NO real standards are staged on this machine or in the repo (see E4/E5 raw files). The tables below come from TEST FIXTURE HTML in tests/conftest.py (DOC_A, DOC_B, DOC_U), staged by scripts outside the repo on 2026-11-09. They are not from a real standard.
+
+- document aaaaaaaaaaaaaaaa (fixture) | asset tbl0004 | page None | caption 'Table 3-1: Seismic design categories'
+  headers: ['Seismic Category', 'Limit State', 'Annual Probability (per year)']
+  data rows: 3 | file: tables/tbl0004_table-3-1-seismic-design-categories.csv
+
+- document aaaaaaaaaaaaaaaa (fixture) | asset tbl0008 | page None | caption 'Table 4-1: Damping values by seismic category'
+  headers: ['Seismic Category', 'Structure Type', 'Damping (%)']
+  data rows: 5 | file: tables/tbl0008_table-4-1-damping-values-by-seismic-cate.csv
+
+- document bbbbbbbbbbbbbbbb (fixture) | asset tbl0003 | page None | caption 'Table 2-1: Quality levels'
+  headers: ['Quality Level', 'Applies To', 'Audit Interval (months)']
+  data rows: 3 | file: tables/tbl0003_table-2-1-quality-levels.csv
+
+- document cccccccccccccccc (fixture) | asset tbl0004 | page None | caption 'Table 5-1: Plate limits (units: ksi)'
+  headers: ['Material', 'Allowable Stress', 'Thickness', 'Damping', 'Temperature (°C)', 'Count']
+  data rows: 3 | file: tables/tbl0004_table-5-1-plate-limits-units-ksi.csv
+
+- document cccccccccccccccc (fixture) | asset tbl0007 | page None | caption 'Table 6-1: Test pressures'
+  headers: ['Test', 'Pressure', 'Weight 5 kg']
+  data rows: 3 | file: tables/tbl0007_table-6-1-test-pressures.csv
+
+== git grep A572 (file:line) on origin/main, excluding code comments about the tokenizer
+docs/tabledb.md:133:| `lookup_values(question, ref?, table_ids?)` | two-stage semantic search: best tables, then best rows; returns original cell text with document, page
+notes/LiveDemo.md:99:4. In a chat, enable the connector, then ask: "What is the allowable stress for A572 in the standards' tables?" The server instructions steer Claude 
+notes/LiveDemo.md:127:2. "What is the allowable stress for A572 in the standards' tables?" (`lookup_values`)
+notes/MCP_Server.md:29:| `lookup_values` | two-stage semantic lookup: best tables, then best rows (rows are embedded whole, numbers included). Returns the original cell t
+src/kg_mcp.py:58:row-type fact ("allowable stress for A572", "damping for welded steel"), do not search the graph text: call lookup_values(question) (by meaning),
+src/kg_mcp.py:699:            = narrow, broad = diverse with inference notes, off). If the question names an identifier (A572, Cs-137) that no row contains, the result sa
+src/kg_tableservice.py:59:_CODE_A = re.compile(r"\b[A-Za-z]{1,4}-?\d[\w.\-]*")                                   # A572, SA-516, Cs-137, SDC-1, NQA-1, SSE2
+src/kg_tableservice.py:73:    """Identifier-like terms of a question that a relevant table should contain literally ('A572', 'SA-516', 'Cs-137', 'HC-3', 'RG 1.233' -> its
+src/kg_tableservice.py:95:    """(subject identifiers, category labels): A572, Cs-137, RG 1.233 name what is asked about; HC-3, SDC-2 only qualify it."""
+src/kg_tableservice.py:124:    anything else as a substring once punctuation and spaces are ignored ('A572' = 'A-572' = 'ASTM A 572')."""
+src/kg_tableservice.py:135:    * the question names a subject identifier (A572, Cs-137, RG 1.233): a row counts when at least one occurs in one of its cells, column names
+tests/conftest.py:154:<tr><td>A572</td><td>30.0</td><td>16</td><td>5</td><td>40</td><td>2</td></tr>
+tests/test_mcp_tables.py:130:    r = server.call("lookup_values", {"question": "allowable stress for ASTM A572 steel", "k": 3})
+tests/test_mcp_tables.py:132:    assert "A572" in r["message"] and r["nearest_neighbours"] and r["missing_terms"] == ["A572"]
+tests/test_mcp_tailoring.py:262:    q = lambda **kw: server.call("query_table", {"table_id": t, "where": [{"column": "Material", "op": "=", "value": "A572"}], **kw})
+tests/test_mcp_tailoring.py:271:    hits = server.call("lookup_values", {"question": "allowable stress A572 steel plate", "ref": "standard:3", "units": "broad"})
+tests/test_mcp_tailoring.py:272:    assert hits["rows"][0]["units"]["Allowable Stress"] == "ksi" and hits["rows"][0]["values"]["Material"] == "A572"
+tests/test_round6.py:25:    assert TS.code_tokens("allowable stress for ASTM A572 steel") == ["A572"]
+tests/test_round6.py:35:    r = TS.assess_lookup("allowable stress for ASTM A572 steel", pts)
+tests/test_round6.py:37:    assert "A572" in r["message"] and r["missing_terms"] == ["A572"]
+tests/test_round6.py:42:    r = TS.assess_lookup("allowable stress A572", [miss, hit])
+tests/test_round6.py:364:    """A4: matching per field; 'A572' must not be assembled from the end of one cell and the start of the next."""
+tests/test_round6.py:366:    assert TS.assess_lookup("stress for A572", [r])["match_quality"] == "none"
+tests/test_tablecheck.py:151:@pytest.mark.parametrize("rows", [FDC, TEXT_TABLE, ROSTER, [["Material", "Allowable Stress", "Count"], ["A36", "21.6", "1"], ["A572", "30.0",
+
+== A572 in fixture CSV exports
+../fixture_tables/home/staging/documents/cccccccccccccccc/kg.json:39:      "rows": "[[\"Material\", \"Allowable Stress\", \"Thickness\", \"Damping\", \"Temperature (\\u00b0C)\", \"Count\"], [\"A36\", 
+../fixture_tables/home/staging/documents/cccccccccccccccc/kg.json:96:      "label": "A572",
+../fixture_tables/home/staging/documents/cccccccccccccccc/assets/417184584ee6c758db86e94f0942abe134c1b219077a9ab4746a4fd159b567ff/tables/tbl0004_table-5-1-plate-limits-units-ksi.csv:3:A572,30.0,16,5,4

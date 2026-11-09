@@ -1,0 +1,128 @@
+== full log (hash date author subject)
+1f237f0 2026-10-27 Abdullah Al Rashid | Merge pull request #10 from NearIdentity/mcp-client-testcycle-fixes-addendum
+0659c5c 2026-10-27 NearIdentity | Follow-up fixes
+624271c 2026-10-27 NearIdentity | Updated fixes post-testing
+9da80ec 2026-10-27 Abdullah Al Rashid | Merge pull request #9 from NearIdentity/mcp-agent-testcycle-updates
+a434240 2026-10-27 NearIdentity | Updates based on the latest MCP client-side testing (2026-10-26)
+af5630d 2026-10-26 Abdullah Al Rashid | Merge pull request #8 from NearIdentity/grafana-dashboard
+a1b5c81 2026-10-26 NearIdentity | Removal of invalid runtime parameters
+45dca67 2026-10-26 NearIdentity | Merge branch 'grafana-dashboard' of github.com:NearIdentity/cogent into grafana-dashboard
+00836ab 2026-10-26 NearIdentity | Dashboard documentation update
+c529a79 2026-10-24 Abdullah Al Rashid | Merge branch 'main' into grafana-dashboard
+f534b72 2026-10-24 NearIdentity | Grafana dashboard for analytics
+2413212 2026-10-24 Abdullah Al Rashid | Merge pull request #7 from NearIdentity/scaleout-steps-0
+604077b 2026-10-24 NearIdentity | Scale-out preparation & asscoiated updates
+8270272 2026-10-24 NearIdentity | Scale-out preparation & asscoiated updates
+7568be8 2026-10-21 Abdullah Al Rashid | Merge pull request #6 from NearIdentity/pgvector-db-over-mcp
+fe12f9a 2026-10-21 NearIdentity | Fixes from further testing
+33c0ed1 2026-10-21 NearIdentity | Fixes post-MCP-client-testing
+c3419e3 2026-10-21 NearIdentity | Updated notes
+dc6e56e 2026-10-21 NearIdentity | Various fixes
+2901187 2026-10-21 NearIdentity | Runtime bug-fix
+64f8cc3 2026-10-20 NearIdentity | PGVector DB for extracted tabular data + MCP services
+94ca45c 2026-10-19 Abdullah Al Rashid | Merge pull request #5 from NearIdentity/forced-refresh
+4228bbf 2026-10-19 NearIdentity | Deeper refresh feature
+39feede 2026-10-19 NearIdentity | Forced data refresh option for KG agent
+a519b0c 2026-10-19 Abdullah Al Rashid | Merge pull request #4 from NearIdentity/dotbin-figure-fixes
+5679956 2026-10-19 Abdullah Al Rashid | Merge branch 'main' into dotbin-figure-fixes
+595d71e 2026-10-19 NearIdentity | Fix: .bin files as extracted figures
+8cca39f 2026-10-19 Abdullah Al Rashid | Merge pull request #2 from NearIdentity/mcp-server
+2def2c9 2026-10-18 NearIdentity | MCP server set-up
+fc5c960 2026-10-13 NearIdentity | MCP server -- initial commit
+1b38744 2026-10-13 NearIdentity | Data staging daemon
+0e0033b 2026-10-18 NearIdentity | MCP server set-up
+920d617 2026-10-13 NearIdentity | MCP server -- initial commit
+203b69c 2026-10-13 NearIdentity | Various updates to standards
+5d25710 2026-10-13 NearIdentity | Data staging daemon
+ad3ac56 2026-10-13 NearIdentity | Updated annotation
+10da5fd 2026-10-12 NearIdentity | Updated annotation
+e14967d 2026-10-12 NearIdentity | Bug-fix: syntax error
+f865387 2026-10-12 NearIdentity | Updated documentation
+c3c26a8 2026-10-12 NearIdentity | Initial commit -- staging agent for Knowledge Graphs
+
+== merge commit messages (full) for PR merges
+--- 1f237f0
+2026-10-27 02:56:06 -0400
+Merge pull request #10 from NearIdentity/mcp-client-testcycle-fixes-addendum
+
+Updated fixes post-testing
+--- 9da80ec
+2026-10-27 00:17:43 -0400
+Merge pull request #9 from NearIdentity/mcp-agent-testcycle-updates
+
+Updates Based on the Latest MCP Client-Side Testing (2026-10-26)
+--- af5630d
+2026-10-26 22:28:01 -0400
+Merge pull request #8 from NearIdentity/grafana-dashboard
+
+Grafana Dashboard for Analytics
+--- 45dca67
+2026-10-26 16:12:01 -0400
+Merge branch 'grafana-dashboard' of github.com:NearIdentity/cogent into grafana-dashboard
+
+--- c529a79
+2026-10-24 19:25:07 -0400
+Merge branch 'main' into grafana-dashboard
+--- 2413212
+2026-10-24 17:16:59 -0400
+Merge pull request #7 from NearIdentity/scaleout-steps-0
+
+Steps to Facilitate Scaleable Deployment
+--- 7568be8
+2026-10-21 14:12:06 -0400
+Merge pull request #6 from NearIdentity/pgvector-db-over-mcp
+
+PGVector DB for Extracted Tabular Data + Associated MCP Services
+--- 94ca45c
+2026-10-19 23:55:03 -0400
+Merge pull request #5 from NearIdentity/forced-refresh
+
+Forced data refresh option for KG agent
+--- a519b0c
+2026-10-19 20:35:26 -0400
+Merge pull request #4 from NearIdentity/dotbin-figure-fixes
+
+Fixes to .bin Format for Extracted Figures
+--- 5679956
+2026-10-19 20:34:21 -0400
+Merge branch 'main' into dotbin-figure-fixes
+--- 8cca39f
+2026-10-19 13:49:54 -0400
+Merge pull request #2 from NearIdentity/mcp-server
+
+MCP Server for Staged Knowledge Graphs
+
+== full messages: Fixes post-MCP-client-testing, Updates based on the latest MCP client-side testing, Fixes from further testing, Various fixes
+--- 33c0ed1
+2026-10-21 12:31:24 -0400 NearIdentity
+Fixes post-MCP-client-testing
+
+--- a434240
+2026-10-27 00:13:37 -0400 NearIdentity
+Updates based on the latest MCP client-side testing (2026-10-26)
+
+--- fe12f9a
+2026-10-21 14:09:08 -0400 NearIdentity
+Fixes from further testing
+
+--- dc6e56e
+2026-10-21 02:05:21 -0400 NearIdentity
+Various fixes
+
+--- 2901187
+2026-10-21 00:49:55 -0400 NearIdentity
+Runtime bug-fix
+
+--- 1f237f0
+2026-10-27 02:56:06 -0400 Abdullah Al Rashid
+Merge pull request #10 from NearIdentity/mcp-client-testcycle-fixes-addendum
+
+Updated fixes post-testing
+--- 624271c
+2026-10-27 01:41:39 -0400 NearIdentity
+Updated fixes post-testing
+
+--- 0659c5c
+2026-10-27 02:37:06 -0400 NearIdentity
+Follow-up fixes
+

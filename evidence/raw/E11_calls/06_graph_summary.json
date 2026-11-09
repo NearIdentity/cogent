@@ -1,0 +1,38 @@
+{
+ "tool": "graph_summary",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "ref": "aaaaaaaaaaaaaaaa",
+  "nodes": 23,
+  "edges": 48,
+  "node_types": {
+   "Document": 1,
+   "Heading": 3,
+   "Paragraph": 3,
+   "Table": 2,
+   "TableRow": 3,
+   "Value": 11
+  },
+  "relations": {
+   "CONTAINS": 8,
+   "NEXT": 7,
+   "MENTIONS": 17,
+   "has_value": 16
+  },
+  "graph_attributes": {
+   "source": "fixture_tables/home/src_html/aaaaaaaaaaaaaaaa.html",
+   "extraction_recipe": "10",
+   "assets_dir": "fixture_tables/home/staging/documents/aaaaaaaaaaaaaaaa/assets/13c30670b34792ee9aafec86ad46ab52ea6130e0a875476e33a364a2ec364b84"
+  }
+ }
+}

@@ -1,0 +1,79 @@
+{
+ "tool": "get_neighbors",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "node_id": "h0002"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "node": "h0002",
+  "total": 6,
+  "neighbors": [
+   {
+    "direction": "out",
+    "relation": "CONTAINS",
+    "node": {
+     "id": "p0003",
+     "type": "Paragraph",
+     "label": "Table 3-1 lists the seismic design categories and their limit state definitions."
+    }
+   },
+   {
+    "direction": "out",
+    "relation": "NEXT",
+    "node": {
+     "id": "p0003",
+     "type": "Paragraph",
+     "label": "Table 3-1 lists the seismic design categories and their limit state definitions."
+    }
+   },
+   {
+    "direction": "out",
+    "relation": "CONTAINS",
+    "node": {
+     "id": "tbl0004",
+     "type": "Table",
+     "label": "Table 3-1: Seismic design categories",
+     "rows": "(table; use get_table)",
+     "file": "tables/tbl0004_table-3-1-seismic-design-categories.csv"
+    }
+   },
+   {
+    "direction": "out",
+    "relation": "CONTAINS",
+    "node": {
+     "id": "p0005",
+     "type": "Paragraph",
+     "label": "Note: probabilities are annual frequencies of exceedance."
+    }
+   },
+   {
+    "direction": "in",
+    "relation": "CONTAINS",
+    "node": {
+     "id": "h0001",
+     "type": "Heading",
+     "label": "Seismic Design Criteria for Nuclear Facilities",
+     "level": 1
+    }
+   },
+   {
+    "direction": "in",
+    "relation": "NEXT",
+    "node": {
+     "id": "h0001",
+     "type": "Heading",
+     "label": "Seismic Design Criteria for Nuclear Facilities",
+     "level": 1
+    }
+   }
+  ]
+ }
+}

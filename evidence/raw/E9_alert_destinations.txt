@@ -1,0 +1,98 @@
+collected 2026-11-09T03:21:33Z on origin/main 1f237f0
+== daemon hooks
+src/kg_daemon.py:14:                failure / warning hooks (``--on-failure CMD``, ``--on-warnings CMD``)
+src/kg_daemon.py:289:    on_failure: Optional[str] = None
+src/kg_daemon.py:290:    on_warnings: Optional[str] = None
+src/kg_daemon.py:419:        self._hooks(ok, code, reason, summary)
+src/kg_daemon.py:448:    def _hooks(self, ok: bool, code: int, reason: str, summary: Optional[dict[str, Any]]) -> None:
+src/kg_daemon.py:454:        for cmd, fire in ((self.o.on_failure, gave_up), (self.o.on_warnings, ok and (summary or {}).get("warnings", 0) > 0)):
+src/kg_daemon.py:458:                except Exception as exc:                       # a broken hook must not stop the daemon
+src/kg_daemon.py:459:                    log.warning("hook %r failed: %s", cmd, exc)
+src/kg_daemon.py:558:                   on_failure=a.on_failure, on_warnings=a.on_warnings, spec=a.at)
+src/kg_daemon.py:625:    ap.add_argument("--on-failure", help="command run when a run fails for good (env: COGENT_EXIT, COGENT_REASON, …)")
+src/kg_daemon.py:626:    ap.add_argument("--on-warnings", help="command run after a run that left open warnings (env: COGENT_WARNINGS, …)")
+
+== where alerts are written/read
+src/kg_agent.py:11:             new link / identifier text), audited in ``config/changes.jsonl``
+src/kg_agent.py:16:* finalize   persist state and APPEND a section to ``logs/report.md``
+src/kg_agent.py:21:    config/history/*.json  config/changes.jsonl      configuration snapshots + audit log
+src/kg_agent.py:25:    state/*.json   logs/report.md   logs/runs.jsonl
+src/kg_agent.py:113:        self.changes = self.config / "changes.jsonl"
+src/kg_agent.py:118:        self.report = self.logs / "report.md"
+src/kg_agent.py:119:        self.runs = self.logs / "runs.jsonl"
+src/kg_agent.py:120:        self.forced = self.logs / "forced.jsonl"       # one line per source re-read by a forced update
+src/kg_agent.py:346:        rt.alerts = read_json(p.state / "alerts.json", {})
+src/kg_agent.py:541:    def alerts(state: AgentState) -> AgentState:
+src/kg_agent.py:562:        rt.write_json(p.state / "alerts.json", merged)
+src/kg_agent.py:563:        return {"alerts": list(merged.values())}
+src/kg_agent.py:603:    names = ("init", "track", "apply", "sync_docs", "assemble", "versions", "combine", "alerts", "finalize")
+src/kg_agent.py:771:    """Append one record to ``logs/forced.jsonl`` (audit trail of forced re-reads; nothing is written in a dry run)."""
+src/kg_agent.py:1226:def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
+src/kg_agent.py:1350:        "warnings": sum(1 for a in state.get("alerts", []) if a["severity"] == "warning"),
+src/kg_agent.py:1455:                     f"Details in `logs/tabledb_report.md`; data dictionaries and relationship maps in `tabledb/<docid>/`.")
+src/kg_agent.py:1466:    al = state.get("alerts", [])
+src/kg_agent.py:1695:        result["alerts"] = [a for a in st.get("alerts", []) if a["entry"] == key]
+src/kg_agent.py:1741:    alerts = read_json(p.state / "alerts.json", {})
+src/kg_agent.py:1803:                   "the latest edition if one is available, and log/report it all (logs/forced.jsonl). Combine with --only to limit it")
+src/kg_daemon.py:438:        """Summary counters the agent wrote for its latest run (logs/runs.jsonl)."""
+src/kg_daemon.py:440:            last = (self.o.home / "logs" / "runs.jsonl").read_text().strip().splitlines()[-1]
+src/kg_daemon.py:450:               "COGENT_REPORT": str(self.o.home / "logs" / "report.md"),
+src/kg_daemon.py:578:    alerts = home / "state" / "alerts.json"
+src/kg_store.py:192:    def alerts(self, entry: Optional[str] = None) -> list[dict[str, Any]]:
+src/kg_store.py:193:        al = _read_json(self.home / "state" / "alerts.json", {}) or {}
+src/kg_store.py:199:            lines = (self.home / "logs" / "runs.jsonl").read_text(encoding="utf-8").strip().splitlines()
+src/kg_store.py:242:                "version_status": vt.get("status"), "open_warnings": open_alerts.get(key, 0)})
+src/kg_store.py:335:        """The most recent forced-update run record from logs/forced.jsonl (None if there was none)."""
+src/kg_store.py:337:            for line in reversed((self.home / "logs" / "forced.jsonl").read_text(encoding="utf-8").strip().splitlines()):
+src/kg_store.py:356:                "version_status_counts": by_status, "open_warnings": sum(1 for a in self.alerts() if a.get("severity") == "warning"),
+
+== cron/systemd failure notification text
+# crontab -e   (one line per job; cron has a minimal environment, so use absolute paths)
+# CRON_TZ is honoured by cronie (RHEL/Fedora/Arch) but NOT by Debian/Ubuntu's cron: there it is the machine's time zone.
+MAILTO=you@example.org
+# 06:00 every day. flock -n: skip this run if the previous one is still going (the agent also has its own lock).
+0 6 * * *  cd /opt/cogent && flock -n /var/lock/cogent.lock /opt/cogent/cogent/bin/python src/kg_agent.py run --home /var/lib/cogent >> /var/lib/cogent/logs/cron.log 2>&1
+
+# Cron does not run what was missed while the machine was off. Either install anacron, or add a boot-time catch-up:
+# @reboot  sleep 120 && cd /opt/cogent && /opt/cogent/cogent/bin/python src/kg_daemon.py run-now --home /var/lib/cogent
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cogent /opt/cogent/config
+# notification on failure, e.g. a unit that sends mail: OnFailure=cogent-notify@%n.service
+            return None
+
+    def _hooks(self, ok: bool, code: int, reason: str, summary: Optional[dict[str, Any]]) -> None:
+        env = {"COGENT_EXIT": str(code), "COGENT_REASON": reason, "COGENT_HOME": str(self.o.home),
+               "COGENT_REPORT": str(self.o.home / "logs" / "report.md"),
+               "COGENT_WARNINGS": str((summary or {}).get("warnings", 0)),
+               "COGENT_FAILURES": str(self.state.consecutive_failures)}
+        gave_up = not ok and reason != "stopped" and self.state.retry_at is None
+        for cmd, fire in ((self.o.on_failure, gave_up), (self.o.on_warnings, ok and (summary or {}).get("warnings", 0) > 0)):
+            if cmd and fire:
+                try:
+                    subprocess.run(shlex.split(cmd), env={**os.environ, **env}, timeout=60, check=False)
+                except Exception as exc:                       # a broken hook must not stop the daemon
+                    log.warning("hook %r failed: %s", cmd, exc)
+
+    # ---- serving ----------------------------------------------------------------------
+    def install_signals(self) -> None:
+    print(f"next run:      {st.next_run or '-'}")
+    print(f"last run:      {st.last_start or '-'} -> {st.last_end or '-'}  exit {st.last_exit}  ({st.last_trigger or '-'})")
+    print(f"last success:  {st.last_success or '-'}   consecutive failures: {st.consecutive_failures}"
+          + (f"   retry at {st.retry_at}" if st.retry_at else ""))
+    if st.last_summary:
+        print(f"last summary:  {st.last_summary}")
+    alerts = home / "state" / "alerts.json"
+    try:
+        n = sum(1 for a in json.loads(alerts.read_text()).values() if a.get("severity") == "warning")
+        print(f"open warnings: {n}  (python src/kg_agent.py status --home {home})")
+    except (OSError, ValueError):
+        pass
+    return 0 if pid else 3
+
+
+def cmd_stop(home: Path, timeout: float) -> int:
+    pidfile = home / "daemon" / "kg_agent.pid"
+    pid = PidFile.running_pid(pidfile)
+    if not pid:

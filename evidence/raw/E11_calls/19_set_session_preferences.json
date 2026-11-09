@@ -1,0 +1,31 @@
+{
+ "tool": "set_session_preferences",
+ "args": {
+  "profile": "strict",
+  "session_id": "ev-strict"
+ },
+ "isError": false,
+ "result": {
+  "session": "evidence:ev-strict",
+  "saved": {
+   "approach": "consensus",
+   "min_score": 0.6,
+   "include_rejected": false,
+   "retrieval": "semantic",
+   "units": "strict",
+   "min_similarity": 0.7,
+   "profile": "strict"
+  },
+  "effective": {
+   "profile": "strict",
+   "approach": "consensus",
+   "min_score": 0.6,
+   "include_rejected": false,
+   "min_agreement": 0.0,
+   "units": "strict",
+   "retrieval": "semantic",
+   "min_similarity": 0.7
+  },
+  "expires_in_hours": 8.0
+ }
+}

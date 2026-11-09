@@ -1,0 +1,56 @@
+collected 2026-11-09 from config/*.json on origin/main
+
+config/standards.json: entries=30, with version_tracking block=30
+ version_tracking keys: {'status': 30, 'latest': 30, 'staged': 30}
+ status values: {'current': 26, 'partially_staged': 1, 'no_local_copy': 2, 'update_available': 1}
+ timestamp-like values (path, date): count -> {('/staged/kg_built', '2026-10-20'): 22, ('/staged/documents/fetched', '2026-10-12'): 33, ('/latest/detected', '2026-10-21'): 3, ('/staged/kg_built', '2026-10-21'): 8, ('/staged/documents/fetched', '2026-10-21'): 8, ('/staged/documents/fetched', '2026-10-13'): 4, ('/latest/detected', '2026-10-12'): 1}
+ 'confidence' fields found in version_tracking: 0 []
+
+config/reports.json: entries=15, with version_tracking block=15
+ version_tracking keys: {'status': 15, 'latest': 15, 'staged': 15}
+ status values: {'current': 7, 'no_documents': 8}
+ timestamp-like values (path, date): count -> {('/staged/kg_built', '2026-10-20'): 15, ('/staged/documents/fetched', '2026-10-12'): 12}
+ 'confidence' fields found in version_tracking: 0 []
+
+Example version_tracking block (standards id 1):
+{
+ "status": "current",
+ "latest": [
+  {
+   "identity": "eCFR title 10 part 50",
+   "edition": "2026-09-22",
+   "label": "eCFR as of 2026-09-22",
+   "url": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50",
+   "source": "https://www.ecfr.gov/api/versioner/v1/versions/title-10.json?part=50"
+  }
+ ],
+ "staged": {
+  "kg": "staging/standards/1/kg.json",
+  "kg_built": "2026-10-20T03:47:36Z",
+  "documents": [
+   {
+    "url": "https://www.ecfr.gov/current/title-10/chapter-I/part-50",
+    "kind": "xml",
+    "local": false,
+    "fetched": "2026-10-12T20:37:26Z",
+    "text_sha": "07079a095466",
+    "as_of": "2026-10-19",
+    "editions": {}
+   }
+  ],
+  "editions": {}
+ }
+}
+
+== documents recorded as fetched on 2026-10-12 (UTC) by host, from config/*.json (main)
+{'www.ecfr.gov': 8, 'www.energy.gov': 3, 'www.directives.doe.gov': 3, 'id.energy.gov': 4, 'www.standards.doe.gov': 3, 'www.nrc.gov': 23, 'www.asme.org': 1}
+fetched timestamps min/max: 2026-10-12T20:37:26Z 2026-10-12T20:42:06Z count 45
+
+== all dates on which documents were recorded as fetched
+{'2026-10-12': 45, '2026-10-13': 4, '2026-10-21': 8}
+
+== 'latest' items with 'detected' timestamps
+standards.json 2 {'identity': 'eCFR title 10 part 52', 'edition': '2026-10-19', 'detected': '2026-10-21T00:53:30Z', 'label': 'eCFR as of 2026-10-19'}
+standards.json 4 {'identity': 'eCFR title 10 part 73', 'edition': '2026-10-19', 'detected': '2026-10-21T00:53:42Z', 'label': 'eCFR as of 2026-10-19'}
+standards.json 5 {'identity': 'eCFR title 10 part 100', 'edition': '2026-10-19', 'detected': '2026-10-21T00:53:43Z', 'label': 'eCFR as of 2026-10-19'}
+standards.json 21 {'identity': 'QME 1', 'edition': '2025', 'detected': '2026-10-12T20:37:26Z', 'label': 'QME-1-2025'}

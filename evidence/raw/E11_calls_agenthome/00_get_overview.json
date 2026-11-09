@@ -1,0 +1,54 @@
+{
+ "tool": "get_overview",
+ "args": {},
+ "isError": false,
+ "result": {
+  "extraction_recipe": "10",
+  "entries_behind_extraction_recipe": [],
+  "run_errors": [],
+  "document_errors": [],
+  "entries": 5,
+  "with_graph": 5,
+  "version_status_counts": {
+   "current": 2,
+   "update_available": 2,
+   "no_documents": 1
+  },
+  "open_warnings": 0,
+  "agent_last_run": "2026-11-09T03:25:44Z",
+  "agent_last_forced_run": null,
+  "agent_last_run_summary": {
+   "documents": 3,
+   "docs_created": 0,
+   "docs_updated": 1,
+   "docs_unchanged": 2,
+   "docs_error": 0,
+   "forced": false,
+   "docs_refreshed": 0,
+   "entries_refreshed": 0,
+   "error_messages": [],
+   "assets_purged_files": 0,
+   "assets_purged_bytes": 0,
+   "orphans": 0,
+   "orphans_archived": 0,
+   "forced_warnings": 0,
+   "tabledb": null,
+   "entries_rebuilt": 1,
+   "trackers": 4,
+   "trackers_changed": 4,
+   "findings": 4,
+   "config_changes": 3,
+   "errors": 0,
+   "warnings": 0,
+   "not_current": 3
+  },
+  "disclaimers": [
+   "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them.",
+   "Entities and relations are produced by rule-based (or optionally LLM-assisted) extraction and are not exhaustive or authoritative. They are not legal, licensing or engineering advice.",
+   "'Latest available' reflects what the update agent's trackers last observed, as of the capture times given; a newer edition may exist that has not been detected yet."
+  ],
+  "table_database": {
+   "configured": false
+  }
+ }
+}

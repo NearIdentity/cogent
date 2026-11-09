@@ -1,0 +1,36 @@
+{
+ "tool": "get_overview",
+ "args": {},
+ "isError": false,
+ "result": {
+  "extraction_recipe": "10",
+  "entries_behind_extraction_recipe": [
+   "standard:1",
+   "standard:2",
+   "standard:3"
+  ],
+  "note": "3 entries were built with an older extraction recipe; the next agent run rebuilds them (fixes to extraction apply only after that)",
+  "run_errors": [],
+  "document_errors": [],
+  "entries": 3,
+  "with_graph": 0,
+  "version_status_counts": {
+   "unknown": 3
+  },
+  "open_warnings": 1,
+  "agent_last_run": null,
+  "agent_last_forced_run": null,
+  "agent_last_run_summary": null,
+  "disclaimers": [
+   "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them.",
+   "Entities and relations are produced by rule-based (or optionally LLM-assisted) extraction and are not exhaustive or authoritative. They are not legal, licensing or engineering advice.",
+   "'Latest available' reflects what the update agent's trackers last observed, as of the capture times given; a newer edition may exist that has not been detected yet."
+  ],
+  "table_database": {
+   "configured": true,
+   "reachable": false,
+   "error": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?",
+   "hint": "nothing is listening at that host/port: is the database container running (docker compose ... ps)?"
+  }
+ }
+}

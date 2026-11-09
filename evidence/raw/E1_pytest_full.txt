@@ -1,0 +1,230 @@
+...................ss.......s........................................... [ 21%]
+..................................................ssssssssssssssssssssss [ 42%]
+ss...................................................................... [ 63%]
+.............................FFFF....................................sss [ 84%]
+sssssssssssss...............................sss......                    [100%]
+=================================== FAILURES ===================================
+________________ test_superscript_markers_are_split_from_values ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_superscript_markers_are_s0')
+
+    def test_superscript_markers_are_split_from_values(tmp_path):
+        table_pdf(tmp_path / "a.pdf", {(0, 0): ("Category", None), (0, 1): ("Worker", "2"), (0, 2): ("holds", "1"),
+                                       (1, 0): ("NDC-2", "4"), (1, 1): ("10 mSv", None), (1, 2): (">= PAC-1", "3"),
+                                       (2, 0): ("NDC-3", None), (2, 1): ("50 mSv", None), (2, 2): ("PAC-2", None)})
+        (t,) = load(tmp_path / "a.pdf")
+>       assert t.table == [["Category", "Worker", "holds"], ["NDC-2", "10 mSv", ">= PAC-1"], ["NDC-3", "50 mSv", "PAC-2"]]
+E       AssertionError: assert [['Category',...', 'PAC 2 -']] == [['Category',...Sv', 'PAC-2']]
+E         
+E         At index 0 diff: ['Category', '', 'Worker', '', 'holds'] != ['Category', 'Worker', 'holds']
+E         Use -v to get more diff
+
+tests/test_table_footnotes.py:39: AssertionError
+_________ test_exponents_and_unit_powers_are_not_footnotes[1.0 x 10-4] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_exponents_and_unit_powers0')
+text = '1.0 x 10', sup = '4'
+
+    @pytest.mark.parametrize("text,sup", [("1.0 x 10", "4"), ("Area in m", "2"), ("Dose in cm", "3")])
+    def test_exponents_and_unit_powers_are_not_footnotes(tmp_path, text, sup):
+        table_pdf(tmp_path / "b.pdf", {(0, 0): ("Name", None), (0, 1): ("Value", None), (0, 2): ("Unit", None),
+                                       (1, 0): ("x", None), (1, 1): (text, sup), (1, 2): ("y", None), (2, 0): ("z", None), (2, 1): ("1", None), (2, 2): ("2", None)})
+        (t,) = load(tmp_path / "b.pdf")
+>       assert t.table[1][1] == text + sup and "footnotes" not in t.meta                       # text extraction keeps 'm2' / '10^4' as one value
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ('' == '1.0 x 104'
+E         
+E         - 1.0 x 104)
+
+tests/test_table_footnotes.py:49: AssertionError
+________ test_exponents_and_unit_powers_are_not_footnotes[Area in m-2] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_exponents_and_unit_powers1')
+text = 'Area in m', sup = '2'
+
+    @pytest.mark.parametrize("text,sup", [("1.0 x 10", "4"), ("Area in m", "2"), ("Dose in cm", "3")])
+    def test_exponents_and_unit_powers_are_not_footnotes(tmp_path, text, sup):
+        table_pdf(tmp_path / "b.pdf", {(0, 0): ("Name", None), (0, 1): ("Value", None), (0, 2): ("Unit", None),
+                                       (1, 0): ("x", None), (1, 1): (text, sup), (1, 2): ("y", None), (2, 0): ("z", None), (2, 1): ("1", None), (2, 2): ("2", None)})
+        (t,) = load(tmp_path / "b.pdf")
+>       assert t.table[1][1] == text + sup and "footnotes" not in t.meta                       # text extraction keeps 'm2' / '10^4' as one value
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ('' == 'Area in m2'
+E         
+E         - Area in m2)
+
+tests/test_table_footnotes.py:49: AssertionError
+________ test_exponents_and_unit_powers_are_not_footnotes[Dose in cm-3] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_exponents_and_unit_powers2')
+text = 'Dose in cm', sup = '3'
+
+    @pytest.mark.parametrize("text,sup", [("1.0 x 10", "4"), ("Area in m", "2"), ("Dose in cm", "3")])
+    def test_exponents_and_unit_powers_are_not_footnotes(tmp_path, text, sup):
+        table_pdf(tmp_path / "b.pdf", {(0, 0): ("Name", None), (0, 1): ("Value", None), (0, 2): ("Unit", None),
+                                       (1, 0): ("x", None), (1, 1): (text, sup), (1, 2): ("y", None), (2, 0): ("z", None), (2, 1): ("1", None), (2, 2): ("2", None)})
+        (t,) = load(tmp_path / "b.pdf")
+>       assert t.table[1][1] == text + sup and "footnotes" not in t.meta                       # text extraction keeps 'm2' / '10^4' as one value
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ('' == 'Dose in cm3'
+E         
+E         - Dose in cm3)
+
+tests/test_table_footnotes.py:49: AssertionError
+=============================== warnings summary ===============================
+tests/test_agent.py::test_forced_update_purges_stale_assets_and_archives_orphans
+  /tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/main-wt/tests/test_agent.py:511: DeprecationWarning: Python 3.14 will, by default, filter extracted tar archives and reject files or modify their metadata. Use the filter argument to control this behavior.
+    tf.extractall(home / "staging/documents")
+
+tests/test_mcp.py::test_client_round_trip
+tests/test_mcp.py::test_oauth_flow
+tests/test_mcp.py::test_oauth_flow
+tests/test_mcp.py::test_assets_over_mcp
+  /usr/local/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 10 durations =============================
+5.54s call     tests/test_snapshot.py::test_pull_switches_atomically_and_keeps_serving_the_old_tree
+4.29s call     tests/test_scaleout.py::test_two_workers_share_one_port_and_a_session_store
+2.20s call     tests/test_daemon.py::test_run_command_timeout_and_stop
+1.76s call     tests/test_ocr.py::test_real_rapidocr
+1.53s call     tests/test_daemon.py::test_serve_runs_signals_and_stops_gracefully
+1.50s call     tests/test_telemetry.py::test_pushgateway_push_puts_the_text_format_and_failure_returns_false
+1.50s call     tests/test_daemon.py::test_start_detaches_and_stop_works
+1.37s setup    tests/test_agent.py::test_table_database_stage_runs_after_staging_and_never_fails_the_run
+1.23s call     tests/test_agent.py::test_three_days
+1.12s call     tests/test_agent.py::test_forced_update_purges_stale_assets_and_archives_orphans
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_agent.py:550: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_agent.py:571: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_agent.py:741: could not import 'opentelemetry.sdk.trace': No module named 'opentelemetry.sdk'
+SKIPPED [1] tests/test_mcp_tables.py:94: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:106: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:115: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:129: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:137: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:153: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:169: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:180: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:195: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:206: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tables.py:213: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:147: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:161: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:179: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:189: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:197: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:221: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:232: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:242: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:260: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:276: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:292: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:307: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_mcp_tailoring.py:334: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:24: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:52: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:63: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:77: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:106: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:115: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:125: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:141: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:159: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:185: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:202: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:229: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:265: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:282: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:297: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_tabledb.py:315: pgvector is not available: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+SKIPPED [1] tests/test_telemetry.py:200: OpenTelemetry SDK not installed
+SKIPPED [1] tests/test_telemetry.py:220: OpenTelemetry SDK not installed
+SKIPPED [1] tests/test_telemetry.py:234: OpenTelemetry SDK not installed
+4 failed, 291 passed, 46 skipped, 5 warnings in 54.93s
+exit=1

@@ -1,0 +1,57 @@
+{
+ "tool": "get_table",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "node_id": "tbl0008"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "id": "tbl0008",
+  "label": "Table 4-1: Damping values by seismic category",
+  "page": null,
+  "rows": [
+   [
+    "Seismic Category",
+    "Structure Type",
+    "Damping (%)"
+   ],
+   [
+    "SDC-3",
+    "Welded steel",
+    "4"
+   ],
+   [
+    "SDC-3",
+    "Reinforced concrete",
+    "7"
+   ],
+   [
+    "SDC-4",
+    "Welded steel",
+    "5"
+   ],
+   [
+    "SDC-4",
+    "Reinforced concrete",
+    "7"
+   ],
+   [
+    "SDC-5",
+    "Welded steel",
+    "5"
+   ]
+  ],
+  "total_rows": 6,
+  "offset": 0,
+  "limit": 200,
+  "truncated": false,
+  "next_offset": null
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "tool": "get_node",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "node_id": "h0002"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "node": {
+   "id": "h0002",
+   "type": "Heading",
+   "label": "3 Seismic Categories",
+   "level": 2,
+   "degree": {
+    "in": 2,
+    "out": 4
+   }
+  }
+ }
+}

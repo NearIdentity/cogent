@@ -1,0 +1,60 @@
+collected 2026-11-09T03:21:28Z on origin/main 1f237f0
+== pattern: smtp|smtplib|sendmail|e-mail|email|mailto|mailgun|sendgrid
+deploy/cogent.cron:3:MAILTO=you@example.org
+docs/observability.md:93:Routing the alert (e-mail, Slack, pager) needs an Alertmanager or Grafana contact point; neither is configured here. Without one the alert is visible on Prometheus' Alerts pag
+docs/scheduling.md:19:| Failure notification | `MAILTO` if mail works | `OnFailure=` unit | `--on-failure CMD`, `--on-warnings CMD` |
+src/kg_tools.py:423:                 if a.get("href") and not a["href"].startswith(("#", "mailto:", "javascript:"))]
+== pattern: webhook|slack|teams|discord|pagerduty|opsgenie|twilio|telegram|ntfy|pushover
+docs/observability.md:93:Routing the alert (e-mail, Slack, pager) needs an Alertmanager or Grafana contact point; neither is configured here. Without one the alert is visible on Prometheus' Alerts pag
+== pattern: notify|notification|desktop|syslog|journald|SysLogHandler|sd_notify|NOTIFY_SOCKET|alertmanager|pushgateway
+README.md:39:src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
+README.md:405:* **systemd** – `serve` speaks `sd_notify` (`READY=1`, `STATUS=`, `WATCHDOG=1`), so `Type=notify` + `WatchdogSec=` work.
+README.md:499:| `COGENT_PUSHGATEWAY` | Prometheus Pushgateway URL the agent pushes its run metrics to (same as `--pushgateway`) |
+README.md:517:  `test_mcp_tailoring.py`, `test_units.py`, `test_llmjoin.py`; scale-out: `test_scaleout.py` (workers, session stores, rate limit, metrics), `test_snapshot.py`; round-6 fixes: `test_round6.py` (lookup confi
+deploy/cogent-daemon.service:1:# The Python daemon (src/kg_daemon.py) under systemd: Type=notify, watchdog, restart. Use this OR the timer, not both.
+deploy/cogent-daemon.service:12:Type=notify
+deploy/cogent-daemon.service:13:NotifyAccess=main
+deploy/cogent-run.service:32:# notification on failure, e.g. a unit that sends mail: OnFailure=cogent-notify@%n.service
+deploy/observability/prometheus/prometheus.yml:23:  # Optional: the agent on a host with no MCP server, via a Pushgateway (kg_agent.py run --pushgateway http://127.0.0.1:9091).
+deploy/observability/prometheus/prometheus.yml:24:  # - job_name: pushgateway
+docs/observability.md:41:* **The agent is a batch job.** At the end of each run it merges its numbers into `<home>/metrics/agent.json` (cumulative counters, gauges for the last run) and writes `<home>/metrics/agent.prom`
+docs/observability.md:70:3. **Pushgateway**: `kg_agent.py run --pushgateway http://host:9091` (or `COGENT_PUSHGATEWAY`); a failed push is logged and never fails the run. Scrape the gateway with `honor_labels: true`.
+docs/observability.md:93:Routing the alert (e-mail, Slack, pager) needs an Alertmanager or Grafana contact point; neither is configured here. Without one the alert is visible on Prometheus' Alerts page and in the dashboa
+docs/observability.md:108:* The Prometheus, Grafana and promtool parts were run here against the demo traffic. The OTLP exporter was tested with the SDK's in-memory exporter and the console exporter, not against a real J
+docs/observability.md:109:* No Alertmanager or notification channel is configured.
+docs/scheduling.md:19:| Failure notification | `MAILTO` if mail works | `OnFailure=` unit | `--on-failure CMD`, `--on-warnings CMD` |
+docs/scheduling.md:68:Every run (cron, systemd timer or daemon) writes its metrics to `<home>/metrics/` and, with `--pushgateway URL`, pushes them; the daemon's `daemon.run` span is the parent of the agent's `agent.run` 
+notes/MCP_Server.md:104:`tests/test_mcp.py` (11 tests) covers store metadata from a real agent run, tokens, the 401/200 gate and Host check, a client round trip, the OAuth flow, and figure and table assets with the water
+src/kg_agent.py:85:    pushgateway: Optional[str] = None        # push the run's metrics to a Prometheus Pushgateway (default $COGENT_PUSHGATEWAY)
+src/kg_agent.py:1573:    with telemetry.Run(settings.home, rt.run_id, settings.pushgateway) as mrun, \
+src/kg_agent.py:1780:    r.add_argument("--pushgateway", default=os.environ.get("COGENT_PUSHGATEWAY"), metavar="URL", help="push this run's metrics to a Prometheus Pushgateway "
+src/kg_agent.py:1832:                 trace_console=getattr(a, "trace_console", False), pushgateway=getattr(a, "pushgateway", None), snapshot_keep=getattr(a, "snapshot_keep", 5),
+src/kg_daemon.py:13:* **ops**       rotating log file, ``state.json`` (``status`` reads it), systemd ``Type=notify`` + watchdog support,
+src/kg_daemon.py:146:# systemd notification (no dependency)
+src/kg_daemon.py:150:def sd_notify(message: str) -> bool:
+src/kg_daemon.py:151:    """Send a message to systemd's notify socket (READY=1, WATCHDOG=1, STATUS=…). No-op outside systemd."""
+src/kg_daemon.py:152:    addr = os.environ.get("NOTIFY_SOCKET")
+src/kg_daemon.py:380:        sd_notify(f"STATUS=running the agent ({trigger})")
+src/kg_daemon.py:418:        sd_notify(f"STATUS={st.status}; next run {st.next_run}")
+src/kg_daemon.py:435:            sd_notify("WATCHDOG=1")
+src/kg_daemon.py:483:            sd_notify("READY=1")
+src/kg_daemon.py:495:                        sd_notify("WATCHDOG=1")
+src/kg_daemon.py:499:            sd_notify("STOPPING=1")
+src/kg_telemetry.py:14:  ``--pushgateway URL``, pushes it to a Prometheus Pushgateway. The MCP server's ``/metrics`` merges the persisted agent metrics in, so one scrape
+src/kg_telemetry.py:566:    """PUT the registry to a Prometheus Pushgateway (``/metrics/job/<job>``). Returns False (and logs) on failure."""
+src/kg_telemetry.py:573:        log.warning("pushgateway %s not updated: %s", url, exc)
+src/kg_telemetry.py:580:    def __init__(self, home: Path, run_id: str = "", pushgateway: Optional[str] = None):
+src/kg_telemetry.py:581:        self.home, self.run_id, self.pushgateway = Path(home), run_id, pushgateway
+src/kg_telemetry.py:659:            if self.pushgateway:
+src/kg_telemetry.py:660:                push(self.pushgateway, total)
+tests/test_telemetry.py:257:def test_pushgateway_push_puts_the_text_format_and_failure_returns_false(fresh_process_registry):
+== pattern: urllib/requests/httpx/smtp POST calls in src (outbound HTTP calls)
+src/kg_embed.py:112:        with urlopen(req, timeout=self.timeout) as resp:
+src/kg_ingest.py:150:    with urlopen(req, timeout=timeout) as resp:
+src/kg_ingest.py:1223:        with urlopen(req, timeout=self.timeout) as resp:
+src/kg_llm.py:70:        with urlopen(req, timeout=self.timeout) as resp:
+src/kg_mcp.py:264:                self.requests["429"] = self.requests.get("429", 0) + 1
+src/kg_mcp.py:287:            self.requests[k] = self.requests.get(k, 0) + 1
+src/kg_snapshot.py:116:        with urllib.request.urlopen(req, timeout=60) as resp:
+src/kg_telemetry.py:570:        with urllib.request.urlopen(req, timeout=timeout):
+src/kg_tools.py:96:                with urlopen(Request(url, headers=headers), timeout=timeout) as r:

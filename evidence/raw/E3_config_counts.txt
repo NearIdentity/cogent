@@ -1,0 +1,66 @@
+collected 2026-11-09T03:20:53.438627Z
+standards.json top-level keys: ['meta', 'standards']
+meta: {'table': 'Section 1 (standards, regulations and guidance)', 'count': 30}
+reports.json top-level keys: ['meta', 'reports']
+meta: {'table': 'Section 2 (technical reports and documents)', 'count': 15, 'notes': 'standards_to_comply_with_ids refer to the "id" field in the standards JSON; the mapping is an inference. Ranges such as "#22 to #25" are expanded. #30 (ASME NQA-1) was split out of #28, which originally bundled Appendix B, NQA-1 and RG 1.28; every report that cites #28 also cites #30.'}
+standards: 30  reports: 15
+standards paywalled (field true or 'paywalled' in format_of_data): 4 [20, 21, 25, 30]
+standards with paywalled field true: 2
+reports paywalled: 1
+keys of a standard: ['description', 'document', 'format_of_data', 'group', 'group_title', 'id', 'links', 'overlaps_with', 'relevance_to_nuclear_power_generation', 'update_tracking', 'update_tracking_urls', 'version_tracking']
+keys of a report: ['format_of_data', 'id', 'report', 'standards_to_comply_with_ids', 'standards_to_comply_with_text', 'template_links', 'template_or_format_guide', 'update_tracking', 'update_tracking_urls', 'version_tracking']
+
+format_of_data values (standards):
+    8  'HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export'
+    3  'PDF (NRC ADAMS)'
+    2  'PDF (inferred; directives portal)'
+    2  'HTML landing page (paywalled); sold as PDF and print'
+    1  'HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export; guidance RG 1.201 is a PDF'
+    1  'HTML (eCFR web); XML/JSON through the eCFR API (JSON version history returned data for Part 50; other parts and formats not confirmed); PDF export; the Federal Register rule is HTML and PDF'
+    1  'PDF (DOE order; 420.1C link also PDF, inferred from the directives portal)'
+    1  'PDF (download endpoint, inferred from a matching public copy)'
+    1  'PDF (inferred; download endpoint and standards site)'
+    1  'PDF (inferred; download endpoint)'
+    1  'PDF on the DOE standards site; the link redirected to an HTML program page'
+    1  'PDF (NRC copy of 3009); HTML program page for 1104'
+    1  'HTML landing page; the report is a 1997 PDF (not opened)'
+    1  'PDF (NRC ADAMS copy); HTML index page'
+    1  'PDF (both, NRC ADAMS)'
+    1  'HTML (NRC page); PDF (RG 1.247); the RA-S-1.4 standard itself is paywalled (ASME landing page, sold as PDF and print). Status taken from search-engine listings; the ASME page was not opened directly'
+    1  'HTML (Appendix B on NRC site); PDF (RG 1.28)'
+    1  'PDF (RG 1.206, NUREG-1537 Part 1); HTML index page'
+    1  'HTML landing pages (paywalled); sold as PDF and print (ASME lists about $415). Editions and status taken from search-engine listings (vendor stores, ANSI/ASME titles); the ASME and ANSI pages were not opened directly'
+
+format_of_data values (reports):
+    3  'PDF (NRC ADAMS)'
+    2  'HTML (eCFR)'
+    1  'PDF (NRC ADAMS copy)'
+    1  'PDF (NEI 18-04, RG 1.253); HTML (eCFR for 50.69)'
+    1  'HTML (NRC page); PDF (RG 1.247)'
+    1  'PDF (RG 1.253, NEI 21-07, RG 1.206, NUREG-1537); mostly narrative content outlines, not forms'
+    1  'PDF (DOE standards)'
+    1  'None'
+    1  'PDF (RG 1.28; NEI 11-04 is a draft on the NRC site)'
+    1  'PDF (RG 1.253; DOE-STD-1271)'
+    1  'PDF (DOE order)'
+    1  'HTML or paywalled PDF (publishers); PDF (DOE/EH-0545)'
+
+link URL kinds (standards): extension / host
+standards link kinds: {'ecfr': 10, 'html/other': 23, 'pdf-url': 11} entries without links: 0
+ top hosts: [('www.nrc.gov', 15), ('www.ecfr.gov', 10), ('www.energy.gov', 3), ('www.directives.doe.gov', 3), ('id.energy.gov', 3), ('webstore.ansi.org', 3), ('www.asme.org', 3), ('www.standards.doe.gov', 2)]
+reports link kinds: {'pdf-url': 8, 'ecfr': 1, 'html/other': 3} entries without links: 8
+ top hosts: [('www.nrc.gov', 9), ('www.ecfr.gov', 1), ('id.energy.gov', 1), ('www.standards.doe.gov', 1)]
+
+PAYWALL_HOSTS (src/kg_models.py): ('ascelibrary.org', 'pubs.asce.org', 'sp360.asce.org', 'webstore.ansi.org', 'asme.org', 'store.accuristech.com', 'ans.org')
+standards: entries with a link on a PAYWALL_HOSTS host: 4 ids=[20, 21, 25, 30]
+reports: entries with a link on a PAYWALL_HOSTS host: 0 ids=[]
+
+== entries whose free-text format_of_data mentions each format (an entry can mention several); counts
+config/standards.json {'PDF': 30, 'HTML': 20, 'XML': 10, 'eCFR': 10} | format_of_data null/None: 0 of 30
+   PDF mentioned, no HTML/XML: 10  | HTML/eCFR mentioned, no PDF: 0
+config/reports.json {'PDF': 12, 'HTML': 5, 'XML': 0, 'eCFR': 3} | format_of_data null/None: 0 of 15
+   PDF mentioned, no HTML/XML: 9  | HTML/eCFR mentioned, no PDF: 2
+
+== the code's own source-kind detection: how the agent decides pdf/html/xml (src/kg_tools.py sniff_kind) -- see E3 note; kind values recorded in config version_tracking.staged.documents[].kind:
+staged document kinds recorded (documents, counted per entry; a shared URL counts once per entry): {'xml': 11, 'html': 20, 'pdf': 26}
+distinct staged document URLs: 46 by kind: {'xml': 10, 'html': 18, 'pdf': 18}

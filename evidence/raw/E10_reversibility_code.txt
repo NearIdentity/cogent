@@ -1,0 +1,90 @@
+collected 2026-11-09T03:25:59Z on origin/main 1f237f0
+== grep revert|rollback|roll back|restore|undo|unapply|rewind|downgrade in src/ README docs notes deploy
+README.md:263:  `orphaned` → `archived`, archive path, size, SHA-256, file count, restore command). Normal runs only detect and report
+README.md:264:  them (section *Orphaned staging data*, `status` lists them); `forced.jsonl` has one `orphan` record per archive. Restore with
+docs/tabledb.md:66:links to the table). `--row-mode text` restores the v1 behaviour (numbers left out, `Values given for:` column names instead). The mode is part of the recipe id
+src/kg_agent.py:828:                        "restore_into": "staging/documents"})
+src/kg_agent.py:834:                            "path": d, "restore_into": f"staging/{kind}s"})
+src/kg_agent.py:861:            "restore": f"tar -xzf {rt.p.home}/archive/orphans/{name} -C {rt.p.home}/{o['restore_into']}/"}
+src/kg_agent.py:1444:            L.append("\n_Restore with the `restore` command recorded in `state/orphans.json` (tar -xzf … -C staging/…)._")
+src/kg_tabledb.py:89:        # search_path is a connection option (a SET inside the transaction would be undone by a rollback)
+src/kg_tabledb.py:170:            conn.rollback()
+src/kg_tabledb.py:739:                    conn.rollback()
+src/kg_tabledb.py:744:                    conn.rollback()
+src/kg_tabledb.py:811:                    conn.rollback()
+src/kg_tableservice.py:296:            c.rollback()
+(end)
+
+== CLI subcommands of kg_agent.py
+src/kg_agent.py:1775:    r = sub.add_parser("run", parents=[common], help="run once")
+src/kg_agent.py:1804:    d = sub.add_parser("daemon", parents=[common], help="simple foreground loop: run every day (the full daemon with "
+src/kg_agent.py:1807:    pr = sub.add_parser("probe", parents=[common], help="run a tracker on one URL and print what it parsed")
+src/kg_agent.py:1809:    sub.add_parser("status", parents=[common], help="show staged documents")
+src/kg_agent.py:1810:    sub.add_parser("local", parents=[common], help="list paywalled entries and their local copies")
+src/kg_agent.py:1811:    al = sub.add_parser("add-local", parents=[common], help="import purchased copies of a paywalled entry")
+src/kg_mcp.py:894:    s = sub.add_parser("serve", help="run the server")
+src/kg_mcp.py:941:    t = sub.add_parser("token", help="manage access tokens")
+src/kg_mcp.py:943:    c = ts.add_parser("create", help="create a token (printed once)")
+src/kg_mcp.py:946:    ts.add_parser("list", help="list tokens (no secrets)")
+src/kg_mcp.py:947:    r = ts.add_parser("revoke", help="revoke a token by name")
+src/kg_snapshot.py:199:    p = sub.add_parser("publish", help="write a bundle of the agent home to a directory")
+src/kg_snapshot.py:207:        q = sub.add_parser(name, help="fetch the newest bundle and switch to it" if name == "pull" else "pull repeatedly")
+src/kg_snapshot.py:213:    st = sub.add_parser("status", help="which snapshot a link points to")
+src/kg_tabledb.py:917:    b = sub.add_parser("build", help="load / refresh the tables (incremental)")
+src/kg_tabledb.py:930:    sub.add_parser("status", help="what is in the database")
+src/kg_tabledb.py:931:    sub.add_parser("check", help="can this DSN connect and read the tables? (use the read-only DSN of the MCP server); exit 1 if not")
+src/kg_tabledb.py:932:    q = sub.add_parser("search", help="semantic search over the tables")
+
+== _archive function
+def _archive_orphan(rt: Runtime, o: dict[str, Any]) -> dict[str, Any]:
+    """tar.gz one orphan under archive/orphans/, verify the archive, only then remove it from staging."""
+    src: Path = o["path"]
+    n_files, n_bytes = _tree_stats(src)
+    name = f"{o['kind']}_{o['id'].replace(':', '_')}_{rt.run_id}.tar.gz"
+    dest = rt.p.orphan_archive / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while dest.exists():                                        # never overwrite an earlier archive
+        n += 1
+        name = f"{o['kind']}_{o['id'].replace(':', '_')}_{rt.run_id}_{n}.tar.gz"
+        dest = rt.p.orphan_archive / name
+    with tarfile.open(dest, "w:gz") as tf:
+        tf.add(src, arcname=src.name)
+    with tarfile.open(dest, "r:gz") as tf:                       # verify before deleting anything
+        members = [m for m in tf.getmembers() if m.isfile()]
+    if len(members) != n_files:
+        dest.unlink()
+        raise RuntimeError(f"archive verification failed ({len(members)} of {n_files} files)")
+    sha = hashlib.sha256(dest.read_bytes()).hexdigest()
+    shutil.rmtree(src)
+    return {"archive": f"archive/orphans/{name}", "archive_bytes": dest.stat().st_size, "archive_sha256": sha,
+            "files": n_files, "original_bytes": n_bytes,
+            "restore": f"tar -xzf {rt.p.home}/archive/orphans/{name} -C {rt.p.home}/{o['restore_into']}/"}
+
+
+def _track_orphans(rt: Runtime, state: AgentState) -> list[dict[str, Any]]:
+    """Detect orphans, record them in state/orphans.json (first seen, status, archive) and, in a forced run, archive
+    them (compressed) and remove them from staging. Returns this run's orphan records for the report."""
+    s = rt.s
+    track = read_json(rt.p.orphans, {})
+    found = _find_orphans(rt)
+    now = utcnow()
+    live_keys = {f"{o['kind']}:{o['id']}" for o in found}
+    for k in [k for k, v in track.items() if v["status"] == "orphaned" and k not in live_keys]:
+        del track[k]                                              # referenced again (or removed by hand)
+    archive_ok = s.force and s.prune and not rt.dry
+    why = ""
+    if s.force and s.prune and s.only:
+        why = "orphan archiving skipped: the run is limited by --only"
+
+== archive/config-history related lines
+src/kg_agent.py:21:    config/history/*.json  config/changes.jsonl      configuration snapshots + audit log
+src/kg_agent.py:24:    archive/documents/<id>/<ts>_<sha>/  archive/entries/<key>/<ts>/   superseded KGs
+src/kg_agent.py:838:def _archive_orphan(rt: Runtime, o: dict[str, Any]) -> dict[str, Any]:
+src/kg_agent.py:839:    """tar.gz one orphan under archive/orphans/, verify the archive, only then remove it from staging."""
+src/kg_agent.py:859:    return {"archive": f"archive/orphans/{name}", "archive_bytes": dest.stat().st_size, "archive_sha256": sha,
+src/kg_agent.py:861:            "restore": f"tar -xzf {rt.p.home}/archive/orphans/{name} -C {rt.p.home}/{o['restore_into']}/"}
+src/kg_agent.py:1038:def _archive(rt: Runtime, group: str, name: str, files: list[Path], label: str) -> Optional[str]:
+src/kg_agent.py:1049:def _prune_archive(rt: Runtime, group: str, name: str) -> None:
+src/kg_agent.py:1430:                 "Failed re-reads keep the previous KG; entries outside `--only`, `archive/` (apart from new versions and `archive/orphans/`) "
+src/kg_agent.py:1441:            L.append("\n_Still in staging. `run --force` archives them (compressed, under `archive/orphans/`) and removes them from staging; "

@@ -1,0 +1,22 @@
+2026-11-09 03:24:19,716 INFO kg_telemetry: opentelemetry-sdk is not installed: tracing stays off (pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http)
+2026-11-09 03:24:19,771 WARNING kg_mcp: TABLE DATABASE NOT USABLE: OperationalError: connection failed: connection to server at "127.0.0.1", port 1 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?. nothing is listening at that host/port: is the database container running (docker compose ... ps)? The table tools will fail until this is fixed (check with `kg_tabledb.py --dsn <dsn> check`).
+2026-11-09 03:24:19,771 INFO kg_mcp: serving /tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/e2home.ituU on http://127.0.0.1:18804/mcp (auth bearer token, 1 worker(s), sessions memory, graph cache 64)
+INFO:     Started server process [1942]
+INFO:     Waiting for application startup.
+2026-11-09 03:24:19,848 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18804 (Press CTRL+C to quit)
+INFO:     127.0.0.1:37346 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37358 - "POST /mcp HTTP/1.1" 200 OK
+2026-11-09 03:24:20,541 INFO mcp.server.streamable_http: Terminating session: None
+INFO:     127.0.0.1:37358 - "POST /mcp HTTP/1.1" 202 Accepted
+2026-11-09 03:24:20,544 INFO mcp.server.streamable_http: Terminating session: None
+2026-11-09 03:24:20,551 INFO mcp.server.lowlevel.server: Processing request of type ListToolsRequest
+INFO:     127.0.0.1:37374 - "POST /mcp HTTP/1.1" 200 OK
+2026-11-09 03:24:20,553 INFO mcp.server.streamable_http: Terminating session: None
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-11-09 03:24:20,855 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager shutting down
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1942]

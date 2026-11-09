@@ -1,0 +1,47 @@
+FIXTURE home (mock site) 2026-11-09T03:29:34Z: kg_agent.py status
+document           kind  versions last changed              forced err  url
+1657cae3554f5240   pdf          1 2026-11-09T03:25:44Z           -   0  http://127.0.0.1:41859/docs/doe1271_2025.pdf
+571fc37611a8de18   xml          2 2026-11-09T03:25:44Z           -   0  http://127.0.0.1:41859/current/title-10/section-50.69
+c2122df229c4fb71   pdf          1 2026-11-09T03:25:43Z           -   0  http://127.0.0.1:41859/docs/rg1233_rev0.pdf
+
+entry          status            latest available                   staged
+standard:1     current           eCFR as of 2026-09-01              - (1 doc)
+standard:2     update_available  RG 1.233 Rev. 1                    RG 1.233 Rev. 0 (1 doc)
+standard:3     update_available  DOE-STD-1271-2026                  DOE-STD-1271-2025 (1 doc)
+report:1       current           RG 1.233 Rev. 0                    RG 1.233 Rev. 0 (1 doc)
+report:2       no_documents      -                                  - (0 doc)
+
+entry KGs: 5; config changes logged: 8; report: ../fixture/home/logs/report.md
+
+== state/pending.json (review queue, FIXTURE)
+2 pending
+{"entry": "standard:3", "type": "new_edition", "identity": "DOE-STD 1271", "old": "2025", "new": "2026", "confidence": 0.9, "first_seen": "2026-11-09T03:25:44Z"}
+{"entry": "standard:2", "type": "new_edition", "identity": "RG 1.233", "old": "0", "new": "1", "confidence": 0.9, "first_seen": "2026-11-09T03:25:44Z"}
+
+== state/alerts.json (FIXTURE)
+0 alerts
+
+== logs/report.md sections (FIXTURE)
+1:## Run 20261109T032543Z
+13:### Version status (4 of 5 entries staged and current)
+21:### Document KGs created / updated
+27:### Entry KGs rebuilt
+37:## Run 20261109T032544Z
+45:### Version status (2 of 5 entries staged and current)
+55:### Document KGs created / updated
+62:### Entry KGs rebuilt
+66:### Tracker findings
+73:### Pending (needs human review)
+
+== report.md: diff / archived lines
+23:- **created** http://127.0.0.1:41859/current/title-10/section-50.69 (entries: standard:1) — xml, 10 nodes / 15 edges
+24:- **created** http://127.0.0.1:41859/docs/rg1233_rev0.pdf (entries: standard:2, report:1) — pdf, 7 nodes / 8 edges
+25:- **created** http://127.0.0.1:41859/docs/doe1271_2025.pdf (entries: standard:3) — pdf, 5 nodes / 6 edges
+29:- standard:1: created — 1/1 document KG(s) merged, 11 nodes
+30:- standard:2: created — 1/1 document KG(s) merged, 8 nodes
+31:- standard:3: created — 1/1 document KG(s) merged, 6 nodes
+32:- report:1: created — 1/1 document KG(s) merged, 10 nodes
+57:- **updated** http://127.0.0.1:41859/current/title-10/section-50.69 (entries: standard:1) — xml, 11 nodes / 17 edges
+59:    - entities +0 / -0; nodes 10→11, edges 15→17
+60:    - previous version archived: `archive/documents/571fc37611a8de18/20261109T032544Z_1435dcfc`
+64:- standard:1: rebuilt — 1/1 document KG(s) merged, 12 nodes (archived `archive/entries/standard_1/20261109T032544Z`)

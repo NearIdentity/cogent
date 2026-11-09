@@ -1,0 +1,108 @@
+collected 2026-11-09T03:26:12Z on origin/main 1f237f0
+== defaults in Settings (src/kg_agent.py)
+class Settings(BaseModel):
+    home: Path = Path("kg_agent_home")
+    standards: Path = Path("config/standards.json")
+    reports: Path = Path("config/reports.json")
+    extractor: str = "rules"            # rules | ollama | hybrid  (KG triple extraction)
+    model: Optional[str] = None         # Ollama model for extraction
+    ollama_host: Optional[str] = None
+    llm: Optional[str] = None           # Ollama model used only to narrate the run report
+69:    extractor: str = "rules"            # rules | ollama | hybrid  (KG triple extraction)
+94:    llm_joins: bool = False             # also infer joins with an Ollama LLM and judge all candidates with an LLM (needs --tables)
+95:    join_model: Optional[str] = None    # Ollama chat model of the join suggester (default llama3.1:8b)
+721:def _extractor(s: Settings):
+722:    return kg_ingest.make_extractor(s.extractor, s.model, s.ollama_host)
+923:                             **kg_tabledb.llm_kwargs(s.llm_joins, s.join_model, s.join_judge_model, s.ollama_host, s.join_samples, s.join_judge_runs,
+932:    res = {k: out[k] for k in ("embedder", "sources", "loaded", "unchanged", "skipped", "dropped", "joins", "documents_with_joins", "llm_joins", "errors", "warnings")}
+982:            fetch_url, _extractor(s), assets_dir=str(ddir / "assets") if s.assets else None,
+1458:            lj = td.get("llm_joins")
+1758:    common.add_argument("--extractor", choices=["rules", "ollama", "hybrid"], default="rules")
+1825:    s = Settings(home=a.home, standards=a.standards, reports=a.reports, extractor=a.extractor, model=a.model,
+1835:                 row_mode=getattr(a, "row_mode", "full"), llm_joins=getattr(a, "llm_joins", False), join_model=getattr(a, "join_model", None),
+
+== CLI flags
+1758:    common.add_argument("--extractor", choices=["rules", "ollama", "hybrid"], default="rules")
+1759:    common.add_argument("--model", help="Ollama model for triple extraction")
+1760:    common.add_argument("--ollama-host")
+1761:    common.add_argument("--llm", help="Ollama model used only to narrate the report")
+1785:    r.add_argument("--tables", action="store_true", help="after staging, build / refresh the table database (PostgreSQL + pgvector; kg_tabledb.py)")
+1788:    r.add_argument("--embedder", choices=["ollama", "hash"], default="ollama", help="embedder for table rows (Ollama model, or 'hash' for offline tests)")
+1792:    r.add_argument("--llm-joins", action="store_true", help="with --tables: also infer joins with an Ollama LLM and evaluate all candidates with an LLM judge")
+1793:    r.add_argument("--join-model", help="Ollama chat model of the join suggester (default llama3.1:8b)")
+1794:    r.add_argument("--join-judge-model", help="Ollama chat model of the judge (default: the suggester)")
+
+== kg_ingest make_extractor
+def make_extractor(kind: str = "rules", model: Optional[str] = None,
+                   host: Optional[str] = None, **kw: Any) -> Extractor:
+    """Factory: ``"rules"`` (rule-based), ``"ollama"`` (LLM, rule-based
+    fallback) or ``"hybrid"`` (LLM + rules filling the gaps)."""
+    kind = kind.lower()
+    if kind == "rules":
+        return RuleBasedExtractor()
+    if kind == "ollama":
+        return OllamaExtractor(model=model, host=host, **kw)
+    if kind == "hybrid":
+        return HybridExtractor(OllamaExtractor(model=model, host=host, **kw),
+                               RuleBasedExtractor())
+    raise ValueError(f"unknown extractor {kind!r} (rules | ollama | hybrid)")
+
+
+# --------------------------------------------------------------------------
+# Entity resolution
+# --------------------------------------------------------------------------
+
+
+def canonical(name: str) -> str:
+
+== MCP flags that use an LLM
+910:    s.add_argument("--embedder", choices=["ollama", "hash", "none"], default=os.environ.get("COGENT_EMBEDDER", "ollama"),
+912:    s.add_argument("--embed-model", default=None)
+915:    s.add_argument("--llm-model", default=os.environ.get("COGENT_LLM_MODEL"), help="Ollama model that enables evaluate_joins (LLM join inference + judge on request)")
+916:    s.add_argument("--judge-model", default=None, help="Ollama model for the judge (default: the --llm-model)")
+
+== docs/notes/README statements about real model use
+README.md:519:  The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
+docs/observability.md:7:The screenshot was taken from a real Prometheus and Grafana, fed by `deploy/observability/demo/generate_traffic.py` (see "Reproduce the screenshot"). The traffic is synthetic: a mock web site, a mock Ollama
+docs/observability.md:104:It needs the PostgreSQL server binaries and pgvector (like the test suite). It starts a private database, the test suite's mock site, a mock Ollama and the MCP server with `--metrics`, then runs the agent
+docs/tabledb.md:166:* The LLM stages were tested against scripted models and a mock Ollama server, not a real model: expect to tune prompts and thresholds. Databases built with recipe v1 need `--rebuild`.
+notes/MCP_Server.md:109:- **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, a real Ollama model, or a real OTLP collector (Jaeger, Tempo). The LLM join stages were tested with
+src/kg_llm.py:116:class FakeLLM(LLM):
+src/kg_llm.py:117:    """Scripted model for tests: ``handler(task, system, user, temperature, seed) -> dict`` (raise to simulate a failure)."""
+tests/test_llmjoin.py:82:    llm = kg_llm.FakeLLM(script(joins, {("Seismic Category", "Seismic Category"): ACCEPT, ("Class", "Seismic Category"): ACCEPT}))
+tests/test_llmjoin.py:111:    llm = kg_llm.FakeLLM(handler)
+tests/test_llmjoin.py:128:    ev = L.evaluate(tabs[:2], R.infer(tabs[:2]), kg_llm.FakeLLM(handler), None, L.Config(samples=1, judge_runs=3))
+tests/test_llmjoin.py:135:    ev = L.evaluate(tabs[:2], R.infer(tabs[:2]), kg_llm.FakeLLM(lambda t, s, u, tp, sd: {"joins": []} if t == "suggest" else {"verdict": next(toggle), "confidence": 0.8, "reasons": []}),
+tests/test_llmjoin.py:141:    ev = L.evaluate(tabs[:2], R.infer(tabs[:2]), kg_llm.FakeLLM(lambda t, s, u, tp, sd: {"joins": []} if t == "suggest" else {"verdict": "reject", "confidence": 0.9, "reasons": ["too generic"]}),
+tests/test_llmjoin.py:152:    ev = L.evaluate([tabs[0], t3], [], kg_llm.FakeLLM(sug), None, L.Config(samples=1, judge_runs=1))
+tests/test_llmjoin.py:160:    ev = L.evaluate(tabs[:2], R.infer(tabs[:2]), kg_llm.FakeLLM(down), None, L.Config(samples=2, judge_runs=2))
+tests/test_llmjoin.py:171:    ev = L.evaluate(tabs[:2], R.infer(tabs[:2]), kg_llm.FakeLLM(flaky), None, L.Config(samples=1, judge_runs=1))
+tests/test_llmjoin.py:182:        ev = L.evaluate(tabs, R.infer(tabs), kg_llm.FakeLLM(lambda t, s, u, tp, sd: {"joins": []}), None, L.Config(samples=3, max_seconds=25))
+tests/test_llmjoin.py:199:    cands = L.evaluate(tabs, R.infer(tabs), kg_llm.FakeLLM(script(joins, verdicts)), None, L.Config(samples=2, judge_runs=1, max_pairs=10))["candidates"]
+tests/test_mcp_tailoring.py:53:    llm = kg_llm.FakeLLM(lambda task, system, user, temp, seed: reply(system, user), "fake-suggester")
+tests/test_tabledb.py:226:    return kg_llm.FakeLLM(handler, "fake-llm")
+tests/test_tabledb.py:277:    s = build(table_home, pg_server, pg_schema, llm=kg_llm.FakeLLM(down, "x"), llm_cfg=L.Config(samples=1), force=True)
+tests/test_telemetry.py:97:# ------------------------------------------------------------------------------------------------------------------ mock Ollama
+tests/test_telemetry.py:168:    ev = L.evaluate([a, b], R.infer([a, b]), kg_llm.FakeLLM(handler), None, L.Config(samples=2, judge_runs=2, max_pairs=5))
+
+== any recorded run artefacts (llm / ollama) tracked: logs, jsonl, fixtures
+src/kg_llm.py
+src/kg_llmjoin.py
+tests/test_llmjoin.py
+(end)
+== mentions of llama / model names in tracked non-test, non-src files
+README.md:12:It prefers local tools (LangGraph, Pydantic, Ollama via LangChain, PyMuPDF, RapidOCR/Tesseract) and keeps free-text
+README.md:47:src/kg_llm.py, kg_llmjoin.py   Ollama chat client; LLM join inference with an LLM judge
+README.md:49:src/kg_embed.py      embedders: Ollama (/api/embed) and a deterministic hash embedder
+README.md:82:| Ollama + `langchain-ollama` | `--extractor ollama\|hybrid` (triples) and `--llm` (report narration) | `ollama pull llama3.1` |
+README.md:84:| Ollama + an embedding model | embeddings of table rows and of questions (`ollama pull nomic-embed-text`); `--embedder hash` works without a model | https://ollama.com |
+README.md:154:* **extract** – triples from text, tables and captions: `RuleBasedExtractor` (default, no dependencies), `OllamaExtractor`
+README.md:174:                             extractor=make_extractor("hybrid", model="llama3.1"), assets_dir="kg_assets")
+README.md:227:`kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
+README.md:460:pgvector: one typed database table per CSV with an `_embedding vector(DIM)` column (same Ollama model and dimension everywhere; whole rows are embedded by default, `--row-mode text` leav
+README.md:461:join columns inferred between the tables of a document (names + values + KG relations, optionally also proposed by an Ollama LLM and checked by an LLM judge, `--llm-joins`),
+README.md:492:| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server (default `http://localhost:11434`) and model (default `llama3.1`) |
+README.md:495:| `COGENT_EMBEDDER`, `COGENT_EMBED_MODEL`, `COGENT_LLM_MODEL` | embedder (`ollama` / `hash`), its model, and the Ollama chat model for join inference |
+README.md:519:  The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
+README.md:538:  `--extractor ollama` or `hybrid`.
+deploy/mcp.env.example:9:COGENT_EMBEDDER=ollama

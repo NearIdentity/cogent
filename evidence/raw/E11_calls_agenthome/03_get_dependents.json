@@ -1,0 +1,65 @@
+{
+ "tool": "get_dependents",
+ "args": {
+  "entry": "standard:1"
+ },
+ "isError": false,
+ "result": {
+  "entry": "standard:1",
+  "name": "10 CFR 50.69",
+  "depends_on": [],
+  "declared_dependents": [
+   {
+    "entry": "report:1",
+    "name": "Licensing basis report",
+    "version_status": "current"
+   }
+  ],
+  "overlaps_with": [],
+  "part_of": [],
+  "inferred_cited_by": [
+   {
+    "entry": "report:1",
+    "count": 1,
+    "identifiers": [
+     "CFR 50.69"
+    ],
+    "name": "Licensing basis report"
+   },
+   {
+    "entry": "standard:2",
+    "count": 1,
+    "identifiers": [
+     "CFR 50.69"
+    ],
+    "name": "NRC RG 1.233"
+   }
+  ],
+  "inferred_cites": [],
+  "if_this_changes_reports_affected": {
+   "declared": [
+    {
+     "entry": "report:1",
+     "name": "Licensing basis report",
+     "version_status": "current"
+    }
+   ],
+   "via_overlapping_standard": [],
+   "inferred_from_text": []
+  },
+  "combined": {
+   "built": "2026-11-09T03:25:44Z",
+   "run_id": "20261109T032544Z",
+   "age_days": 0.0,
+   "nodes": 5,
+   "edges": 5,
+   "entries_without_graph": [],
+   "derived": true,
+   "notes": [
+    "Derived from the per-entry graphs and the configuration; rebuilt by every agent run.",
+    "'declared' relations come from the configuration (curated). 'inferred' ones come from text matching and may be wrong or incomplete.",
+    "Contains entry-level relations only, no document text."
+   ]
+  }
+ }
+}

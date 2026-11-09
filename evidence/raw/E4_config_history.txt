@@ -1,0 +1,34 @@
+== config at each commit touching config/*.json: count of version_tracking blocks + fetched/kg_built/detected dates
+--- c3c26a8 2026-10-12T20:01:52-04:00 Initial commit -- staging agent for Knowledge Graphs
+  config/standards.json entries 29 with version_tracking 29 | earliest/latest ts: 2026-10-12T20 2026-10-12T20
+  config/reports.json entries 15 with version_tracking 15 | earliest/latest ts: 2026-10-12T20 2026-10-12T20
+--- 203b69c 2026-10-13T08:03:29-04:00 Various updates to standards
+  config/standards.json entries 30 with version_tracking 29 | earliest/latest ts: 2026-10-12T20 2026-10-12T20
+  config/reports.json entries 15 with version_tracking 15 | earliest/latest ts: 2026-10-12T20 2026-10-12T20
+--- 33c0ed1 2026-10-21T12:31:24-04:00 Fixes post-MCP-client-testing
+  config/standards.json entries 30 with version_tracking 30 | earliest/latest ts: 2026-10-12T20 2026-10-21T04
+  config/reports.json entries 15 with version_tracking 15 | earliest/latest ts: 2026-10-12T20 2026-10-20T03
+
+== first commit file list (c3c26a8)
+c3c26a8 2026-10-12T20:01:52-04:00 Initial commit -- staging agent for Knowledge Graphs
+
+ .gitignore            |    6 +
+ README.md             |  137 +++++
+ config/reports.json   |  740 ++++++++++++++++++++++
+ config/standards.json | 1628 +++++++++++++++++++++++++++++++++++++++++++++++++
+ requirements.txt      |   23 +
+ src/kg_agent.py       | 1272 ++++++++++++++++++++++++++++++++++++++
+ src/kg_ingest.py      | 1438 +++++++++++++++++++++++++++++++++++++++++++
+ src/kg_models.py      |  240 ++++++++
+ src/kg_ocr.py         |  312 ++++++++++
+ src/kg_show.py        |  356 +++++++++++
+ src/kg_tools.py       |  890 +++++++++++++++++++++++++++
+ tests/mock_site.py    |  141 +++++
+ tests/test_agent.py   |  269 ++++++++
+ tests/test_ocr.py     |  163 +++++
+ venv-setup.sh         |    3 +
+ 15 files changed, 7618 insertions(+)
+== timestamps inside config/*.json AT the initial commit c3c26a8 (committed 2026-10-12T20:01:52-04:00 = 2026-10-13T00:01:52Z)
+config/standards.json: n timestamps 70 min 2026-10-12T20:37:26Z max 2026-10-12T20:42:41Z
+config/reports.json: n timestamps 27 min 2026-10-12T20:37:34Z max 2026-10-12T20:42:41Z
+commit UTC 2026-10-13T00:01:52+00:00 | last fetch timestamp in config UTC 2026-10-12T20:42:06+00:00 | commit minus last fetch: 3:19:46

@@ -1,0 +1,97 @@
+collected 2026-11-09T03:26:18Z on origin/main 1f237f0
+== statements about testing OAuth / claude.ai / clients (file:line: text)
+README.md:519:  The LLM stages are tested against scripted models and a mock Ollama server, never a real model.
+README.md:533:* The table, reading-order, footnote and front-matter heuristics were tested on constructed examples and hand-built PDFs. Check `tables_demoted`, `order_warnings` and
+docs/mcp.md:140:  plan, and this flow was tested against the server's own OAuth test client, not against claude.ai itself.
+docs/observability.md:88:An operation is a fetch, an LLM call, an embedding batch, a tabledb load or a daemon run. Because it is a ratio over 24 hours, a single failed fetch among many good ones does not fire it; a source that has gone away for several runs does. Adjust the threshold in the file. The rule is unit-tested with pro
+docs/observability.md:108:* The Prometheus, Grafana and promtool parts were run here against the demo traffic. The OTLP exporter was tested with the SDK's in-memory exporter and the console exporter, not against a real Jaeger, Tempo or collector. The Pushgateway push was tested against a stub HTTP server, not a real Pushgateway.
+docs/scaling.md:50:MCP clients (Claude Code, the web connector); keep the server's own tokens / OAuth for `/mcp` and consider Access only for `/metrics`.
+docs/tabledb.md:166:* The LLM stages were tested against scripted models and a mock Ollama server, not a real model: expect to tune prompts and thresholds. Databases built with recipe v1 need `--rebuild`.
+notes/LiveDemo.md:157:- The OAuth flow was tested only against the server's own test client, not claude.ai. If the web app rejects the sign-in, note the error.
+notes/MCP_Server.md:109:- **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, a real Ollama model, or a real OTLP collector (Jaeger, Tempo). The LLM join stages were tested with scripted models and a mock Ollama server.
+notes/MCP_Server.md:112:- **Unverified on real PDFs:** the figure and table assets are tested with hand-built files, not ones extracted from real PDFs.
+
+== OAuth tests in tests/test_mcp.py
+57:def test_store_metadata(home):
+85:def test_token_store(tmp_path):
+121:def test_auth_gate(server):
+137:def test_client_round_trip(server):
+165:def test_oauth_flow(home):
+289:def test_public_figure_is_unmodified_and_paywalled_one_is_stamped(assets_home):
+307:def test_svg_figures_are_rasterised_and_stamped(assets_home):
+318:def test_tables_lists_and_policies(assets_home):
+347:def test_assets_over_mcp(assets_home):
+394:def test_wildcard_public_host_disables_host_check(home):
+410:def test_unconvertible_figure_gives_a_clear_error(assets_home):
+421:def test_asset_ids_accept_short_prefixes_and_graph_node_ids(assets_home):
+438:def test_no_response_leaks_local_paths(tmp_path):
+        r = c.post("/mcp", json={})
+        assert r.status_code == 401 and "resource_metadata" in r.headers["www-authenticate"]
+        md = c.get("/.well-known/oauth-authorization-server").json()
+        assert md["registration_endpoint"].endswith("/register") and "S256" in md["code_challenge_methods_supported"]
+        assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
+        reg = c.post("/register", json={"client_name": "Claude", "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+                                        "token_endpoint_auth_method": "none", "grant_types": ["authorization_code", "refresh_token"],
+                                        "response_types": ["code"]}).json()
+        verifier = "v" * 64
+        chal = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        q = {"response_type": "code", "client_id": reg["client_id"], "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+             "code_challenge": chal, "code_challenge_method": "S256", "state": "xyz", "scope": "kg:read"}
+        r = c.get("/authorize", params=q)
+        assert r.status_code == 302 and "/consent?pid=" in r.headers["location"]
+        pid = parse_qs(urlparse(r.headers["location"]).query)["pid"][0]
+        assert "Authorize MCP client" in c.get("/consent", params={"pid": pid}).text
+        bad = c.post("/consent", data={"pid": pid, "token": "wrong", "action": "allow"})
+        assert bad.status_code == 200 and "not valid" in bad.text
+        ok = c.post("/consent", data={"pid": pid, "token": operator, "action": "allow"})
+        assert ok.status_code == 302
+        loc = urlparse(ok.headers["location"])
+        cb = parse_qs(loc.query)
+        assert loc.netloc == "claude.ai" and cb["state"] == ["xyz"]
+        form = {"grant_type": "authorization_code", "code": cb["code"][0], "redirect_uri": q["redirect_uri"],
+                "client_id": reg["client_id"], "code_verifier": verifier}
+        assert c.post("/token", data={**form, "code_verifier": "x" * 64}).status_code == 400      # wrong PKCE verifier
+        tok = c.post("/token", data=form).json()
+
+== which client libraries the tests use
+tests/test_mcp.py:24:from mcp import ClientSession  # noqa: E402
+tests/test_mcp.py:25:from mcp.client.streamable_http import streamablehttp_client  # noqa: E402
+tests/test_mcp.py:141:        async with streamablehttp_client(url + "/mcp", headers={"Authorization": f"Bearer {secret}"}) as (r, w, _):
+tests/test_mcp.py:142:            async with ClientSession(r, w) as s:
+tests/test_mcp.py:188:        c = httpx.Client(base_url=base, follow_redirects=False)
+tests/test_mcp.py:222:            async with streamablehttp_client(base + "/mcp", headers={"Authorization": f"Bearer {token}"}) as (r_, w_, _):
+tests/test_mcp.py:223:                async with ClientSession(r_, w_) as s:
+tests/test_mcp.py:367:        async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp", headers={"Authorization": f"Bearer {secret}"}) as (r, w
+tests/test_mcp.py:368:            async with ClientSession(r, w) as s:
+tests/test_mcp.py:396:    from starlette.testclient import TestClient
+tests/test_mcp.py:404:        with TestClient(app) as c:
+tests/test_mcp_tables.py:19:from mcp import ClientSession
+
+== docs/mcp.md 134-142, 162-180
+* *Claude web/mobile (claude.ai).* Custom connectors there expect OAuth rather than a pasted bearer token (see section 4),
+  so start with `deploy/demo-tunnel.sh --oauth`. It opens the tunnel **first** (the tunnel does not need the server to be
+  running), reads the random URL, then starts the server with `--oauth-issuer <that URL>`. In claude.ai: Settings →
+  Connectors → Add custom connector → `<URL>/mcp`; the sign-in page asks for the access token the script printed. By hand:
+  start `cloudflared tunnel --url http://127.0.0.1:8765`, note the URL, then `serve --public-host '*' --oauth-issuer <URL>`.
+  Every restart changes the URL, so the connector must be re-added. Custom-connector availability depends on your Claude
+  plan, and this flow was tested against the server's own OAuth test client, not against claude.ai itself.
+* `421 Misdirected Request` / "Invalid Host header": the server was started without `--public-host '*'` (or the exact host).
+### OAuth 2.1 (for claude.ai web/mobile custom connectors and other OAuth clients)
+
+Anthropic's connector docs describe OAuth (dynamic client registration) as the supported auth for claude.ai custom
+connectors, so the server can also act as its own small OAuth authorization server (`src/kg_oauth.py`):
+
+```bash
+python src/kg_mcp.py --home kg_agent_home serve --public-host kg.example.com --oauth-issuer https://kg.example.com
+```
+* Endpoints (from the MCP SDK): `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`,
+  `/register` (dynamic client registration), `/authorize`, `/token`, `/revoke`; authorization code + **PKCE (S256)**.
+* The one human step is the **consent page** (`/consent`): the operator approves the client by entering a token made with
+  `token create`. After 5 wrong entries from one IP the page locks for 5 minutes.
+* Access tokens last 1 h, refresh tokens 30 d (rotated on use); only hashes are stored in `<home>/mcp/oauth.json` (0600).
+  Revoking the operator token that approved a client immediately invalidates that client's OAuth tokens.
+* Static bearer tokens keep working on `/mcp` (Claude Code, API connector, `mcp-remote`); `X-API-Key` is not accepted
+  in OAuth mode. The issuer must be the public **https** URL (http only for localhost).
+* In claude.ai: Settings → Connectors → Add custom connector → `https://kg.example.com/mcp` → sign in on the consent page.
+  Connector behaviour changes; check <https://claude.com/docs/connectors/building/authentication>.
+* Limits: single operator identity (tokens, not user accounts); registration is open by design but harmless without a

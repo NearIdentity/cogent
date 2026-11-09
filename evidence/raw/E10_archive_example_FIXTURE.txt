@@ -1,0 +1,62 @@
+== (FIXTURE home, local mock site, 2026-11-09) archive / config history tree
+archive/documents/571fc37611a8de18/20261109T032544Z_1435dcfc/kg.json
+archive/documents/571fc37611a8de18/20261109T032544Z_1435dcfc/state.json
+archive/entries/standard_1/20261109T032544Z/kg.json
+archive/entries/standard_1/20261109T032544Z/meta.json
+config/changes.jsonl
+config/history/20261109T032543Z_reports.json
+config/history/20261109T032543Z_standards.json
+config/history/20261109T032544Z_standards.json
+config/history/reports.last.json
+config/history/standards.last.json
+logs/metrics.jsonl
+logs/report.md
+logs/runs.jsonl
+state/alerts.json
+state/config_hashes.json
+state/identities.json
+state/orphans.json
+state/pending.json
+state/trackers.json
+
+== config/changes.jsonl (FIXTURE) lines
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032543Z", "file": "standards", "entry": "standard:1", "path": "version_tracking", "old": null, "new": "current; latest: eCFR as of 2024-05-01; staged: 1 doc(s), -; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032543Z", "file": "standards", "entry": "standard:2", "path": "version_tracking", "old": null, "new": "current; latest: RG 1.233 Rev. 0; staged: 1 doc(s), RG 1.233 Rev. 0; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032543Z", "file": "standards", "entry": "standard:3", "path": "version_tracking", "old": null, "new": "current; latest: DOE-STD-1271-2025; staged: 1 doc(s), DOE-STD-1271-2025; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032543Z", "file": "reports", "entry": "report:1", "path": "version_tracking", "old": null, "new": "current; latest: RG 1.233 Rev. 0; staged: 1 doc(s), RG 1.233 Rev. 0; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032543Z", "file": "reports", "entry": "report:2", "path": "version_tracking", "old": null, "new": "no_documents; latest: -; staged: 0 doc(s), -; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032544Z", "file": "standards", "entry": "standard:1", "path": "version_tracking", "old": "current; latest: eCFR as of 2024-05-01; staged: 1 doc(s), -; kg 2026-11-09T03:25:44Z", "new": "current; latest: eCFR as of 2026-09-01; staged: 1 doc(s), -; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "agent", "auto": true}
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032544Z", "file": "standards", "entry": "standard:2", "path": "version_tracking", "old": "current; latest: RG 1.233 Rev. 0; staged: 1 doc(s), RG 1.233 Rev. 0; kg 2026-11-09T03:25:44Z", "new": "update_available; latest: RG 1.233 Rev. 1; staged: 1 doc(s), RG 1.233 Rev. 0; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "source": "a
+{"ts": "2026-11-09T03:25:44Z", "run_id": "20261109T032544Z", "file": "standards", "entry": "standard:3", "path": "version_tracking", "old": "current; latest: DOE-STD-1271-2025; staged: 1 doc(s), DOE-STD-1271-2025; kg 2026-11-09T03:25:44Z", "new": "update_available; latest: DOE-STD-1271-2026; staged: 1 doc(s), DOE-STD-1271-2025; kg 2026-11-09T03:25:44Z", "reason": "version tracking refreshed", "sou
+
+== _archive / _prune_archive / config snapshot code in main
+def _archive(rt: Runtime, group: str, name: str, files: list[Path], label: str) -> Optional[str]:
+    if rt.dry:
+        return None
+    dest = rt.p.archive / group / name / label
+    dest.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        if f.exists():
+            shutil.copy2(f, dest / f.name)
+    return str(dest.relative_to(rt.p.home))
+
+
+def _prune_archive(rt: Runtime, group: str, name: str) -> None:
+    keep = rt.s.keep_archive
+    base = rt.p.archive / group / name
+    if keep and base.exists():
+        for old in sorted(base.iterdir())[:-keep]:
+            shutil.rmtree(old, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+9:             (eCFR version history, Federal Register API, identifier watcher for index pages)
+11:             new link / identifier text), audited in ``config/changes.jsonl``
+21:    config/history/*.json  config/changes.jsonl      configuration snapshots + audit log
+112:        self.history = self.config / "history"
+113:        self.changes = self.config / "changes.jsonl"
+326:            last = p.history / f"{name}.last.json"
+335:                rt.write(p.history / f"{rt.run_id}_{name}.json", cur_text)
+338:                rt.write(p.history / f"{rt.run_id}_{name}.json", cur_text)
+625:        rt.write(rt.p.history / f"{rt.run_id}_{name}.json", text)
+626:        rt.write(rt.p.history / f"{name}.last.json", text)

@@ -1,0 +1,56 @@
+{
+ "tool": "list_assets",
+ "args": {
+  "ref": "standard:1"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "entry": "standard:1",
+   "name": "Seismic Design Criteria (fixture)",
+   "graph_built": null,
+   "sources_last_checked": "2026-10-01T00:00:00Z",
+   "age_days": 39.14,
+   "stale": true,
+   "version_status": null,
+   "version_summary": "Version status not recorded (the agent has not run with version tracking yet).",
+   "latest_available": [],
+   "warnings": [],
+   "caveats": [
+    "Stale capture: sources were last checked 39.14 days ago (threshold 3).",
+    "No graph is staged for this entry yet."
+   ],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "ref": "standard:1",
+  "paywalled_assets_policy": "watermark",
+  "documents": [
+   {
+    "document_id": "aaaaaaaaaaaaaaaa",
+    "source": "https://www.nrc.gov/docs/seismic.html",
+    "paywalled": false,
+    "warnings": [],
+    "assets": [
+     {
+      "asset_id": "aaaaaaaaaaaaaaaa/tbl0004",
+      "kind": "table",
+      "page": null,
+      "caption": "Table 3-1: Seismic design categories",
+      "rows": 4,
+      "cols": 3,
+      "available": true
+     },
+     {
+      "asset_id": "aaaaaaaaaaaaaaaa/tbl0008",
+      "kind": "table",
+      "page": null,
+      "caption": "Table 4-1: Damping values by seismic category",
+      "rows": 6,
+      "cols": 3,
+      "available": true
+     }
+    ]
+   }
+  ]
+ }
+}

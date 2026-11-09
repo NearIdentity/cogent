@@ -1,0 +1,148 @@
+collected 2026-11-09T03:21:42Z on origin/main 1f237f0
+== observability-related tracked files
+deploy/observability/demo/generate_traffic.py
+deploy/observability/docker-compose.observability.yml
+deploy/observability/env.example
+deploy/observability/grafana/build_dashboard.py
+deploy/observability/grafana/dashboards/cogent-observability.json
+deploy/observability/grafana/provisioning/dashboards/cogent.yml
+deploy/observability/grafana/provisioning/datasources/prometheus.yml
+deploy/observability/prometheus/alerts.yml
+deploy/observability/prometheus/alerts_test.yml
+deploy/observability/prometheus/mcp_token.example
+deploy/observability/prometheus/prometheus.yml
+docs/img/grafana-dashboard.png
+docs/observability.md
+src/kg_telemetry.py
+tests/test_telemetry.py
+
+== alert rule file (deploy/observability/prometheus/alerts.yml)
+groups:
+  - name: cogent
+    rules:
+      # The one alert: more than a quarter of the agent's operations failed over the last 24 hours.
+      # An operation is a fetch of one document, one tracker page, one entry rebuild, one table load, one join inference ...
+      # (cogent_agent_operations_total{outcome="error"}); a source that is down, a blocked site or a broken parser shows up here.
+      - alert: CogentAgentFailureRateHigh
+        expr: |
+          (sum(increase(cogent_agent_operations_total{outcome="error"}[24h])) or vector(0))
+            / clamp_min(sum(increase(cogent_agent_operations_total[24h])), 1) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cogent agent: {{ $value | humanizePercentage }} of operations failed in the last 24 h"
+          description: >-
+            More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard "cogent: agent and MCP server",
+            at the report (logs/report.md) and at <home>/logs/metrics.jsonl for the last run.
+
+== alert unit test (head)
+# promtool test rules deploy/observability/prometheus/alerts_test.yml   (run from deploy/observability/prometheus)
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  # healthy: 100 operations a day, 5 of them failing -> 5 %
+  - interval: 1h
+    input_series:
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="ok"}'
+        values: "0+4x30"
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="error"}'
+        values: "0+0.2x30"
+    alert_rule_test:
+      - eval_time: 29h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts: []
+  # a bad stretch: half of the operations fail for hours -> the alert is pending, then firing after the 5 minute hold
+  - interval: 1h
+    input_series:
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="ok"}'
+        values: "0+4x10 40+1x20"
+      - series: 'cogent_agent_operations_total{op="sync_doc",outcome="error"}'
+        values: "0+0.2x10 2+6x20"
+    alert_rule_test:
+      - eval_time: 16h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "cogent agent: 41.56% of operations failed in the last 24 h"
+              description: "More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard \"cogent: agent and MCP server\", at the report (logs/report.md) and at <home>/logs/metrics.jsonl for the last run."
+  # no data at all (agent never ran): no alert
+  - interval: 1h
+    input_series:
+      - series: 'up{job="cogent"}'
+        values: "1x30"
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: CogentAgentFailureRateHigh
+        exp_alerts: []
+
+== dashboard JSON: title, uid, panel types/titles
+title: cogent: agent and MCP server | uid: cogent-observability | refresh: 10s | time: {'from': 'now-30m', 'to': 'now'} | panels: 29
+  row        Daily agent: last run
+  stat       Last run
+  stat       Duration
+  stat       Since last run
+  stat       Failure rate, 24 h
+  stat       Alert
+  stat       Tokens, last run
+  stat       Cost, last run
+  row        Latency, p50 and p95
+  bargauge   Agent operations, last run (exact p50 / p95)
+  timeseries Agent operation latency over time (p50 / p95)
+  timeseries MCP tool latency (p50 / p95)
+  row        Tokens, cost and findings
+  timeseries Tokens (cumulative)
+  timeseries Cost (cumulative, USD)
+  piechart   Findings: auto-applied vs human-reviewed
+  row        LLM quality: judge agreement and hallucinations
+  gauge      Judge agreement (last run)
+  timeseries Judge verdicts
+  gauge      Hallucination rate (all time)
+  timeseries Hallucination rate by kind
+  row        Failures and retries
+  bargauge   Failures by stage (24 h)
+  bargauge   Retries by component (24 h)
+  timeseries Operations by outcome
+  row        MCP server
+  timeseries HTTP requests per second, by status
+  timeseries Tool calls per second, by outcome
+  timeseries Rate-limited requests, graph cache, embedder
+
+== where the demo traffic statement is made
+deploy/observability/demo/generate_traffic.py:6:  * the mock web site of the tests (tests/mock_site.py) that serves the standards, regulatory-guide index pages and a page with tables,
+deploy/observability/demo/generate_traffic.py:7:  * a mock Ollama (chat + embeddings) that reports token counts, sometimes invents a column, sometimes splits the judge's votes, and can fail on demand,
+deploy/observability/demo/generate_traffic.py:12:    python3 deploy/observability/demo/generate_traffic.py --work /tmp/cogent-demo --minutes 12
+deploy/observability/demo/generate_traffic.py:42:from mock_site import Site  # noqa: E402
+deploy/observability/demo/generate_traffic.py:82:# ---------------------------------------------------------------------------------------------------- mock Ollama
+deploy/observability/demo/generate_traffic.py:83:class MockOllama:
+deploy/observability/demo/generate_traffic.py:173:    ollama = MockOllama()
+docs/observability.md:7:The screenshot was taken from a real Prometheus and Grafana, fed by `deploy/observability/demo/generate_traffic.py` (see "Reproduce the screenshot"). The traffic is synthetic: a mock web site, a mock Ollama
+docs/observability.md:102:python3 deploy/observability/demo/generate_traffic.py --work /tmp/cogent-demo/w --minutes 12 --step 40
+docs/observability.md:104:It needs the PostgreSQL server binaries and pgvector (like the test suite). It starts a private database, the test suite's mock site, a mock Ollama and the MCP server with `--metrics`, then runs the agent
+docs/observability.md:108:* The Prometheus, Grafana and promtool parts were run here against the demo traffic. The OTLP exporter was tested with the SDK's in-memory exporter and the console exporter, not against a real Jaeger, Tem
+notes/LiveDemo.md:144:**8f. No real data yet, or no Ollama?** `python3 deploy/observability/demo/generate_traffic.py --work /tmp/cogent-demo/w --minutes 12` fills the dashboard with synthetic runs (mock site, mock model). Use it o
+notes/LiveDemo.md:153:- The dashboard and the alert were exercised here with Prometheus and Grafana against a synthetic demo (mock site, mock model); not against your sources, Ollama model, or the Claude web app. The proxy trick i
+
+== docs/observability.md head
+# Observability: traces, metrics, dashboard, alert
+
+The daily agent and the MCP server emit **OpenTelemetry traces** and **Prometheus metrics**. A Grafana dashboard and one alert rule ship in `deploy/observability/`.
+
+![Grafana dashboard](img/grafana-dashboard.png)
+
+The screenshot was taken from a real Prometheus and Grafana, fed by `deploy/observability/demo/generate_traffic.py` (see "Reproduce the screenshot"). The traffic is synthetic: a mock web site, a mock Ollama that reports token counts and sometimes invents a column, and an illustrative price. It shows what the panels look like, not how your sources behave.
+
+Code: `src/kg_telemetry.py` (registry, tracing helpers, per-run summary); calls are spread through `kg_agent.py`, `kg_mcp.py`, `kg_llm.py`, `kg_llmjoin.py`, `kg_embed.py`, `kg_tools.py`, `kg_tabledb.py`, `kg_ingest.py` and `kg_daemon.py`.
+
+## 1. Tracing (OpenTelemetry)
+
+
+== screenshot file
+-rw-r--r-- 1 root root 434112 Nov  9 03:19 docs/img/grafana-dashboard.png
+f534b72 2026-10-24 19:22:31 -0400 NearIdentity Grafana dashboard for analytics
+png size (1600, 1900)
+== any recorded metrics/result files tracked? (metrics/ dirs, .prom, agent.json)
+(none above = no recorded results tracked)

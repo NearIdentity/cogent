@@ -1,0 +1,17 @@
+{
+ "tool": "get_warnings",
+ "args": {},
+ "isError": false,
+ "result": {
+  "warnings": [
+   {
+    "kind": "new_edition_for_purchase",
+    "entry": "standard:2",
+    "identity": "NQA 1",
+    "severity": "warning",
+    "message": "standard:2: a new edition is on sale",
+    "details": {}
+   }
+  ]
+ }
+}

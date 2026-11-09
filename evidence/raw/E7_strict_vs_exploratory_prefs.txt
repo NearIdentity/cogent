@@ -1,0 +1,20 @@
+MCP calls: set_session_preferences(profile=strict / exploratory, separate session_ids) then get_session_preferences; FIXTURE server on 127.0.0.1 (no Ollama, no database).
+
+strict effective     : {"approach": "consensus", "include_rejected": false, "min_agreement": 0.0, "min_score": 0.6, "min_similarity": 0.7, "profile": "strict", "retrieval": "semantic", "units": "strict"}
+exploratory effective: {"approach": "hybrid", "include_rejected": true, "min_agreement": 0.0, "min_score": 0.3, "min_similarity": 0.0, "profile": "exploratory", "retrieval": "hybrid", "units": "broad"}
+
+Fields that differ (field: strict -> exploratory):
+  approach: 'consensus' -> 'hybrid'
+  include_rejected: False -> True
+  min_agreement: 0.0 -> 0.0   (same)
+  min_score: 0.6 -> 0.3
+  min_similarity: 0.7 -> 0.0
+  profile: 'strict' -> 'exploratory'
+  retrieval: 'semantic' -> 'hybrid'
+  units: 'strict' -> 'broad'
+
+list_profiles descriptions:
+  strict : {"approach": "consensus", "min_score": 0.6, "include_rejected": false, "units": "strict", "retrieval": "semantic", "min_similarity": 0.7, "description": "only joins found by both methods and accepted by the judge: fewest false joins"}
+  exploratory : {"approach": "hybrid", "min_score": 0.3, "include_rejected": true, "units": "broad", "retrieval": "hybrid", "min_similarity": 0.0, "description": "everything plausible: rejected / disputed joins (flagged), inferred units with alternatives, hybrid retrieval: for review"}
+
+lookup_values under either profile: NOT RUN (needs PostgreSQL with pgvector; see E11_calls/*lookup_values.json for the error).

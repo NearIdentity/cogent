@@ -1,0 +1,75 @@
+{
+ "tool": "get_entry_metadata",
+ "args": {
+  "entry": "standard:1"
+ },
+ "isError": false,
+ "result": {
+  "entry": "standard:1",
+  "kind": "standard",
+  "name": "Seismic Design Criteria (fixture)",
+  "description": null,
+  "format_of_data": "HTML",
+  "paywalled": false,
+  "source_links": [],
+  "update_tracking_urls": [],
+  "graph": {
+   "available": false,
+   "built": null,
+   "extraction_recipe": "10",
+   "documents_behind_recipe": [
+    "aaaaaaaaaaaaaaaa"
+   ],
+   "nodes": null,
+   "edges": null,
+   "missing_documents": [],
+   "superseded_versions_archived": []
+  },
+  "capture": {
+   "documents_last_checked": "2026-10-01T00:00:00Z",
+   "age_days": 39.14,
+   "stale": true,
+   "agent_last_run": null
+  },
+  "documents": [
+   {
+    "document_id": "aaaaaaaaaaaaaaaa",
+    "url": "https://www.nrc.gov/docs/seismic.html",
+    "content_kind": "html",
+    "fetched_from": "https://www.nrc.gov/docs/seismic.html",
+    "first_seen": null,
+    "last_checked": "2026-10-01T00:00:00Z",
+    "last_changed": null,
+    "kg_built": null,
+    "kg_versions": null,
+    "last_forced_reread": null,
+    "forced_rereads": 0,
+    "last_forced_result": null,
+    "nodes": null,
+    "edges": null,
+    "editions_stated_in_text": {},
+    "ocr_pages": [],
+    "consecutive_errors": 0,
+    "last_error": null,
+    "text_sha": "",
+    "extraction_recipe": null,
+    "extraction_recipe_current": false
+   }
+  ],
+  "version": {
+   "status": null,
+   "latest_available": [],
+   "on_board": {},
+   "on_board_documents": [],
+   "summary": "Version status not recorded (the agent has not run with version tracking yet)."
+  },
+  "warnings": [],
+  "disclaimers": [
+   "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them.",
+   "Entities and relations are produced by rule-based (or optionally LLM-assisted) extraction and are not exhaustive or authoritative. They are not legal, licensing or engineering advice.",
+   "'Latest available' reflects what the update agent's trackers last observed, as of the capture times given; a newer edition may exist that has not been detected yet.",
+   "Stale capture: sources were last checked 39.14 days ago (threshold 3).",
+   "No graph is staged for this entry yet."
+  ]
+ }
+}

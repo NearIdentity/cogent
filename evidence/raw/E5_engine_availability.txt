@@ -1,0 +1,24 @@
+== engine availability in this environment (2026-11-09T03:25:20Z)
+27:``pip install pymupdf-layout pymupdf4llm``
+418:# Layout-aware PDF parsing (pymupdf-layout + pymupdf4llm)
+427:# Install: ``pip install pymupdf-layout pymupdf4llm`` (AGPL-3.0 or Artifex
+428:# commercial licence). Select with ``set_pdf_engine`` / ``$KG_PDF_ENGINE``.
+436:def set_pdf_engine(engine: str) -> None:
+440:    os.environ["KG_PDF_ENGINE"] = engine
+510:    if ``pymupdf-layout``/``pymupdf4llm`` aren't installed."""
+513:    import pymupdf4llm
+517:        from pymupdf4llm.ocr import OCRMode
+518:        data = pymupdf4llm.to_json(doc, use_ocr=OCRMode.NEVER)
+520:        data = pymupdf4llm.to_json(doc)
+716:    engine = (os.environ.get("KG_PDF_ENGINE") or "auto").lower()
+pymupdf importable
+pymupdf4llm importable
+pymupdf.layout importable
+pymupdf_layout NOT importable: ModuleNotFoundError No module named 'pymupdf_layout'
+['PDF_ENGINES', '_kg_layout', 'load_pdf_layout', 'set_pdf_engine']
+== CLI flag
+                    [--pdf-engine {auto,layout,basic}]
+                    [--ocr {auto,off,force}]
+--
+  --pdf-engine {auto,layout,basic}
+                        PDF parser: layout (pymupdf-layout), basic, or auto

@@ -1,0 +1,22 @@
+collected 2026-11-09T03:21:06Z; ref: origin/main 1f237f0
+== commits total (all) / non-merge
+40
+29
+== per author name (all commits)
+    30	NearIdentity
+    10	Abdullah Al Rashid
+== per author name (no merges)
+    29	NearIdentity
+== distinct committer names
+     13 GitHub
+     27 NearIdentity
+== first/last commit dates
+2026-10-27 02:56:06 -0400
+2026-10-12 20:01:52 -0400
+== trailers present (Co-Authored-By etc.)
+(end trailers)
+== body text mentioning co-author/claude/anthropic/agent
+7:9da80ec Merge pull request #9 from NearIdentity/mcp-agent-testcycle-updates
+44:Forced data refresh option for KG agent
+47:39feede Forced data refresh option for KG agent
+80:c3c26a8 Initial commit -- staging agent for Knowledge Graphs

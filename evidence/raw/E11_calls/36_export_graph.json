@@ -1,0 +1,401 @@
+{
+ "tool": "export_graph",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "max_nodes": 20
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "graph": {
+   "directed": true,
+   "multigraph": true,
+   "graph": {
+    "source": "fixture_tables/home/src_html/aaaaaaaaaaaaaaaa.html",
+    "extraction_recipe": "10",
+    "assets_dir": "fixture_tables/home/staging/documents/aaaaaaaaaaaaaaaa/assets/13c30670b34792ee9aafec86ad46ab52ea6130e0a875476e33a364a2ec364b84"
+   },
+   "nodes": [
+    {
+     "type": "Document",
+     "label": "aaaaaaaaaaaaaaaa.html",
+     "id": "doc:aaaaaaaaaaaaaaaa.html"
+    },
+    {
+     "type": "Heading",
+     "label": "Seismic Design Criteria for Nuclear Facilities",
+     "text": "Seismic Design Criteria for Nuclear Facilities",
+     "level": 1,
+     "id": "h0001"
+    },
+    {
+     "type": "Heading",
+     "label": "3 Seismic Categories",
+     "text": "3 Seismic Categories",
+     "level": 2,
+     "id": "h0002"
+    },
+    {
+     "type": "Paragraph",
+     "label": "Table 3-1 lists the seismic design categories and their limit state definitions.",
+     "text": "Table 3-1 lists the seismic design categories and their limit state definitions.",
+     "id": "p0003"
+    },
+    {
+     "type": "Table",
+     "label": "Table 3-1: Seismic design categories",
+     "text": "Table 3-1: Seismic design categories",
+     "rows": "[[\"Seismic Category\", \"Limit State\", \"Annual Probability (per year)\"], [\"SDC-3\", \"Limited permanent distortion\", \"4.0E-4\"], [\"SDC-4\", \"Moderate permanent distortion\", \"1.0E-4\"], [\"SDC-5\", \"Essentially elastic\", \"1.0E-5\"]]",
+     "file": "tables/tbl0004_table-3-1-seismic-design-categories.csv",
+     "id": "tbl0004"
+    },
+    {
+     "type": "Paragraph",
+     "label": "Note: probabilities are annual frequencies of exceedance.",
+     "text": "Note: probabilities are annual frequencies of exceedance.",
+     "id": "p0005"
+    },
+    {
+     "type": "Heading",
+     "label": "4 Damping",
+     "text": "4 Damping",
+     "level": 2,
+     "id": "h0006"
+    },
+    {
+     "type": "Paragraph",
+     "label": "Damping values for the categories in Table 3-1 are given in Table 4-1.",
+     "text": "Damping values for the categories in Table 3-1 are given in Table 4-1.",
+     "id": "p0007"
+    },
+    {
+     "type": "Table",
+     "label": "Table 4-1: Damping values by seismic category",
+     "text": "Table 4-1: Damping values by seismic category",
+     "rows": "[[\"Seismic Category\", \"Structure Type\", \"Damping (%)\"], [\"SDC-3\", \"Welded steel\", \"4\"], [\"SDC-3\", \"Reinforced concrete\", \"7\"], [\"SDC-4\", \"Welded steel\", \"5\"], [\"SDC-4\", \"Reinforced concrete\", \"7\"], [\"SDC-5\", \"Welded steel\", \"5\"]]",
+     "file": "tables/tbl0008_table-4-1-damping-values-by-seismic-cate.csv",
+     "id": "tbl0008"
+    },
+    {
+     "type": "TableRow",
+     "label": "SDC-3",
+     "id": "ent:sdc3"
+    },
+    {
+     "type": "Value",
+     "label": "Limited permanent distortion",
+     "id": "ent:limited permanent distortion"
+    },
+    {
+     "type": "Value",
+     "label": "4.0E-4",
+     "id": "ent:40e4"
+    },
+    {
+     "type": "TableRow",
+     "label": "SDC-4",
+     "id": "ent:sdc4"
+    },
+    {
+     "type": "Value",
+     "label": "Moderate permanent distortion",
+     "id": "ent:moderate permanent distortion"
+    },
+    {
+     "type": "Value",
+     "label": "1.0E-4",
+     "id": "ent:10e4"
+    },
+    {
+     "type": "TableRow",
+     "label": "SDC-5",
+     "id": "ent:sdc5"
+    },
+    {
+     "type": "Value",
+     "label": "Essentially elastic",
+     "id": "ent:essentially elastic"
+    },
+    {
+     "type": "Value",
+     "label": "1.0E-5",
+     "id": "ent:10e5"
+    },
+    {
+     "type": "Value",
+     "label": "Welded steel",
+     "id": "ent:welded steel"
+    },
+    {
+     "type": "Value",
+     "label": "4",
+     "id": "ent:4"
+    }
+   ],
+   "edges": [
+    {
+     "relation": "CONTAINS",
+     "source": "doc:aaaaaaaaaaaaaaaa.html",
+     "target": "h0001",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0001",
+     "target": "h0002",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "h0001",
+     "target": "h0002",
+     "key": "NEXT"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0001",
+     "target": "h0006",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0002",
+     "target": "p0003",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "h0002",
+     "target": "p0003",
+     "key": "NEXT"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0002",
+     "target": "tbl0004",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0002",
+     "target": "p0005",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "p0003",
+     "target": "tbl0004",
+     "key": "NEXT"
+    },
+    {
+     "relation": "NEXT",
+     "source": "tbl0004",
+     "target": "p0005",
+     "key": "NEXT"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:sdc3",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:limited permanent distortion",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:40e4",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:sdc4",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:moderate permanent distortion",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:10e4",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:sdc5",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:essentially elastic",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0004",
+     "target": "ent:10e5",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "p0005",
+     "target": "h0006",
+     "key": "NEXT"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0006",
+     "target": "p0007",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "h0006",
+     "target": "p0007",
+     "key": "NEXT"
+    },
+    {
+     "relation": "CONTAINS",
+     "source": "h0006",
+     "target": "tbl0008",
+     "key": "CONTAINS"
+    },
+    {
+     "relation": "NEXT",
+     "source": "p0007",
+     "target": "tbl0008",
+     "key": "NEXT"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0008",
+     "target": "ent:sdc3",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0008",
+     "target": "ent:welded steel",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0008",
+     "target": "ent:4",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0008",
+     "target": "ent:sdc4",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "MENTIONS",
+     "source": "tbl0008",
+     "target": "ent:sdc5",
+     "key": "MENTIONS"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Limit State",
+     "page": null,
+     "source": "ent:sdc3",
+     "target": "ent:limited permanent distortion",
+     "key": "has_value|tbl0004|Limit State"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Annual Probability (per year)",
+     "page": null,
+     "source": "ent:sdc3",
+     "target": "ent:40e4",
+     "key": "has_value|tbl0004|Annual Probability (per year)"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Structure Type",
+     "page": null,
+     "source": "ent:sdc3",
+     "target": "ent:welded steel",
+     "key": "has_value|tbl0008|Structure Type"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Damping (%)",
+     "page": null,
+     "source": "ent:sdc3",
+     "target": "ent:4",
+     "key": "has_value|tbl0008|Damping (%)"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Limit State",
+     "page": null,
+     "source": "ent:sdc4",
+     "target": "ent:moderate permanent distortion",
+     "key": "has_value|tbl0004|Limit State"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Annual Probability (per year)",
+     "page": null,
+     "source": "ent:sdc4",
+     "target": "ent:10e4",
+     "key": "has_value|tbl0004|Annual Probability (per year)"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Structure Type",
+     "page": null,
+     "source": "ent:sdc4",
+     "target": "ent:welded steel",
+     "key": "has_value|tbl0008|Structure Type"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Limit State",
+     "page": null,
+     "source": "ent:sdc5",
+     "target": "ent:essentially elastic",
+     "key": "has_value|tbl0004|Limit State"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Annual Probability (per year)",
+     "page": null,
+     "source": "ent:sdc5",
+     "target": "ent:10e5",
+     "key": "has_value|tbl0004|Annual Probability (per year)"
+    },
+    {
+     "relation": "has_value",
+     "predicate": "Structure Type",
+     "page": null,
+     "source": "ent:sdc5",
+     "target": "ent:welded steel",
+     "key": "has_value|tbl0008|Structure Type"
+    }
+   ],
+   "truncated": true,
+   "total_nodes": 23
+  }
+ }
+}

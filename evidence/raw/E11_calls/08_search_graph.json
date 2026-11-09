@@ -1,0 +1,37 @@
+{
+ "tool": "search_graph",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa",
+  "query": "damping"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "matches": [
+   {
+    "id": "h0006",
+    "type": "Heading",
+    "label": "4 Damping",
+    "level": 2
+   },
+   {
+    "id": "p0007",
+    "type": "Paragraph",
+    "label": "Damping values for the categories in Table 3-1 are given in Table 4-1."
+   },
+   {
+    "id": "tbl0008",
+    "type": "Table",
+    "label": "Table 4-1: Damping values by seismic category",
+    "rows": "(table; use get_table)",
+    "file": "tables/tbl0008_table-4-1-damping-values-by-seismic-cate.csv"
+   }
+  ]
+ }
+}

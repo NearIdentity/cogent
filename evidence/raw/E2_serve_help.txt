@@ -1,0 +1,60 @@
+usage: kg_mcp.py serve [-h] [--standards STANDARDS] [--reports REPORTS]
+                       [--host HOST] [--port PORT] [--public-host HOST]
+                       [--stale-after STALE_AFTER] [--oauth-issuer URL]
+                       [--paywalled-assets {watermark,block,allow}]
+                       [--tabledb-dsn TABLEDB_DSN]
+                       [--tabledb-schema TABLEDB_SCHEMA]
+                       [--embedder {ollama,hash,none}]
+                       [--embed-model EMBED_MODEL] [--ollama-host OLLAMA_HOST]
+                       [--embed-dim EMBED_DIM] [--llm-model LLM_MODEL]
+                       [--judge-model JUDGE_MODEL]
+                       [--llm-max-seconds LLM_MAX_SECONDS]
+                       [--default-profile DEFAULT_PROFILE] [--allow-sql]
+                       [--no-auth] [--stateful] [--workers WORKERS]
+                       [--graph-cache GRAPH_CACHE]
+                       [--session-store SESSION_STORE]
+                       [--session-hours SESSION_HOURS]
+                       [--embed-cache EMBED_CACHE]
+                       [--embed-concurrency EMBED_CONCURRENCY]
+                       [--embed-wait EMBED_WAIT] [--rate-limit RATE_LIMIT]
+                       [--rate-burst RATE_BURST] [--metrics]
+                       [--otlp-endpoint URL] [--trace-console]
+
+options:
+  -h, --help            show this help message and exit
+  --standards STANDARDS
+  --reports REPORTS
+  --host HOST           bind address (keep 127.0.0.1 behind a proxy/tunnel)
+  --port PORT
+  --public-host HOST    public host name(s) clients use (Host-header allow-
+                        list); repeatable. '*' turns the Host check off (for
+                        tunnels with random names such as *.trycloudflare.com;
+                        authentication still applies)
+  --stale-after STALE_AFTER
+                        days before captures are flagged stale
+  --oauth-issuer URL    enable OAuth 2.1 (claude.ai custom connectors); the
+                        public https base URL, e.g. https://kg.example.com
+  --paywalled-assets {watermark,block,allow}
+                        figures from paywalled/purchased content: watermark
+                        (default), block, or allow unmarked
+  --tabledb-dsn TABLEDB_DSN
+                        PostgreSQL DSN of the table database (enables
+                        list_tables, lookup_values, query_table, ...); use a
+                        read-only role. Env: COGENT_TABLEDB_DSN
+  --tabledb-schema TABLEDB_SCHEMA
+  --embedder {ollama,hash,none}
+                        embedder for questions (must be the one the database
+                        was built with); 'none' = lexical search only
+  --embed-model EMBED_MODEL
+  --ollama-host OLLAMA_HOST
+  --embed-dim EMBED_DIM
+                        dimension for --embedder hash
+  --llm-model LLM_MODEL
+                        Ollama model that enables evaluate_joins (LLM join
+                        inference + judge on request)
+  --judge-model JUDGE_MODEL
+                        Ollama model for the judge (default: the --llm-model)
+  --llm-max-seconds LLM_MAX_SECONDS
+                        time budget of one evaluate_joins call (cap 600)
+  --default-profile DEFAULT_PROFILE
+                        tailoring profile of sessions that set none: fast |

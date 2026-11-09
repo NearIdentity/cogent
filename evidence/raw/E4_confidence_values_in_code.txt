@@ -1,0 +1,14 @@
+collected 2026-11-09T03:29:40Z on origin/main 1f237f0
+== literal confidence values assigned to findings in code (src/kg_tools.py, src/kg_agent.py, src/kg_models.py)
+src/kg_tools.py:549:                    old=prev_latest, new=latest, tracker_url=url, confidence=1.0,
+src/kg_tools.py:601:                            confidence=1.0, evidence=f"{d.get('type')}: {d.get('title', '')[:160]} ({d.get('publication_date')})",
+src/kg_tools.py:675:                        evidence=rec.text[:200], confidence=1.0, applied=True))
+src/kg_tools.py:682:                        evidence=rec.text[:200], confidence=0.9 if link else 0.5))
+src/kg_tools.py:698:                            type="page_changed", entry=e.key, tracker_url=url, confidence=0.3,
+src/kg_agent.py:75:    min_confidence: float = 0.8
+src/kg_models.py:152:    confidence: float = 0.0
+
+== distinct numeric literals following confidence=
+      1 confidence=0.3
+      1 confidence=0.9
+      3 confidence=1.0

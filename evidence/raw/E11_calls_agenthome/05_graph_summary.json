@@ -1,0 +1,48 @@
+{
+ "tool": "graph_summary",
+ "args": {
+  "ref": "standard:1"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "entry": "standard:1",
+   "name": "10 CFR 50.69",
+   "graph_built": "2026-11-09T03:25:44Z",
+   "sources_last_checked": "2026-11-09T03:25:44Z",
+   "age_days": 0.0,
+   "stale": false,
+   "version_status": "current",
+   "version_summary": "On board matches the latest available (eCFR as of 2026-09-01).",
+   "latest_available": [
+    "eCFR as of 2026-09-01"
+   ],
+   "warnings": [],
+   "caveats": [],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "ref": "standard:1",
+  "nodes": 12,
+  "edges": 18,
+  "node_types": {
+   "Standard": 1,
+   "Document": 1,
+   "Heading": 3,
+   "Paragraph": 3,
+   "Entity": 2,
+   "Identifier": 2
+  },
+  "relations": {
+   "HAS_DOCUMENT": 1,
+   "CONTAINS": 6,
+   "NEXT": 5,
+   "references": 3,
+   "MENTIONS": 2,
+   "related_to": 1
+  },
+  "graph_attributes": {
+   "entry": "standard:1",
+   "built": "2026-11-09T03:25:44Z"
+  }
+ }
+}

@@ -1,0 +1,56 @@
+collected 2026-11-09T03:28:49Z
+== Ollama reachable on 127.0.0.1:11434?
+no response (curl exit 7)
+ollama binary: not found
+== embedder configuration in code
+27:DEFAULT_MODEL = "nomic-embed-text"
+63:class HashEmbedder(Embedder):
+89:    def __init__(self, model: str = DEFAULT_MODEL, host: Optional[str] = None, batch: int = 32, timeout: float = 120.0,
+160:def get_embedder(kind: str = "ollama", model: Optional[str] = None, host: Optional[str] = None, dim: Optional[int] = None) -> Embedder:
+166:        return OllamaEmbedder(model or os.environ.get("COGENT_EMBED_MODEL") or DEFAULT_MODEL, host, dim=dim)
+(kind: 'str' = 'ollama', model: 'Optional[str]' = None, host: 'Optional[str]' = None, dim: 'Optional[int]' = None) -> 'Embedder'
+
+== embedder: HashEmbedder (deterministic, no model), dim=64, spec=hash/64
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AttributeError: 'HashEmbedder' object has no attribute 'embed'
+
+== embedder: HashEmbedder (feature hashing of word tokens + bigrams; no model), dim=64, spec=hash/64
+tokenisation used by the hash embedder: re.findall(r'[a-z0-9]+', text.lower()) -> e.g. '0.5' -> ['0', '5']
+pairwise cosine similarity:
+  '0.5'                    vs '5.0'                    0.8889
+  '0.5'                    vs '50'                     0.0000
+  '0.5'                    vs '0.05'                   0.4444
+  '0.5'                    vs 'yield strength 0.5'     0.6468
+  '0.5'                    vs 'yield strength 5.0'     0.5353
+  '5.0'                    vs '50'                     0.0000
+  '5.0'                    vs '0.05'                   0.4444
+  '5.0'                    vs 'yield strength 0.5'     0.6468
+  '5.0'                    vs 'yield strength 5.0'     0.6882
+  '50'                     vs '0.05'                   0.0000
+  '50'                     vs 'yield strength 0.5'     0.0000
+  '50'                     vs 'yield strength 5.0'     0.0000
+  '0.05'                   vs 'yield strength 0.5'     0.3234
+  '0.05'                   vs 'yield strength 5.0'     0.3059
+  'yield strength 0.5'     vs 'yield strength 5.0'     0.8903
+
+== embedder: HashEmbedder (feature hashing of word tokens + bigrams; no model), dim=768, spec=hash/768
+tokenisation used by the hash embedder: re.findall(r'[a-z0-9]+', text.lower()) -> e.g. '0.5' -> ['0', '5']
+pairwise cosine similarity:
+  '0.5'                    vs '5.0'                    0.8889
+  '0.5'                    vs '50'                     0.0000
+  '0.5'                    vs '0.05'                   0.4444
+  '0.5'                    vs 'yield strength 0.5'     0.6882
+  '0.5'                    vs 'yield strength 5.0'     0.6118
+  '5.0'                    vs '50'                     0.0000
+  '5.0'                    vs '0.05'                   0.4444
+  '5.0'                    vs 'yield strength 0.5'     0.6118
+  '5.0'                    vs 'yield strength 5.0'     0.6882
+  '50'                     vs '0.05'                   0.0000
+  '50'                     vs 'yield strength 0.5'     0.0000
+  '50'                     vs 'yield strength 5.0'     0.0000
+  '0.05'                   vs 'yield strength 0.5'     0.3059
+  '0.05'                   vs 'yield strength 5.0'     0.3059
+  'yield strength 0.5'     vs 'yield strength 5.0'     0.8947
+
+NOTE: the configured embedder (Ollama nomic-embed-text) was NOT RUN: no Ollama on this machine.

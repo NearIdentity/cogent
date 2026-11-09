@@ -1,0 +1,25 @@
+29 tests/test_agent.py
+4 tests/test_assets_export.py
+6 tests/test_combine_resolution.py
+8 tests/test_config.py
+13 tests/test_daemon.py
+7 tests/test_identifiers.py
+2 tests/test_identity_filenames.py
+7 tests/test_layout.py
+9 tests/test_llmjoin.py
+13 tests/test_mcp.py
+11 tests/test_mcp_tables.py
+13 tests/test_mcp_tailoring.py
+9 tests/test_ocr.py
+6 tests/test_predicates.py
+33 tests/test_round6.py
+12 tests/test_scaleout.py
+8 tests/test_snapshot.py
+8 tests/test_store_api.py
+4 tests/test_table_footnotes.py
+20 tests/test_tablecheck.py
+16 tests/test_tabledb.py
+10 tests/test_tables.py
+12 tests/test_telemetry.py
+5 tests/test_units.py
+265 total def test_ (functions, not parametrised cases)

@@ -1,0 +1,102 @@
+{
+ "tool": "get_entry_metadata",
+ "args": {
+  "entry": "standard:2"
+ },
+ "isError": false,
+ "result": {
+  "entry": "standard:2",
+  "kind": "standard",
+  "name": "NRC RG 1.233",
+  "description": null,
+  "format_of_data": null,
+  "paywalled": false,
+  "source_links": [
+   {
+    "text": "RG 1.233 Rev. 0",
+    "url": "http://127.0.0.1:41859/docs/rg1233_rev0.pdf"
+   }
+  ],
+  "update_tracking_urls": [
+   "http://127.0.0.1:41859/index/rg.html"
+  ],
+  "graph": {
+   "available": true,
+   "built": "2026-11-09T03:25:44Z",
+   "extraction_recipe": "10",
+   "documents_behind_recipe": [],
+   "nodes": 8,
+   "edges": 9,
+   "missing_documents": [],
+   "superseded_versions_archived": []
+  },
+  "capture": {
+   "documents_last_checked": "2026-11-09T03:25:44Z",
+   "age_days": 0.0,
+   "stale": false,
+   "agent_last_run": "2026-11-09T03:25:44Z"
+  },
+  "documents": [
+   {
+    "document_id": "c2122df229c4fb71",
+    "url": "http://127.0.0.1:41859/docs/rg1233_rev0.pdf",
+    "content_kind": "pdf",
+    "fetched_from": "http://127.0.0.1:41859/docs/rg1233_rev0.pdf",
+    "first_seen": "2026-11-09T03:25:43Z",
+    "last_checked": "2026-11-09T03:25:44Z",
+    "last_changed": "2026-11-09T03:25:43Z",
+    "kg_built": "2026-11-09T03:25:43Z",
+    "kg_versions": 1,
+    "last_forced_reread": null,
+    "forced_rereads": 0,
+    "last_forced_result": null,
+    "nodes": 7,
+    "edges": 8,
+    "editions_stated_in_text": {},
+    "ocr_pages": [],
+    "consecutive_errors": 0,
+    "last_error": null,
+    "text_sha": "9f3cb3ed2d36",
+    "extraction_recipe": "10",
+    "extraction_recipe_current": true
+   }
+  ],
+  "version": {
+   "status": "update_available",
+   "latest_available": [
+    {
+     "identity": "RG 1.233",
+     "edition": "1",
+     "label": "RG 1.233 Rev. 1",
+     "url": "http://127.0.0.1:41859/docs/rg1233_rev1.pdf",
+     "detected": "2026-11-09T03:25:44Z",
+     "source": "http://127.0.0.1:41859/index/rg.html"
+    }
+   ],
+   "on_board": {
+    "RG 1.233": {
+     "edition": "0",
+     "source": "configuration"
+    }
+   },
+   "on_board_documents": [
+    {
+     "url": "http://127.0.0.1:41859/docs/rg1233_rev0.pdf",
+     "kind": "pdf",
+     "local": false,
+     "fetched": "2026-11-09T03:25:43Z",
+     "text_sha": "9f3cb3ed2d36",
+     "editions": {}
+    }
+   ],
+   "summary": "A newer edition is available than the one on board (latest: RG 1.233 Rev. 1)."
+  },
+  "warnings": [],
+  "disclaimers": [
+   "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them.",
+   "Entities and relations are produced by rule-based (or optionally LLM-assisted) extraction and are not exhaustive or authoritative. They are not legal, licensing or engineering advice.",
+   "'Latest available' reflects what the update agent's trackers last observed, as of the capture times given; a newer edition may exist that has not been detected yet.",
+   "On-board content is NOT the latest available: A newer edition is available than the one on board (latest: RG 1.233 Rev. 1)."
+  ]
+ }
+}

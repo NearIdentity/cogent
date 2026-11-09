@@ -1,0 +1,15 @@
+2026-11-09T03:29:08Z
+tests/test_mcp.py::test_store_metadata PASSED                            [  7%]
+tests/test_mcp.py::test_token_store PASSED                               [ 15%]
+tests/test_mcp.py::test_auth_gate PASSED                                 [ 23%]
+tests/test_mcp.py::test_client_round_trip PASSED                         [ 30%]
+tests/test_mcp.py::test_oauth_flow PASSED                                [ 38%]
+tests/test_mcp.py::test_public_figure_is_unmodified_and_paywalled_one_is_stamped PASSED [ 46%]
+tests/test_mcp.py::test_svg_figures_are_rasterised_and_stamped PASSED    [ 53%]
+tests/test_mcp.py::test_tables_lists_and_policies PASSED                 [ 61%]
+tests/test_mcp.py::test_assets_over_mcp PASSED                           [ 69%]
+tests/test_mcp.py::test_wildcard_public_host_disables_host_check PASSED  [ 76%]
+tests/test_mcp.py::test_unconvertible_figure_gives_a_clear_error PASSED  [ 84%]
+tests/test_mcp.py::test_asset_ids_accept_short_prefixes_and_graph_node_ids PASSED [ 92%]
+tests/test_mcp.py::test_no_response_leaks_local_paths PASSED             [100%]
+======================== 13 passed, 4 warnings in 4.50s ========================

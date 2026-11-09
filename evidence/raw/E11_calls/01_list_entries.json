@@ -1,0 +1,54 @@
+{
+ "tool": "list_entries",
+ "args": {},
+ "isError": false,
+ "result": {
+  "entries": [
+   {
+    "entry": "standard:1",
+    "kind": "standard",
+    "id": 1,
+    "name": "Seismic Design Criteria (fixture)",
+    "group": null,
+    "has_graph": false,
+    "graph_built": null,
+    "nodes": null,
+    "edges": null,
+    "extraction_recipe_behind": true,
+    "paywalled": false,
+    "version_status": null,
+    "open_warnings": 0
+   },
+   {
+    "entry": "standard:2",
+    "kind": "standard",
+    "id": 2,
+    "name": "ASME NQA-1-2026 (fixture)",
+    "group": null,
+    "has_graph": false,
+    "graph_built": null,
+    "nodes": null,
+    "edges": null,
+    "extraction_recipe_behind": true,
+    "paywalled": true,
+    "version_status": null,
+    "open_warnings": 1
+   },
+   {
+    "entry": "standard:3",
+    "kind": "standard",
+    "id": 3,
+    "name": "Structural Design Limits (fixture)",
+    "group": null,
+    "has_graph": false,
+    "graph_built": null,
+    "nodes": null,
+    "edges": null,
+    "extraction_recipe_behind": true,
+    "paywalled": false,
+    "version_status": null,
+    "open_warnings": 0
+   }
+  ]
+ }
+}

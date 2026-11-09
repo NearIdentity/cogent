@@ -1,0 +1,30 @@
+{
+ "tool": "get_table_csv",
+ "args": {
+  "ref": "bbbbbbbbbbbbbbbb",
+  "asset_id": "bbbbbbbbbbbbbbbb/tbl0003"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "bbbbbbbbbbbbbbbb",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "asset_id": "bbbbbbbbbbbbbbbb/tbl0003",
+  "kind": "table",
+  "page": null,
+  "caption": "Table 2-1: Quality levels",
+  "rows_total": 4,
+  "truncated": false,
+  "csv": "Quality Level,Applies To,Audit Interval (months)\nQL-1,Safety-related structures,12\nQL-2,Important to safety components,24\nQL-3,Commercial grade items,36",
+  "paywalled": true,
+  "warnings": [
+   "\u00a9 Copyrighted material of the publisher of ASME NQA-1-2026 (fixture), taken from a purchased copy. Reproduced for reference only; not for redistribution, publication or reliance in place of the original standard.",
+   "Paywalled source (purchased local copy). Server policy for such assets: watermark.",
+   "standard:2: a new edition is on sale"
+  ]
+ }
+}

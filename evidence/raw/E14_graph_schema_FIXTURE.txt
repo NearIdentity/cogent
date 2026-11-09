@@ -1,0 +1,31 @@
+FIXTURE graphs: staged by tests/mock_site.py (local mock site) on 2026-11-09; NOT real documents
+
+== home/staging/documents/1657cae3554f5240/kg.json nodes 5 edges 6
+ node types: {'Heading': 2, 'Document': 1, 'Paragraph': 1, 'Identifier': 1}
+ edge relations: {'CONTAINS': 3, 'NEXT': 2, 'CITES': 1}
+
+== home/staging/documents/571fc37611a8de18/kg.json nodes 11 edges 17
+ node types: {'Heading': 3, 'Paragraph': 3, 'Entity': 2, 'Identifier': 2, 'Document': 1}
+ edge relations: {'CONTAINS': 6, 'NEXT': 5, 'references': 3, 'MENTIONS': 2, 'related_to': 1}
+
+== home/staging/documents/c2122df229c4fb71/kg.json nodes 7 edges 8
+ node types: {'Identifier': 3, 'Heading': 2, 'Document': 1, 'Paragraph': 1}
+ edge relations: {'CONTAINS': 3, 'CITES': 3, 'NEXT': 2}
+
+== home/staging/standards/1/kg.json nodes 12 edges 18
+ node types: {'Heading': 3, 'Paragraph': 3, 'Entity': 2, 'Identifier': 2, 'Standard': 1, 'Document': 1}
+ edge relations: {'CONTAINS': 6, 'NEXT': 5, 'references': 3, 'MENTIONS': 2, 'HAS_DOCUMENT': 1, 'related_to': 1}
+
+== home/staging/combined/kg.json nodes 5 edges 5
+ node types: {'Standard': 3, 'Report': 2}
+ edge relations: {'complies_with': 3, 'cites': 2}
+
+== combined graph edges (all)
+{'relation': 'cites', 'basis': 'text', 'confidence': 'inferred', 'count': 1, 'identifiers': ['CFR 50.69'], 'key': 'cites', 'from': 'entry:standard:2', 'to': 'entry:standard:1'}
+{'relation': 'complies_with', 'basis': 'config', 'confidence': 'curated', 'key': 'complies_with', 'from': 'entry:report:1', 'to': 'entry:standard:1'}
+{'relation': 'cites', 'basis': 'text', 'confidence': 'inferred', 'count': 1, 'identifiers': ['CFR 50.69'], 'key': 'cites', 'from': 'entry:report:1', 'to': 'entry:standard:1'}
+{'relation': 'complies_with', 'basis': 'config', 'confidence': 'curated', 'key': 'complies_with', 'from': 'entry:report:1', 'to': 'entry:standard:2'}
+{'relation': 'complies_with', 'basis': 'config', 'confidence': 'curated', 'key': 'complies_with', 'from': 'entry:report:2', 'to': 'entry:standard:3'}
+
+== combined graph node attribute keys: ['graph_built', 'has_graph', 'id', 'kind', 'label', 'latest_available', 'on_board', 'paywalled', 'type', 'version_status']
+== combined graph metadata files: ['dependents.json', 'kg.json', 'meta.json']

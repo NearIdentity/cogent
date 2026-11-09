@@ -1,0 +1,84 @@
+{
+ "tool": "list_entries",
+ "args": {},
+ "isError": false,
+ "result": {
+  "entries": [
+   {
+    "entry": "standard:1",
+    "kind": "standard",
+    "id": 1,
+    "name": "10 CFR 50.69",
+    "group": null,
+    "has_graph": true,
+    "graph_built": "2026-11-09T03:25:44Z",
+    "nodes": 12,
+    "edges": 18,
+    "extraction_recipe_behind": false,
+    "paywalled": false,
+    "version_status": "current",
+    "open_warnings": 0
+   },
+   {
+    "entry": "standard:2",
+    "kind": "standard",
+    "id": 2,
+    "name": "NRC RG 1.233",
+    "group": null,
+    "has_graph": true,
+    "graph_built": "2026-11-09T03:25:44Z",
+    "nodes": 8,
+    "edges": 9,
+    "extraction_recipe_behind": false,
+    "paywalled": false,
+    "version_status": "update_available",
+    "open_warnings": 0
+   },
+   {
+    "entry": "standard:3",
+    "kind": "standard",
+    "id": 3,
+    "name": "DOE-STD-1271-2025, Authorization Pathway",
+    "group": null,
+    "has_graph": true,
+    "graph_built": "2026-11-09T03:25:44Z",
+    "nodes": 6,
+    "edges": 7,
+    "extraction_recipe_behind": false,
+    "paywalled": false,
+    "version_status": "update_available",
+    "open_warnings": 0
+   },
+   {
+    "entry": "report:1",
+    "kind": "report",
+    "id": 1,
+    "name": "Licensing basis report",
+    "group": null,
+    "has_graph": true,
+    "graph_built": "2026-11-09T03:25:44Z",
+    "nodes": 10,
+    "edges": 11,
+    "extraction_recipe_behind": false,
+    "paywalled": false,
+    "version_status": "current",
+    "open_warnings": 0
+   },
+   {
+    "entry": "report:2",
+    "kind": "report",
+    "id": 2,
+    "name": "General technical report",
+    "group": null,
+    "has_graph": true,
+    "graph_built": "2026-11-09T03:25:44Z",
+    "nodes": 2,
+    "edges": 1,
+    "extraction_recipe_behind": null,
+    "paywalled": false,
+    "version_status": "no_documents",
+    "open_warnings": 0
+   }
+  ]
+ }
+}

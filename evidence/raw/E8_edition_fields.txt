@@ -1,0 +1,47 @@
+get_entry_metadata(standard:2) on the FIXTURE agent home (mock site, day 3). Top-level keys: ['entry', 'kind', 'name', 'description', 'format_of_data', 'paywalled', 'source_links', 'update_tracking_urls', 'graph', 'capture', 'documents', 'version', 'warnings', 'disclaimers']
+
+version block:
+{
+ "status": "update_available",
+ "latest_available": [
+  {
+   "identity": "RG 1.233",
+   "edition": "1",
+   "label": "RG 1.233 Rev. 1",
+   "url": "http://127.0.0.1:41859/docs/rg1233_rev1.pdf",
+   "detected": "2026-11-09T03:25:44Z",
+   "source": "http://127.0.0.1:41859/index/rg.html"
+  }
+ ],
+ "on_board": {
+  "RG 1.233": {
+   "edition": "0",
+   "source": "configuration"
+  }
+ },
+ "on_board_documents": [
+  {
+   "url": "http://127.0.0.1:41859/docs/rg1233_rev0.pdf",
+   "kind": "pdf",
+   "local": false,
+   "fetched": "2026-11-09T03:25:43Z",
+   "text_sha": "9f3cb3ed2d36",
+   "editions": {}
+  }
+ ],
+ "summary": "A newer edition is available than the one on board (latest: RG 1.233 Rev. 1)."
+}
+
+documents[0] keys: ['document_id', 'url', 'content_kind', 'fetched_from', 'first_seen', 'last_checked', 'last_changed', 'kg_built', 'kg_versions', 'last_forced_reread', 'forced_rereads', 'last_forced_result', 'nodes', 'edges', 'editions_stated_in_text', 'ocr_pages', 'consecutive_errors', 'last_error', 'text_sha', 'extraction_recipe', 'extraction_recipe_current']
+ editions_stated_in_text: {}
+
+graph block: {"available": true, "built": "2026-11-09T03:25:44Z", "extraction_recipe": "10", "documents_behind_recipe": [], "nodes": 8, "edges": 9, "missing_documents": [], "superseded_versions_archived": []}
+
+get_overview keys: ['extraction_recipe', 'entries_behind_extraction_recipe', 'run_errors', 'document_errors', 'entries', 'with_graph', 'version_status_counts', 'open_warnings', 'agent_last_run', 'agent_last_forced_run', 'agent_last_run_summary', 'disclaimers', 'table_database']
+
+== same tool on the fixture tables home (entry standard:2, no version tracking run):
+ version: {"status": null, "latest_available": [], "on_board": {}, "on_board_documents": [], "summary": "Version status not recorded (the agent has not run with version tracking yet)."}
+
+== code: fields of a table result's source/provenance (no edition field expected?) grep 'edition' in kg_tableservice.py / kg_tabledb.py
+src/kg_tabledb.py:754:        cfg = {"det": R.VERSION, "llm": [getattr(s.llm, "model", None), getattr(s.judge_llm or s.llm, "model", None), s.llm_cfg.as_dict()] if s.llm 
+(end)

@@ -1,0 +1,90 @@
+{
+ "tool": "get_neighbors",
+ "args": {
+  "ref": "combined",
+  "node_id": "entry:standard:1"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "combined",
+   "built": "2026-11-09T03:25:44Z",
+   "run_id": "20261109T032544Z",
+   "age_days": 0.0,
+   "nodes": 5,
+   "edges": 5,
+   "entries_without_graph": [],
+   "derived": true,
+   "notes": [
+    "Derived from the per-entry graphs and the configuration; rebuilt by every agent run.",
+    "'declared' relations come from the configuration (curated). 'inferred' ones come from text matching and may be wrong or incomplete.",
+    "Contains entry-level relations only, no document text."
+   ],
+   "disclaimer": "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them. (see get_disclaimers)"
+  },
+  "node": "entry:standard:1",
+  "total": 3,
+  "neighbors": [
+   {
+    "direction": "in",
+    "relation": "cites",
+    "node": {
+     "id": "entry:standard:2",
+     "type": "Standard",
+     "label": "NRC RG 1.233",
+     "kind": "standard",
+     "paywalled": false,
+     "has_graph": true,
+     "graph_built": "2026-11-09T03:25:44Z",
+     "version_status": "update_available",
+     "latest_available": [
+      "RG 1.233 Rev. 1"
+     ],
+     "on_board": [
+      "RG 1.233 Rev. 0"
+     ]
+    }
+   },
+   {
+    "direction": "in",
+    "relation": "complies_with",
+    "node": {
+     "id": "entry:report:1",
+     "type": "Report",
+     "label": "Licensing basis report",
+     "kind": "report",
+     "paywalled": false,
+     "has_graph": true,
+     "graph_built": "2026-11-09T03:25:44Z",
+     "version_status": "current",
+     "latest_available": [
+      "RG 1.233 Rev. 0"
+     ],
+     "on_board": [
+      "RG 1.233 Rev. 0"
+     ]
+    }
+   },
+   {
+    "direction": "in",
+    "relation": "cites",
+    "node": {
+     "id": "entry:report:1",
+     "type": "Report",
+     "label": "Licensing basis report",
+     "kind": "report",
+     "paywalled": false,
+     "has_graph": true,
+     "graph_built": "2026-11-09T03:25:44Z",
+     "version_status": "current",
+     "latest_available": [
+      "RG 1.233 Rev. 0"
+     ],
+     "on_board": [
+      "RG 1.233 Rev. 0"
+     ]
+    }
+   }
+  ]
+ }
+}

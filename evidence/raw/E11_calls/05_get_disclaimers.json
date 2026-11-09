@@ -1,0 +1,12 @@
+{
+ "tool": "get_disclaimers",
+ "args": {},
+ "isError": false,
+ "result": {
+  "disclaimers": [
+   "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them.",
+   "Entities and relations are produced by rule-based (or optionally LLM-assisted) extraction and are not exhaustive or authoritative. They are not legal, licensing or engineering advice.",
+   "'Latest available' reflects what the update agent's trackers last observed, as of the capture times given; a newer edition may exist that has not been detected yet."
+  ]
+ }
+}

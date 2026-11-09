@@ -1,0 +1,10 @@
+{
+ "tool": "get_relationship_map",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa"
+ },
+ "isError": true,
+ "result": [
+  "Error executing tool get_relationship_map: no data dictionary / relationship map for 'aaaaaaaaaaaaaaaa': none published yet: run the table database agent (`python src/kg_tabledb.py build`, or `kg_agent.py run --tables`)"
+ ]
+}

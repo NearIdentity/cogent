@@ -1,0 +1,104 @@
+collected 2026-11-09T03:21:17Z (worktree of origin/main 1f237f0)
+== tracked files (top level + notes/docs)
+.gitignore
+README.md
+docs/img/grafana-dashboard.png
+docs/mcp.md
+docs/observability.md
+docs/scaling.md
+docs/scheduling.md
+docs/tabledb.md
+notes/LiveDemo.md
+notes/MCP_Server.md
+requirements.txt
+venv-setup.sh
+
+== grep (case-insens) 'round [0-9]|R[1-6]-[0-9]|test round|testing round|MCP client|tester|test report|test-report|client-side|language model|LLM client|claude|anthropic' in tracked text files (excluding config/*.json)
+README.md:10:dictionaries and join maps, with provenance and warnings, to AI clients such as Claude Code or the Claude web app.
+README.md:13:processing to a minimum: update detection is done by hard-coded parsers and trackers, not by a language model.
+README.md:54:src/kg_oauth.py      OAuth 2.1 provider for claude.ai custom connectors
+README.md:112:python src/kg_mcp.py token create --name claude                        # printed once
+README.md:115:claude mcp add --transport http cogent-kg http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
+README.md:415:python src/kg_mcp.py token create --name claude                         # printed once; only a hash is stored
+README.md:427:* **Authentication** – bearer tokens (`token create|list|revoke`), optionally OAuth 2.1 for the Claude web app (`--oauth-issuer https://kg.example.com`). Use the
+README.md:431:  `deploy/named-tunnel.sh setup <hostname>` ([docs/scaling.md](docs/scaling.md)). Other options, Claude Code / API / Desktop instructions and the authentication notes:
+deploy/demo-tunnel.sh:4:# --oauth also enables the OAuth 2.1 login that claude.ai custom connectors need (the tunnel is started first so the
+deploy/demo-tunnel.sh:6:# Creates a throw-away token, prints the public URL and a ready-to-paste `claude mcp add` command, and on exit
+deploy/demo-tunnel.sh:45:Claude Code  : claude mcp add --transport http cogent-kg $URL/mcp --header "Authorization: Bearer $TOKEN"
+deploy/demo-tunnel.sh:50:claude.ai    : Settings > Connectors > Add custom connector > $URL/mcp ; on the sign-in page paste the token above.
+deploy/named-tunnel.sh:59:  4. Claude Code:  claude mcp add --transport http cogent-kg https://$host/mcp --header "Authorization: Bearer <token>"
+deploy/observability/demo/generate_traffic.py:131:# ---------------------------------------------------------------------------------------------------- MCP client traffic
+docs/mcp.md:45:python src/kg_mcp.py token create --name claude      # prints the secret ONCE
+docs/mcp.md:104:throw-away token (expires after 1 day), prints the URL and a ready-to-paste `claude mcp add` line, and on Ctrl+C stops
+docs/mcp.md:126:claude mcp add --transport http cogent-kg https://<random>.trycloudflare.com/mcp --header "Authorization: Bearer <token>"
+docs/mcp.md:128:The Claude API MCP connector (section 5) also works, since the tunnel is public HTTPS.
+docs/mcp.md:134:* *Claude web/mobile (claude.ai).* Custom connectors there expect OAuth rather than a pasted bearer token (see section 4),
+docs/mcp.md:136:  running), reads the random URL, then starts the server with `--oauth-issuer <that URL>`. In claude.ai: Settings →
+docs/mcp.md:139:  Every restart changes the URL, so the connector must be re-added. Custom-connector availability depends on your Claude
+docs/mcp.md:140:  plan, and this flow was tested against the server's own OAuth test client, not against claude.ai itself.
+docs/mcp.md:162:### OAuth 2.1 (for claude.ai web/mobile custom connectors and other OAuth clients)
+docs/mcp.md:164:Anthropic's connector docs describe OAuth (dynamic client registration) as the supported auth for claude.ai custom
+docs/mcp.md:176:* Static bearer tokens keep working on `/mcp` (Claude Code, API connector, `mcp-remote`); `X-API-Key` is not accepted
+docs/mcp.md:178:* In claude.ai: Settings → Connectors → Add custom connector → `https://kg.example.com/mcp` → sign in on the consent page.
+docs/mcp.md:179:  Connector behaviour changes; check <https://claude.com/docs/connectors/building/authentication>.
+docs/mcp.md:187:**Claude Code**
+docs/mcp.md:189:claude mcp add --transport http cogent-kg https://kg.example.com/mcp --header "Authorization: Bearer $TOKEN"
+docs/mcp.md:190:claude mcp list        # then in a session: /mcp
+docs/mcp.md:193:**Claude API (MCP connector, beta `mcp-client-2025-11-20`)**
+docs/mcp.md:195:import anthropic
+docs/mcp.md:196:client = anthropic.Anthropic()
+docs/mcp.md:198:    model="claude-opus-5-5", max_tokens=2048, betas=["mcp-client-2025-11-20"],
+docs/mcp.md:203:The URL must be public HTTPS (Anthropic's servers connect to it).
+docs/mcp.md:205:**Claude Desktop** (`claude_desktop_config.json`, via the `mcp-remote` bridge)
+docs/mcp.md:211:**Claude.ai web/mobile** – Settings → Connectors → Add custom connector → URL; start the server with `--oauth-issuer` (section 4).
+docs/mcp.md:213:**Other agents** – any MCP client with streamable HTTP (Cursor, VS Code, OpenAI Agents SDK, LangChain
+docs/observability.md:97:`notes/LiveDemo.md` step 8 shows the whole flow: the MCP server behind a Cloudflare quick tunnel, the Claude web app calling tools, and the dashboard filling in next to it (optionally a second tunnel with 
+docs/scaling.md:37:6. Connect: `claude mcp add --transport http cogent-kg https://mcp.example.com/mcp --header "Authorization: Bearer <token>"`; in the Claude web app add
+docs/scaling.md:50:MCP clients (Claude Code, the web connector); keep the server's own tokens / OAuth for `/mcp` and consider Access only for `/metrics`.
+notes/LiveDemo.md:1:# Demo deployment: the MCP server on the Internet, for the Claude web app (and a live Grafana dashboard)
+notes/LiveDemo.md:95:## 7. Connect the Claude web app
+notes/LiveDemo.md:96:1. In claude.ai, open Settings → Connectors → Add custom connector.
+notes/LiveDemo.md:98:3. Claude opens the server's sign-in page. Paste the token from step 3 and approve.
+notes/LiveDemo.md:99:4. In a chat, enable the connector, then ask: "What is the allowable stress for A572 in the standards' tables?" The server instructions steer Claude to `lookup_values`.
+notes/LiveDemo.md:101:To demonstrate tailoring, ask it to use the `strict_design_lookup` prompt, or to call `set_session_preferences` with `profile: strict` versus `exploratory`. For Claude Code instead of the web app: `claude mcp
+notes/LiveDemo.md:106:What you will see: each question you ask Claude becomes an MCP tool call (latency, outcome), each agent run shows tokens, cost, findings, judge agreement, hallucination rate, failures and retries. Details and
+notes/LiveDemo.md:125:**8c. Drive the MCP panels from the Claude web app** (step 7). Put the dashboard on one half of the screen, Claude on the other, and ask, in this order:
+notes/LiveDemo.md:150:- Remove the connector in claude.ai. Optionally `docker compose -f deploy/docker-compose.tabledb.yml stop`.
+notes/LiveDemo.md:153:- The dashboard and the alert were exercised here with Prometheus and Grafana against a synthetic demo (mock site, mock model); not against your sources, Ollama model, or the Claude web app. The proxy trick i
+notes/LiveDemo.md:155:- A new quick-tunnel address does not affect Prometheus (it scrapes `127.0.0.1:8765` directly); only the Claude connector and a Grafana tunnel need the new address.
+notes/LiveDemo.md:156:- Custom connectors depend on your Claude plan and on what the web app currently offers; I can't check either.
+notes/LiveDemo.md:157:- The OAuth flow was tested only against the server's own test client, not claude.ai. If the web app rejects the sign-in, note the error.
+notes/MCP_Server.md:93:- **OAuth 2.1 (optional, for claude.ai connectors):** turned on with `--oauth-issuer` (`src/kg_oauth.py`). It supports dynamic client registration, PKCE (S256), a consent page where you approve a client with
+notes/MCP_Server.md:100:- `deploy/demo-tunnel.sh` for a free Cloudflare quick tunnel, with `--oauth` for claude.ai. It does not pass the table-database flags; start the server by hand for those.
+notes/MCP_Server.md:101:- `docs/mcp.md` has the remote-URL options and client setup for Claude Code, the Claude API and Claude Desktop; `docs/tabledb.md` covers the table database.
+notes/MCP_Server.md:109:- **Untested against real services:** it hasn't been tried against claude.ai, the real Cloudflare service, a real Ollama model, or a real OTLP collector (Jaeger, Tempo). The LLM join stages were tested with
+src/kg_ingest.py:1130:            if not t.strict:                                   # produced by a language model, not by the rule-based extractor
+src/kg_llmjoin.py:360:            "judge_note": "The judge is a language model, not ground truth: use its verdicts and the agreement statistics as evidence, not as proof."}
+src/kg_mcp.py:4:    python src/kg_mcp.py token create --name claude          # prints the secret once
+src/kg_mcp.py:7:Transport: MCP "streamable HTTP" at ``/mcp`` (works with Claude Code, the Claude API MCP connector,
+src/kg_mcp.py:8:Claude Desktop through ``mcp-remote``, MCP Inspector, ...). ``/healthz`` is open for probes.
+src/kg_mcp.py:10:Authentication: OAuth 2.1 (``--oauth-issuer``, for claude.ai connectors) or static bearer tokens (``Authorization: Bearer <token>`` or ``X-API-Key``). Only SHA-256
+src/kg_mcp.py:275:            # the caller's W3C traceparent (Claude Code, a gateway ...) becomes the parent of this request's span and of the tool spans below it
+src/kg_mcp.py:903:    s.add_argument("--oauth-issuer", metavar="URL", help="enable OAuth 2.1 (claude.ai custom connectors); the public https "
+src/kg_oauth.py:1:"""Minimal OAuth 2.1 authorization server for the MCP service (what claude.ai custom connectors expect).
+src/kg_oauth.py:143:<h1>Authorize MCP client</h1>
+tests/test_mcp.py:195:        reg = c.post("/register", json={"client_name": "Claude", "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+tests/test_mcp.py:200:        q = {"response_type": "code", "client_id": reg["client_id"], "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+tests/test_mcp.py:205:        assert "Authorize MCP client" in c.get("/consent", params={"pid": pid}).text
+tests/test_mcp.py:212:        assert loc.netloc == "claude.ai" and cb["state"] == ["xyz"]
+tests/test_round6.py:1:"""Test-round 6 fixes (batch 1): lookup confidence (R6-01), extraction-recipe refresh (R6-04 / R6-14 / R6-15), error messages (R6-11 / 12 / 13)."""
+tests/test_round6.py:19:# ------------------------------------------------------------------ R6-01
+tests/test_round6.py:54:# ------------------------------------------------------------------ R6-11 / 12 / 13
+tests/test_round6.py:101:# ------------------------------------------------------------------ R6-04 / 14: extraction recipe
+tests/test_round6.py:148:# ------------------------------------------------------------------ R6-03 / R6-05: joins
+tests/test_round6.py:190:# ------------------------------------------------------------------ R6-06: non-data tables
+tests/test_round6.py:215:# ------------------------------------------------------------------ R6-02: scope of a link
+tests/test_round6.py:261:# ------------------------------------------------------------------ R6-07 / 08 / 09 / 10: identifiers, entities
+(end)
+
+== other remote branches
+  origin/claude/pdf-html-knowledge-graph-773a5d
+  origin/main
+== files whose NAME contains test-report / round / findings
+config/reports.json
+tests/test_round6.py

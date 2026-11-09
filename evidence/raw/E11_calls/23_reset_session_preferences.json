@@ -1,0 +1,21 @@
+{
+ "tool": "reset_session_preferences",
+ "args": {
+  "session_id": "ev-expl"
+ },
+ "isError": false,
+ "result": {
+  "session": "evidence:ev-expl",
+  "cleared": true,
+  "effective": {
+   "profile": "balanced",
+   "approach": "hybrid",
+   "min_score": 0.55,
+   "include_rejected": false,
+   "min_agreement": 0.0,
+   "units": "strict",
+   "retrieval": "semantic",
+   "min_similarity": 0.0
+  }
+ }
+}

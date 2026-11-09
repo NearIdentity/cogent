@@ -1,0 +1,39 @@
+{
+ "tool": "get_outline",
+ "args": {
+  "ref": "aaaaaaaaaaaaaaaa"
+ },
+ "isError": false,
+ "result": {
+  "provenance": {
+   "ref": "aaaaaaaaaaaaaaaa",
+   "note": "document-level graph; call get_entry_metadata on an entry for capture/version information",
+   "disclaimers": [
+    "Knowledge graphs are machine-generated extractions of public documents (PDF/HTML/eCFR). Text, tables and cross-references can contain extraction errors; verify against the source document before relying on them."
+   ]
+  },
+  "outline": [
+   {
+    "id": "h0001",
+    "level": 1,
+    "page": null,
+    "title": "Seismic Design Criteria for Nuclear Facilities",
+    "doc": null
+   },
+   {
+    "id": "h0002",
+    "level": 2,
+    "page": null,
+    "title": "3 Seismic Categories",
+    "doc": null
+   },
+   {
+    "id": "h0006",
+    "level": 2,
+    "page": null,
+    "title": "4 Damping",
+    "doc": null
+   }
+  ]
+ }
+}

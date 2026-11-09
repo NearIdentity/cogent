@@ -1,0 +1,75 @@
+== kg_tableservice._wrap (collected 2026-11-09T03:28:12Z, origin/main 1f237f0)
+    def _wrap(self, c, payload: dict[str, Any], cache: dict, docids: set[str], prefs: Optional[Prefs] = None) -> dict[str, Any]:
+        warn, paywalled, holder = [], False, None
+        for d in sorted(docids):
+            lab = self._label(c, d, cache)
+            if lab["paywalled"]:
+                paywalled, holder = True, lab["holder"]
+                warn += [w for w in lab["warnings"] if w not in warn]
+        meta = self.db.meta(c) or {}
+        out = {**payload, "provenance": {"derived_from": "tables extracted from the staged documents", "embedder": meta.get("spec"), "recipe": meta.get("recipe"),
+                                         "disclaimer": DISCLAIMER, **({"preferences": asdict(prefs)} if prefs else {})}}
+        if paywalled:
+            out["paywalled"] = True
+            out["copyright_notice"] = notice(holder)
+            out["warnings"] = warn
+        return out
+
+    def _qvec(self, c, question: str, prefs: Prefs) -> tuple[Optional[list[float]], Optional[str]]:
+
+== _decorate / source fields
+    def _decorate(self, c, t: dict[str, Any], cache: dict) -> dict[str, Any]:
+        lab = self._label(c, t["docid"], cache)
+        src = t.get("source_url") or ""
+        cfg = self.store._config()
+        title = TDB.document_title(t.get("doc_label") or "", [cfg[k].get("document") or cfg[k].get("report") or "" for k in (t.get("entries") or []) if k in cfg], t["docid"])
+        t = {**t, "doc_label": title, "paywalled": lab["paywalled"],
+             "source": {"document_id": t["docid"], "document": title, "url": "local:" + src.rsplit("/", 1)[-1] if src.startswith("file://") else src,
+                        "page": t.get("page"), "caption": t.get("caption"), "section": t.get("section_path")}}
+        for k in ("source_url", "pg_table"):
+            t.pop(k, None)
+        return t
+
+    def _wrap(self, c, payload: dict[str, Any], cache: dict, docids: set[str], prefs: Optional[Prefs] = None) -> dict[str, Any]:
+
+== tools calling _wrap / which table-service methods use _wrap
+333:    def _wrap(self, c, payload: dict[str, Any], cache: dict, docids: set[str], prefs: Optional[Prefs] = None) -> dict[str, Any]:
+422:            return self._wrap(c, {"ref": ref, "tables": tabs, "count": len(tabs)}, cache, {t["docid"] for t in tabs})
+438:            return self._wrap(c, {"table": self._decorate(c, t, cache)}, cache, {docid}, prefs)
+455:            return self._wrap(c, {"table_id": table_id, "active_mode": prefs.units, "columns": out,
+469:            return self._wrap(c, {"question": question, "mode": "hybrid" if (prefs.retrieval == "hybrid" and qv) else "semantic" if qv else "lexical",
+495:            return self._wrap(c, {"question": question, "mode": res["mode"], **({"note": note} if note else {}), **extra, "rows": rows,
+510:            return self._wrap(c, {**res, **units, "table": {k: info[k] for k in ("caption", "source", "paywalled")}}, cache, {docid}, prefs)
+535:            return self._wrap(c, {**res, **({"inferred_relationship": used} if used else {})}, cache, {d1, d2}, prefs)
+649:            return self._wrap(c, {"ref": ref, "ephemeral": True, "note": "computed now with the parameters you gave; not stored", "documents": out}, cache, set(docs[:
+664:            return self._wrap(c, {**res, "count": len(res["rows"])}, cache, {r[0] for r in c.execute("SELECT DISTINCT docid FROM kgt_tables WHERE paywalled").fetchall
+
+== data dictionary/relationship services (file-based) wrap
+1:"""Query front-end over the table database for the MCP server: ref resolution, paywall policy, provenance, embedder handling, and
+7:* tables from paywalled / purchased documents follow the server's ``--paywalled-assets`` policy: ``block`` removes them from every
+300:        """Documents in scope for ``ref`` that the paywall policy lets us serve (never None: an explicit list)."""
+305:        if self.store.paywalled_assets == "block":
+306:            base = [d for d in base if not self.store.doc_paywall(d)["paywalled"]]
+312:            raise NotFound(f"table {table_id!r} comes from paywalled content and the server is configured not to serve it")
+317:            pw = self.store.doc_paywall(docid)
+318:            cache[docid] = {"paywalled": pw["paywalled"], "warnings": self.store._asset_warnings(docid, pw) if pw["paywalled"] else [], "holder": pw["holder"]}
+326:        t = {**t, "doc_label": title, "paywalled": lab["paywalled"],
+334:        warn, paywalled, holder = [], False, None
+337:            if lab["paywalled"]:
+338:                paywalled, holder = True, lab["holder"]
+341:        out = {**payload, "provenance": {"derived_from": "tables extracted from the staged documents", "embedder": meta.get("spec"), "recipe": meta.get("recipe"),
+342:                                         "disclaimer": DISCLAIMER, **({"preferences": asdict(prefs)} if prefs else {})}}
+343:        if paywalled:
+344:            out["paywalled"] = True
+456:                                  "note": "units are labels with provenance; no value was converted"}, {}, {docid}, prefs)
+484:            rows = [{**h, "table": {k2: tabs[h["table_id"]][k2] for k2 in ("caption", "source", "paywalled")}, **units.get(h["table_id"], {})} for h in res["rows"] if h["table_
+510:            return self._wrap(c, {**res, **units, "table": {k: info[k] for k in ("caption", "source", "paywalled")}}, cache, {docid}, prefs)
+541:            return self.store._published(ref, "join_evaluation.json", False)
+563:        out = R.data_dictionary(d["document_id"], d["document"], d["source"], tables, rels, d.get("paywalled", False))
+568:        dicts = self.store._published(ref, "data_dictionary.json", False)
+576:                    rel_file = next((r for r in self.store._published(item["document_id"], "relationships.json", False)), None)
+614:        items = self.store._published(ref, "join_evaluation.md" if fmt == "markdown" else "join_evaluation.json", fmt == "markdown")
+643:            out.append({"document_id": docid, "paywalled": lab["paywalled"], "relationships": sel, "evaluation": {k: ev[k] for k in ("metrics", "status", "models", "config", "j
+655:            if self.store.paywalled_assets == "block" and c.execute("SELECT 1 FROM kgt_tables WHERE paywalled LIMIT 1").fetchone():
+656:                raise NotFound("run_sql is unavailable while paywalled tables are in the database and the policy is 'block'")
+664:            return self._wrap(c, {**res, "count": len(res["rows"])}, cache, {r[0] for r in c.execute("SELECT DISTINCT docid FROM kgt_tables WHERE paywalled").fetchall()})
