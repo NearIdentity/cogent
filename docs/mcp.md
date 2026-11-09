@@ -47,6 +47,9 @@ python src/kg_mcp.py --home kg_agent_home serve --port 8765
 curl localhost:8765/healthz
 ```
 Env equivalents: `COGENT_HOME`, `COGENT_STANDARDS`, `COGENT_REPORTS`, `COGENT_MCP_TOKEN` (one extra token).
+Other `serve` options: `--tokens FILE` and `--state-dir DIR` (where the token and OAuth files live; the default is `<home>/mcp`), `--stale-after DAYS`, `--default-profile`, `--session-hours`;
+table-database options (`--tabledb-dsn`, `--tabledb-schema`, `--embedder`, `--embed-model`, `--embed-dim`, `--llm-model`, `--judge-model`, `--llm-max-seconds`, `--allow-sql`) are in
+[tabledb.md](tabledb.md); scale-out and monitoring options are in [scaling.md](scaling.md) and [observability.md](observability.md).
 Inspect interactively: `npx @modelcontextprotocol/inspector` → Streamable HTTP, URL `http://localhost:8765/mcp`,
 header `Authorization: Bearer <token>`.
 
@@ -173,7 +176,7 @@ python src/kg_mcp.py --home kg_agent_home serve --public-host kg.example.com --o
   `token create`. After 5 wrong entries from one IP the page locks for 5 minutes.
 * Access tokens last 1 h, refresh tokens 30 d (rotated on use); only hashes are stored in `<home>/mcp/oauth.json` (0600).
   Revoking the operator token that approved a client immediately invalidates that client's OAuth tokens.
-* Static bearer tokens keep working on `/mcp` (Claude Code, API connector, `mcp-remote`); `X-API-Key` is not accepted
+* Static bearer tokens keep working on `/mcp` (Claude Code, API connector, `mcp-remote`); `X-API-Key: <token>` is accepted as an alternative to `Authorization: Bearer <token>`
   in OAuth mode. The issuer must be the public **https** URL (http only for localhost).
 * In claude.ai: Settings → Connectors → Add custom connector → `https://kg.example.com/mcp` → sign in on the consent page.
   Connector behaviour changes; check <https://claude.com/docs/connectors/building/authentication>.

@@ -64,9 +64,9 @@ python3 src/kg_snapshot.py publish --home kg_agent_home --dest /srv/cogent-snaps
 python3 src/kg_snapshot.py watch --src /srv/cogent-snapshots --link /srv/cogent/current --interval 300     # or an https:// base URL serving the same folder
 python3 src/kg_mcp.py --home /srv/cogent/current serve --standards /srv/cogent/current/config/standards.json --reports /srv/cogent/current/config/reports.json ...
 ```
-A bundle holds `staging/`, `tabledb/`, `state/alerts.json`, `logs/runs.jsonl` and the two configuration files; never `local/` (purchased copies), `archive/` or `mcp/`
+A bundle holds `staging/`, `tabledb/`, `state/alerts.json`, `logs/runs.jsonl`, the agent's metrics files (`metrics/agent_metrics.json`, `metrics/cogent_agent.prom`, so a server's `/metrics` shows the agent's totals) and the two configuration files; never `local/` (purchased copies), `archive/` or `mcp/`
 (tokens). The pull verifies the SHA-256, refuses unsafe archive members, extracts beside the link and repoints the symlink with one rename; old snapshots are
-pruned. The staged text of paywalled documents is inside the bundle (and the servers serve it): publish only to places where the server may run.
+pruned. Other options: `publish --keep N` (bundles kept, default 5) and `--no-assets` (leave out figures and table CSVs: smaller, but `get_figure` / `get_table_csv` then fail); `pull` fetches once instead of repeatedly (`--keep N` snapshots, default 3); `status --link PATH` shows which snapshot a link points to. The staged text of paywalled documents is inside the bundle (and the servers serve it): publish only to places where the server may run.
 Tokens are separate per host unless `--state-dir` points to shared storage, and the table database must be reachable from every server (managed Postgres with
 pgvector, or a replica).
 

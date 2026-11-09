@@ -92,7 +92,7 @@ Published per document under `<home>/tabledb/<docid>/`: `data_dictionary.json|md
 
 ## LLM join inference with an LLM judge (`kg_llm.py`, `kg_llmjoin.py`)
 Enabled with `--llm-joins` (`kg_agent.py run --tables --llm-joins`, or `kg_tabledb.py build --llm-joins`); models: `--join-model`, `--join-judge-model`
-(default `llama3.1:8b` via Ollama `/api/chat`, structured JSON output). For up to `--join-max-pairs` table pairs of one document (deterministic hits, KG-related
+(default `llama3.1:8b` via Ollama `/api/chat`, structured JSON output). `kg_tabledb.py build` spells the options differently from `kg_agent.py run`: `--llm-model` (suggester), `--judge-model`, `--llm-samples`, `--judge-runs`, `--llm-max-pairs`, `--llm-max-seconds`. Both take `--embedder`, `--embed-model` and `--embed-dim` (hash embedder only, default 64); `kg_tabledb.py --schema NAME` and `kg_agent.py --tabledb-schema NAME` choose the database schema (default `kgtables`). For up to `--join-max-pairs` table pairs of one document (deterministic hits, KG-related
 and header-overlapping pairs first):
 
 1. **suggest**: `--join-samples` prompts in three styles (schema-only, with sample rows, with KG context) propose join column pairs with a confidence;
