@@ -1,0 +1,10 @@
+2026-11-09T05:22:04Z
+== all PDFs on this machine outside venv/site-packages/pytest temp (find /)
+/usr/lib/libreoffice/share/xpdfimport/xpdfimport_err.pdf
+(end)
+== PDF count total: 27
+== large PDFs (>200 KB) anywhere
+(end)
+== staging folders (real) : none besides scratch fixtures (see F3_search.txt)
+== engine availability (versions in venv): pymupdf_layout imports as pymupdf.layout:
+pymupdf.layout importable

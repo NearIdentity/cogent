@@ -1,0 +1,7 @@
+tests/test_table_footnotes.py::test_superscript_markers_are_split_from_values PASSED
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_a_letter_marker_and_no_superscripts PASSED
+tests/test_table_footnotes.py::test_marker_rules PASSED
+============================== 6 passed in 0.75s ===============================

@@ -1,0 +1,8 @@
+pymupdf 2.0 (2026-11-09T05:21:50Z), tests/test_table_footnotes.py from main 0394a9c
+PASSED tests/test_table_footnotes.py::test_a_letter_marker_and_no_superscripts
+PASSED tests/test_table_footnotes.py::test_marker_rules
+FAILED tests/test_table_footnotes.py::test_superscript_markers_are_split_from_values
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes[1.0 x 10-4]
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes[Area in m-2]
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes[Dose in cm-3]
+4 failed, 2 passed in 2.11s

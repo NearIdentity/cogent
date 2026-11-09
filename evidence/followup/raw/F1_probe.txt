@@ -1,0 +1,36 @@
+2026-11-09T05:15:04Z
+== OS
+Linux vm 6.18.44-fc-v310 #1 SMP @0 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.5 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+== hostname/user: vm / root
+== python
+/usr/local/bin/python3
+/usr/bin/python3
+/bin/python3
+Python 3.13.18
+== services/binaries
+ollama           not found
+psql             /usr/bin/psql
+pg_ctl           not found
+docker           /usr/bin/docker
+prometheus       not found
+grafana-server   not found
+grafana          not found
+== listening ports
+== processes of interest
+== pgvector files
+== candidate agent homes
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture/home/config/changes.jsonl
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture/home/logs/runs.jsonl
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture/home/staging
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture_tables/home/staging
+/tmp/pytest-of-root/pytest-1/test_judge_alternates_the_colu0/h/staging
+/tmp/pytest-of-root/pytest-1/assets0/home/staging
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/config/changes.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/logs/runs.jsonl
+/tmp/pytest-of-root/pytest-1/test_run_limited_by_only_keeps0/home/staging
+/tmp/pytest-of-root/pytest-1/api0/home/logs/runs.jsonl
+== shell history mentions
+(end)

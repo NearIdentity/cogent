@@ -1,0 +1,11 @@
+tests/test_table_footnotes.py::test_superscript_markers_are_split_from_values FAILED
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+tests/test_table_footnotes.py::test_a_letter_marker_and_no_superscripts PASSED
+tests/test_table_footnotes.py::test_marker_rules PASSED
+FAILED tests/test_table_footnotes.py::test_superscript_markers_are_split_from_values
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+FAILED tests/test_table_footnotes.py::test_exponents_and_unit_powers_are_not_footnotes
+========================= 4 failed, 2 passed in 1.90s ==========================

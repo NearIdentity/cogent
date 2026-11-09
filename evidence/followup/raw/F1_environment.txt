@@ -1,0 +1,24 @@
+2026-11-09T05:15:23Z
+worktree HEAD: 0394a9c8c78f8e3055dedb1be3d9b1e50f42f02d
+== git status in worktree:
+== versions (venv /tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/venv)
+langgraph                 1.2.20
+mcp                       1.30.0
+networkx                  3.7
+opentelemetry-api         1.45.0
+psycopg                   3.3.8
+psycopg-binary            3.3.8
+pymupdf                   2.1
+pymupdf_layout            2.1
+pymupdf4llm               2.1
+pytest                    9.2.0
+rapidocr-onnxruntime      1.2.3
+== opentelemetry sdk importable?
+ModuleNotFoundError: No module named 'opentelemetry.sdk'
+== pgvector python package
+ModuleNotFoundError: No module named 'pgvector'
+== PostgreSQL server
+16
+postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+0
+psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)

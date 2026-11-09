@@ -1,0 +1,36 @@
+2026-11-09T05:15:41Z
+== F3 search for an agent home (dirs with config/ state/ logs/ staging/ archive/)
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture/home: archive config logs mcp metrics staging state 
+/tmp/claude-0/-home-user-cogent/cd99a80a-9017-5ea4-a626-bd4e226e965a/scratchpad/fixture_tables/home: mcp src_html staging state 
+== kg_agent_home / changes.jsonl / report.md outside tests and scratch fixtures
+(none above = none)
+== shell history files
+ls: cannot access '/root/.bash_history': No such file or directory
+ls: cannot access '/root/.zsh_history': No such file or directory
+ls: cannot access '/root/.history': No such file or directory
+== systemd/cron
+/etc/cron.d:
+e2scrub_all
+php
+/bin/bash: line 3: crontab: command not found
+== home directories
+/home:
+total 20
+drwxr-xr-x  5 root   root   4096 Nov  9 03:18 .
+drwxr-xr-x 22 root   root   4096 Nov  9 05:14 ..
+drwxr-xr-x  7 claude claude 4096 Nov  9 03:16 claude
+drwxr-x---  2 ubuntu ubuntu 4096 Oct 24 14:12 ubuntu
+drwxr-xr-x  3 root   root   4096 Nov  9 03:18 user
+
+/root:
+total 148
+drwx------ 16 root root  4096 Nov  9 04:58 .
+drwxr-xr-x 22 root root  4096 Nov  9 05:14 ..
+drwx------  2 root root  4096 Nov  9 03:18 .aws
+-rw-r--r--  1 root root  3207 Oct 27 19:43 .bashrc
+-rw-r--r--  1 root root    55 Nov  9 03:18 .boto
+drwxr-xr-x  3 root root  4096 Oct 27 19:49 .bun
+drwxr-xr-x  7 root root  4096 Nov  9 03:19 .cache
+drwxr-xr-x  3 root root  4096 Oct 27 19:44 .cargo
+drwxr-xr-x  2 root root  4096 Nov  9 05:14 .ccr
+drwxr-xr-x 11 root root  4096 Nov  9 03:19 .claude

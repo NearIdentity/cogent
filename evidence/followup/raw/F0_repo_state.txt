@@ -1,0 +1,19 @@
+2026-11-09T05:14:53Z
+HEAD: d602091b99d7d0e7bb615a6dd823c3a9b37d1851
+branch: documentation-update
+== git status --short
+?? evidence/
+== origin/main: 0394a9c8c78f8e3055dedb1be3d9b1e50f42f02d
+commit
+== log 0394a9c..HEAD
+== branches
+  claude/pdf-html-knowledge-graph-773a5d
+* documentation-update
+  main
+  remotes/origin/claude/pdf-html-knowledge-graph-773a5d
+  remotes/origin/documentation-update
+  remotes/origin/main
+== log -3 origin/main
+0394a9c Merge pull request #11 from NearIdentity/documentation-update
+d602091 Documentation update: align README, docs and notes with the code on main; add CHANGELOG.md
+1f237f0 Merge pull request #10 from NearIdentity/mcp-client-testcycle-fixes-addendum
