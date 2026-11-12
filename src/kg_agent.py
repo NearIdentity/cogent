@@ -782,7 +782,7 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
                 return DocAction(url=url, entries=keys, action="unchanged", detail=f"ADAMS record {acc} unchanged (no request to the document host)"), fetch_url, None
         else:
             log.info("ADAMS check for %s skipped: %s", acc, ar.error)
-    same = st.fetch_url == fetch_url and not s.force and not behind      # forced update (or KG built with an older recipe): never send If-None-Match / If-Modified-Since
+    same = st.fetch_url == fetch_url and not s.force and not behind and kg_path.exists()      # no KG on disk: a 304 would leave the document unbuilt forever; forced update (or KG built with an older recipe): never send If-None-Match / If-Modified-Since
     r = T.fetch(fetch_url, st.etag if same else "", st.last_modified if same else "",
                 min_interval=s.min_interval, accept="application/pdf,text/html,application/xml,*/*;q=0.8")
     r.adams_fp = adams_fp

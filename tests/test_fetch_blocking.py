@@ -390,3 +390,27 @@ def test_fetchcheck_shows_redirect_and_title(tmp_path, srv):
     text = "\n".join(lines)
     assert "final url   " + srv.base + "/new" in text and "(redirected)" in text
     assert "title       Directives Library" in text and "status      404" in text
+
+
+def test_lost_kg_is_rebuilt_not_stuck_on_304(tmp_path, srv):
+    """With a stored ETag but no KG on disk, a conditional GET would answer 304 and the document would never be rebuilt."""
+    kg_ingest.set_pdf_engine("basic")
+    orig = srv.httpd.RequestHandlerClass.do_GET
+
+    def do_GET(self):
+        if self.headers.get("If-None-Match") == '"v1"':
+            srv.hits.append((self.path, "conditional"))
+            self.send_response(304)
+            self.end_headers()
+            return
+        orig(self)
+    srv.httpd.RequestHandlerClass.do_GET = do_GET
+    srv.add("/d.pdf", make_pdf("D", "Some text."), ETag='"v1"')
+    s = make_env(tmp_path, [{"id": 1, "document": "D", "links": [{"text": "p", "url": srv.base + "/d.pdf"}], "update_tracking_urls": []}])
+    assert kg_agent.run_once(s)["summary"]["docs_created"] == 1
+    st = kg_agent.run_once(s)                                           # normal: conditional GET, 304
+    assert st["summary"]["docs_unchanged"] == 1 and srv.hits[-1][1] == "conditional"
+    for k in (s.home / "staging" / "documents").glob("*/kg.json"):
+        k.unlink()
+    st = kg_agent.run_once(s)
+    assert st["summary"]["docs_created"] == 1 and st["summary"]["docs_error"] == 0
