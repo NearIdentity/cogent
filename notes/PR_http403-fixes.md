@@ -60,3 +60,5 @@
 10. **Implementation, tests, push** (`d272764`). Then the user asked for documentation updates in all `.md` files and this summary; I updated README, `docs/observability.md`, `docs/scheduling.md`, `CHANGELOG.md`, `docs/fetching.md`, and the MCP alert notes in code.
 
 Standing rules observed: no PR opened; secrets kept out of output and the repository; commit trailers added; results reported as measured, with live behaviour marked unverified.
+
+12. **Follow-up:** the user purged the dead energy.gov tracker from entries 11–13 and, from their own research, made entry 13 (DOE O 5480.30, superseded by 420.1C, then 420.1D = entry 11) manual upload only (`"manual": true` on its link).

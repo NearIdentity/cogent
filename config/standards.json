@@ -626,11 +626,12 @@
       "links": [
         {
           "text": "Chg 1",
-          "url": "https://www.directives.doe.gov/directives-documents/5400-series/5480.30-BOrder-Chg1"
+          "url": "https://www.directives.doe.gov/directives-documents/5400-series/5480.30-BOrder-Chg1",
+          "manual": true
         }
       ],
       "format_of_data": "PDF (inferred; directives portal)",
-      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library",
+      "update_tracking": "Manual upload only: DOE O 5480.30 (1993) was superseded by DOE O 420.1C (2012), itself superseded by DOE O 420.1D (2026, entry 11); the agent does not request the link. Directives libraries: https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library",
       "update_tracking_urls": [
         "https://www.energy.gov/management/active-directives-library",
         "https://www.energy.gov/management/archived-directives-library"

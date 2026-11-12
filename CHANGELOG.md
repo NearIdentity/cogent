@@ -18,6 +18,7 @@ Diagnosis: nrc.gov's CDN refuses clients it takes for bots (403 with `x-referenc
 * ADAMS change detection also covers `update_tracking_urls` entries that are `nrc.gov/docs/ML…` PDFs (entries 19 and 21 of `config/standards.json`); `TrackerState.adams_fp`.
 * 404/410 on a tracker now says "not found" and that the host may be hiding the URL from this client (a first reading of the energy.gov 404 as client blocking was wrong; see the next item).
 * New tests: `tests/test_fetch_blocking.py`, `tests/test_adams.py` (mock servers only).
+* Configuration: entry 13 (DOE O 5480.30, 1993) is now manual upload only (`"manual": true` on its link): per the project's research it was superseded by DOE O 420.1C (2012), itself superseded by DOE O 420.1D (2026, entry 11). The report lists the URL to download and the path `<home>/local/standards/13/` to save it to.
 * Configuration: removed the dead tracker `https://www.energy.gov/ehss/nuclear-and-facility-safety-directives` (404 in Firefox as well, not a block) from `update_tracking_urls` and the `update_tracking` notes of entries 11, 12 and 13; their links and the active/archived directives-library trackers were checked with `fetchcheck` and work.
 * **Not verified:** nothing was run against the live nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org (see `docs/fetching.md`, "What was not verified").
 
