@@ -6,7 +6,7 @@ model's reply is parsed and checked rather than free-form text.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -24,6 +24,8 @@ class ClientConfig(BaseModel):
     chunk_overlap: int = Field(150, ge=0)
     top_k: int = Field(6, ge=1, le=30)            # text chunks retrieved per question
     table_rows: int = Field(8, ge=1, le=50)       # table rows asked of the table database per question
+    num_ctx: int = Field(8192, ge=1024)           # the model's context window in tokens (sent to Ollama; the prompt is trimmed to fit)
+    answer_reserve: int = Field(768, ge=128)      # tokens kept free for the model's answer
     retrieval: Literal["hybrid", "semantic", "keyword"] = "hybrid"   # text retrieval: vector similarity, BM25 keyword search, or both fused (RRF)
     table_retrieval: Literal["hybrid", "semantic", "lexical"] = "hybrid"   # how the server searches table rows (lookup_values `retrieval`)
     rrf_k: int = Field(60, ge=1)                  # reciprocal-rank-fusion constant
@@ -109,6 +111,7 @@ class Notice(BaseModel):
 class ChatReply(BaseModel):
     answer: str
     found_in_context: bool = False
+    diagnostics: dict[str, Any] = Field(default_factory=dict)   # prompt tokens, context window, excerpts dropped: for /explain, logs and the evaluation run
     sources: list[SourceRef] = Field(default_factory=list)
     tables: list[TableView] = Field(default_factory=list)
     notices: list[Notice] = Field(default_factory=list)

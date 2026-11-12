@@ -105,3 +105,20 @@ def test_tables_flow_through_the_real_server(table_server):
     assert nm.tables == []                                              # the server said no_confident_match: nothing from the tables is shown
     cmd = agent.command("/lookup damping welded steel")
     assert cmd.tables and "Reinforced concrete" in cmd.tables[0].markdown
+
+
+def test_server_facts_through_the_real_server(table_server):
+    url, secret = table_server
+    conn = McpConnection(url, secret)
+    tools = conn.list_tool_details()
+    by = {t["name"]: t for t in tools}
+    assert by["get_overview"]["read_only"] is True and by["lookup_values"]["read_only"] is True and by["set_session_preferences"]["read_only"] is False
+    c = cfg(url).model_copy(update={"token": secret})
+    src = KnowledgeSource(conn, c)
+    doc, entries = src.server_facts()
+    assert "entries: " in doc.page_content and "table database" in doc.page_content.lower() and "`run_sql`" in doc.page_content and "not offered" in doc.page_content
+    assert {e["entry"] for e in entries} >= {"standard:2", "standard:5", "report:1"} and "- standard:2 NRC RG 1.233" in doc.page_content
+    seen = []
+    agent = CogentAgent(c, src, llm=make_llm(lambda t: (seen.append(t) or "ok", True)), embeddings=KeywordEmbeddings())
+    r = agent.ask("What is staged on the server, and does it have a table database?")
+    assert "[S1] MCP server" in seen[0] and "- standard:2 NRC RG 1.233" in seen[0] and r.sources[0].entry_name == "MCP server"

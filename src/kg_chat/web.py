@@ -30,7 +30,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 import kg_telemetry as telemetry
 
 from . import auth as authmod
-from .agent import CogentAgent
+from .agent import CogentAgent, ModelAnswerError
 from .auth import Credentials, LoginThrottle
 from .mcp_conn import McpAuthError, McpError
 
@@ -191,6 +191,9 @@ def create_app(agent: CogentAgent, title: str = "", disclaimer: str = "", metric
         try:
             with lock:                                   # one question at a time per conversation keeps history ordered
                 reply = convo.command(message) or convo.ask(message)
+        except ModelAnswerError as exc:
+            app.logger.error("%s", exc)
+            return jsonify(error=str(exc)), 502
         except McpAuthError:
             app.logger.error("The MCP server rejected the token")
             return jsonify(error="The MCP server rejected the token this app was started with."), 502

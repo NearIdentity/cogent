@@ -112,7 +112,7 @@ def test_no_confident_match_is_told_to_the_model_and_shows_no_rows():
     seen = []
     agent, _ = make_agent(lambda t: (seen.append(t) or "not found", False), table_mode="no_match")
     r = agent.ask("allowable stress for A572")
-    assert "table search: no table row mentions A572" in seen[0] and r.tables == []
+    assert "table search: no table row mentions 'A572'" in seen[0] and r.tables == []
 
 
 def test_table_database_down_degrades_to_text_only():

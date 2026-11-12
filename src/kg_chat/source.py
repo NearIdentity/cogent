@@ -106,11 +106,60 @@ def graph_sections(entry: dict[str, Any], graph: dict[str, Any]) -> list[Documen
     return out
 
 
+_META = re.compile(r"\b(staged|staging|on[- ]board|loaded|indexed|how many|which (standards|reports|entries|documents)|what (standards|reports|entries|documents)|"
+                   r"entries|database|read[- ]?only|tools?|server|warnings?|last (agent )?run|stale|up to date|latest edition|version status|extraction|"
+                   r"table database|available|covered|coverage)\b", re.I)
+
+
+def looks_meta(question: str) -> bool:
+    """Is the question about the server itself (what is staged, the database, the tools, warnings), not about what a document says?"""
+    return bool(_META.search(question))
+
+
+def facts_markdown(overview: dict[str, Any], entries: list[dict[str, Any]], tools: list[dict[str, Any]]) -> str:
+    """The server's own state as Markdown: get_overview, the entry catalogue and the tool list (with their read-only annotations)."""
+    L: list[str] = []
+    ov = overview or {}
+    counts = ", ".join(f"{k} {v}" for k, v in (ov.get("version_status_counts") or {}).items())
+    L += ["## What the MCP server has staged (from get_overview)",
+          f"- entries: {ov.get('entries', len(entries))} (with a knowledge graph: {ov.get('with_graph', sum(1 for e in entries if e.get('has_graph')))}); version status: {counts or 'n/a'}",
+          f"- open warnings: {ov.get('open_warnings', 'n/a')}; last agent run: {ov.get('agent_last_run') or 'none recorded'}"]
+    rs = ov.get("agent_last_run_summary") or {}
+    if rs:
+        L.append(f"- last run: {rs.get('documents', '?')} documents checked, {rs.get('docs_unchanged', 0)} unchanged, {rs.get('docs_created', 0)} new, "
+                 f"{rs.get('docs_updated', 0)} updated, {rs.get('docs_error', 0)} failed, {rs.get('docs_deferred', 0)} deferred (the host refused the agent)")
+    if ov.get("entries_behind_extraction_recipe"):
+        L.append(f"- entries built with an older extraction recipe: {', '.join(ov['entries_behind_extraction_recipe'])}")
+    derr = ov.get("document_errors") or []
+    if derr:
+        L.append(f"- sources that could not be fetched in the last run: {len(derr)} (their previous graphs are kept); examples: " + "; ".join(str(d.get("url", "")) for d in derr[:3]))
+    td = ov.get("table_database") or {}
+    L += ["", "## Table database (from get_overview)"]
+    if td.get("configured"):
+        L.append(f"- configured: yes; reachable: {'yes' if td.get('reachable') else 'no'}; built: {'yes' if td.get('built') else 'no'}; tables: {td.get('tables', 'n/a')}; "
+                 f"database login used by the server: `{td.get('user', 'n/a')}`; can SELECT: {'yes' if td.get('can_select') else 'no'}")
+    else:
+        L.append("- not configured: the server has no table database")
+    names = {t["name"] for t in tools}
+    ro = sorted(t["name"] for t in tools if t.get("read_only") is True)
+    rw = sorted(t["name"] for t in tools if t.get("read_only") is False)
+    unk = sorted(t["name"] for t in tools if t.get("read_only") is None)
+    L += ["", "## Tools the server offers (from list_tools)",
+          f"- {len(tools)} tools; annotated read-only: {len(ro)}; not annotated read-only: {', '.join(rw) or 'none'}" + (f"; no annotation: {', '.join(unk)}" if unk else ""),
+          f"- `run_sql` (a single read-only SELECT, enabled by the operator): {'offered' if 'run_sql' in names else 'not offered'}; "
+          f"table tools (lookup_values, query_table, ...): {'offered' if 'lookup_values' in names else 'not offered'}"]
+    L += ["", "## Entries on the server (from list_entries)"]
+    L += [f"- {e.get('entry')} {e.get('name')}: {e.get('version_status') or 'n/a'}, " + (f"graph of {e.get('nodes')} nodes" if e.get("has_graph") else "no graph")
+          + (", paywalled" if e.get("paywalled") else "") for e in entries]
+    return "\n".join(L)
+
+
 @dataclass
 class LookupOutcome:
     tables: list[TableView] = field(default_factory=list)
     notices: list[Notice] = field(default_factory=list)
     no_match: str = ""                      # the server's message when no table row mentions what was asked
+    missing: list[str] = field(default_factory=list)   # the terms of the question that no table row contains (server: missing_terms)
     error: str = ""                         # the table service was not usable (database down, ...)
     rows: int = 0
 
@@ -204,10 +253,32 @@ class KnowledgeSource:
         out = LookupOutcome(notices=render.result_notices(res), rows=len(res.get("rows") or []))
         if res.get("no_confident_match"):
             out.no_match = str(res.get("message") or "no table row mentions what was asked")
+            out.missing = [str(t) for t in res.get("missing_terms") or []]
             out.notices = []                                    # nothing from the tables is shown, so their caveats do not apply
             return out
         out.tables = render.lookup_views(res)
         return out
+
+    # ---- the server itself
+    def server_facts(self) -> Optional[tuple[Document, list[dict[str, Any]]]]:
+        """The server's own state as one context document (and the entry rows for a table): overview, table database, tools, entries. Reused for
+        ``notice_ttl`` seconds. None when the server cannot say (the caller then answers from the documents only)."""
+        hit = getattr(self, "_facts", None)
+        if hit and self.clock() - hit[0] < self.cfg.notice_ttl:
+            return hit[1]
+        try:
+            ov = self.conn.call_tool("get_overview")
+            entries = self.conn.call_tool("list_entries").get("entries") or []
+            tools = self.conn.list_tool_details() if hasattr(self.conn, "list_tool_details") else [{"name": n, "read_only": None} for n in sorted(self.tools)]
+        except McpAuthError:
+            raise
+        except McpError as exc:
+            log.warning("no server facts: %s", exc)
+            return None
+        doc = Document(page_content=facts_markdown(ov, entries, tools), metadata={"kind": "server", "entry": "", "entry_name": "MCP server", "document": "cogent MCP server",
+                                                                                 "section": "staged content, table database and tools", "url": "", "node": "server-facts"})
+        self._facts = (self.clock(), (doc, entries))
+        return doc, entries
 
     # ---- provenance caveats
     def notices_for(self, entry: str) -> list[Notice]:

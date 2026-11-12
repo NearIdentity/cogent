@@ -45,8 +45,19 @@ def chunk_key(d: Document) -> Hashable:
     return (d.metadata.get("entry"), d.metadata.get("node"), d.page_content)
 
 
+_SQUASH = re.compile(r"[^a-z0-9]+")
+
+
+def is_glued(text: str) -> bool:
+    """Text whose words ran together (OCR without word gaps: ``allowablestressesshallbescaled``): several very long "words"."""
+    return sum(1 for t in tokenize(text) if len(t) >= 14 and t.isalpha()) >= 3
+
+
 class Bm25Index:
-    """Okapi BM25 over chunk texts (the section path is part of the text, so a heading such as "4 Damping" is searchable too)."""
+    """Okapi BM25 over chunk texts (the section path is part of the text, so a heading such as "4 Damping" is searchable too).
+
+    Chunks whose words ran together are also matched by substring on the text with the gaps removed (a query token or a pair of adjacent
+    query tokens found inside the glued text), because their tokens cannot match a normal query."""
 
     def __init__(self, docs: Sequence[Document], k1: float = 1.5, b: float = 0.75):
         self.docs, self.k1, self.b = list(docs), k1, b
@@ -60,9 +71,22 @@ class Bm25Index:
             self._len.append(len(toks))
             for t in c:
                 self._post[t].append(i)
+        self._glued: dict[int, str] = {i: _SQUASH.sub("", d.page_content.lower()) for i, d in enumerate(self.docs) if is_glued(d.page_content)}
         n = len(self.docs)
         self._avg = (sum(self._len) / n) if n else 0.0
         self._idf = {t: math.log(1 + (n - len(p) + 0.5) / (len(p) + 0.5)) for t, p in self._post.items()}
+
+    def has_token(self, token: str) -> bool:
+        """Does any indexed chunk contain this token (or, in glued text, this string)? Used to tell "not in the data" from "not retrieved"."""
+        t = token.lower()
+        return t in self._post or any(t in sq for sq in self._glued.values())
+
+    def docs_with(self, token: str, limit: int = 3) -> list[Document]:
+        """Chunks that contain this token (first ones, in index order)."""
+        t = token.lower()
+        ids = list(self._post.get(t, []))
+        ids += [i for i, sq in self._glued.items() if t in sq and i not in ids]
+        return [self.docs[i] for i in ids[:limit]]
 
     def search(self, query: str, k: int) -> list[tuple[Document, float]]:
         """The ``k`` best chunks with their scores (only chunks that contain at least one query token)."""
@@ -75,6 +99,13 @@ class Bm25Index:
             for i in self._post[t]:
                 tf = self._tf[i][t]
                 scores[i] += idf * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * self._len[i] / (self._avg or 1.0)))
+        for i, squashed in self._glued.items():                              # glued (OCR) chunks: match inside the run-together text
+            for a, b in zip(terms, terms[1:]):
+                if len(a) >= 4 and len(b) >= 4 and a + b in squashed:
+                    scores[i] += 4.0
+            for t in terms:
+                if len(t) >= 5 and t in squashed:
+                    scores[i] += 2.0
         best = sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:k]
         return [(self.docs[i], s) for i, s in best]
 

@@ -35,21 +35,29 @@ class KeywordEmbeddings(Embeddings):
 
 
 class FakeLLM(GenericFakeChatModel):
-    """Structured answers from a handler(prompt_text) -> (answer, found); rewrites follow-ups; records every prompt."""
+    """Structured answers from handler(prompt_text) -> (answer, found) or None (= the model broke the schema); records every prompt.
+    ``ctx`` > 0 makes it behave like Ollama: it reports the prompt tokens it was given, capped at the window."""
     handler: object = None
     prompts: list = []
+    ctx: int = 0
+    cpt: float = 3.0               # characters per token the fake model's tokenizer produces (a denser tokenizer than the client's estimate overflows the window)
 
-    def with_structured_output(self, schema, **kw):
+    def with_structured_output(self, schema, include_raw=False, **kw):
         def respond(prompt_value):
             text = prompt_value.to_string()
             self.prompts.append(text)
-            answer, found = self.handler(text)
-            return AgentAnswer(answer=answer, found_in_context=found)
+            out = self.handler(text)
+            parsed = AgentAnswer(answer=out[0], found_in_context=out[1]) if out is not None else None
+            if not include_raw:
+                return parsed
+            tokens = min(int(len(text) / self.cpt), self.ctx) if self.ctx else 0
+            raw = AIMessage(content="", usage_metadata={"input_tokens": tokens, "output_tokens": 5, "total_tokens": tokens + 5})
+            return {"raw": raw, "parsed": parsed, "parsing_error": None if parsed else ValueError("invalid JSON from the model")}
         return RunnableLambda(respond)
 
 
-def make_llm(handler, rewrite="standalone question about seismic damping"):
-    return FakeLLM(messages=iter([AIMessage(content=rewrite)] * 200), handler=handler, prompts=[])
+def make_llm(handler, rewrite="standalone question about seismic damping", ctx=0, cpt=3.0):
+    return FakeLLM(messages=iter([AIMessage(content=rewrite)] * 200), handler=handler, prompts=[], ctx=ctx, cpt=cpt)
 
 
 def cfg(url="http://127.0.0.1:1/mcp", **kw):
@@ -67,6 +75,9 @@ class FakeConn:
 
     def list_tools(self):
         return set(self.tools)
+
+    def list_tool_details(self):
+        return [{"name": n, "description": "", "read_only": n not in ("set_session_preferences", "reset_session_preferences")} for n in sorted(self.tools)]
 
     def call_tool(self, name, args=None):
         self.calls.append((name, args or {}))
@@ -105,6 +116,15 @@ META = {"entry": "standard:9", "name": "Seismic Design Criteria", "paywalled": F
         "disclaimers": ["general one", "Stale capture: sources were last checked 41 days ago (threshold 30).", "On-board content is NOT the latest available: x"]}
 
 
+# shaped like the get_overview answer of a real cogent server (trimmed)
+OVERVIEW = {"entries": 45, "with_graph": 45, "version_status_counts": {"current": 33, "partially_staged": 1, "no_local_copy": 2, "update_available": 1, "no_documents": 8},
+            "open_warnings": 19, "agent_last_run": "2026-11-12T06:24:17Z", "entries_behind_extraction_recipe": ["standard:20"],
+            "agent_last_run_summary": {"documents": 54, "docs_created": 0, "docs_updated": 0, "docs_unchanged": 40, "docs_error": 10, "docs_deferred": 4},
+            "document_errors": [{"url": "https://www.ecfr.gov/current/title-10/chapter-I/part-50", "error": "HTTP 406 Not Acceptable"},
+                                {"url": "https://www.nrc.gov/docs/ML1801/ML18019A922.pdf", "error": "HTTP 403 Forbidden"}],
+            "table_database": {"configured": True, "reachable": True, "user": "cogent_ro", "built": True, "can_select": True, "tables": 623}}
+
+
 def lookup_rows(paywalled=False):
     tbl = {"caption": "Table 4-1: Damping values by seismic category", "paywalled": paywalled,
            "source": {"document_id": "ab12cd34ab12cd34", "document": "Seismic Design Criteria", "url": "https://www.example.org/docs/a.html", "page": 12,
@@ -122,7 +142,7 @@ def lookup_rows(paywalled=False):
 
 def base_tools(table_mode=None):
     """Tool functions of a fake server; table_mode: None (no table tools) | 'rows' | 'no_match' | 'paywalled' | 'down'."""
-    t = {"list_entries": lambda a: {"entries": [ENTRY]}, "get_overview": lambda a: {"entries": 1},
+    t = {"list_entries": lambda a: {"entries": [ENTRY]}, "get_overview": lambda a: OVERVIEW,
          "get_disclaimers": lambda a: {"disclaimers": ["general one"]}, "get_entry_metadata": lambda a: META,
          "export_graph": lambda a: {"provenance": {}, "graph": sample_graph()}, "get_warnings": lambda a: {"warnings": [{"entry": "standard:9", "severity": "warning", "message": "a new edition is on sale"}]}}
     if table_mode:
@@ -132,7 +152,7 @@ def base_tools(table_mode=None):
             if table_mode == "down":
                 return McpToolError("table database not reachable: connection refused")
             if table_mode == "no_match":
-                return {"no_confident_match": True, "message": "no table row mentions A572", "rows": [], "match_quality": "none"}
+                return {"no_confident_match": True, "message": "no table row mentions 'A572'", "rows": [], "match_quality": "none", "missing_terms": ["A572"]}
             return lookup_rows(paywalled=table_mode == "paywalled")
         t["lookup_values"] = lookup
         t["describe_table"] = lambda a: {"table": {"table_id": a["table_id"], "caption": "Table 4-1", "source": {"document": "Seismic Design Criteria", "page": 12},

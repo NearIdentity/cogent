@@ -67,6 +67,7 @@ def add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--cache-dir", type=Path, default=Path("chat_cache"), help="graph sections and embeddings are cached here (default chat_cache/); 'none' disables")
     p.add_argument("--top-k", type=int, default=6, help="text chunks retrieved per question")
     p.add_argument("--table-rows", type=int, default=8, help="table rows requested per question")
+    p.add_argument("--num-ctx", type=int, default=int(os.environ.get("CHAT_NUM_CTX", "8192")), help="the chat model's context window in tokens (sent to Ollama; the prompt is trimmed to fit)")
     p.add_argument("--retrieval", choices=["hybrid", "semantic", "keyword"], default="hybrid", help="text retrieval: vector similarity, BM25 keyword search, or both fused (default)")
     p.add_argument("--otlp-endpoint", help="OpenTelemetry OTLP/HTTP endpoint for traces (default $OTEL_EXPORTER_OTLP_ENDPOINT)")
 
@@ -77,7 +78,7 @@ def build_config(a: argparse.Namespace) -> ClientConfig:
     cache = None if str(a.cache_dir).lower() == "none" else a.cache_dir
     try:
         return ClientConfig(mcp_url=a.mcp_url, token=SecretStr(read_token(a.token_file)), chat_model=a.model, embed_model=a.embed_model, ollama_url=a.ollama_url,
-                            entries=[e.strip() for e in (a.entries or "").split(",") if e.strip()], cache_dir=cache, top_k=a.top_k, table_rows=a.table_rows, retrieval=a.retrieval)
+                            entries=[e.strip() for e in (a.entries or "").split(",") if e.strip()], cache_dir=cache, top_k=a.top_k, table_rows=a.table_rows, retrieval=a.retrieval, num_ctx=a.num_ctx)
     except ValidationError as exc:
         raise SystemExit("Error: " + "; ".join(e["msg"] for e in exc.errors()))
 
@@ -152,6 +153,26 @@ def do_web(a: argparse.Namespace) -> None:
     app.run(host=a.host, port=a.port, threaded=True)
 
 
+def do_eval(a: argparse.Namespace) -> None:
+    from .evalrun import load_questions, report_markdown, run_eval
+    cfg = build_config(a)
+    try:
+        qs = load_questions(a.questions)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Error: {exc}")
+    agent = build_agent(cfg)
+    print(f"Running {len(qs)} question(s) against {cfg.chat_model} ...")
+    results = run_eval(agent, qs, progress=print)
+    md = report_markdown(results, cfg.chat_model, cfg.embed_model, cfg.retrieval)
+    if a.report:
+        Path(a.report).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.report).write_text(md, encoding="utf-8")
+        print(f"report written to {a.report}")
+    failed = sum(1 for r in results if not r["pass"])
+    print(f"{len(results) - failed} of {len(results)} passed")
+    raise SystemExit(1 if failed else 0)
+
+
 def do_hash_password(a: argparse.Namespace) -> None:
     import getpass
     pw = getpass.getpass("Password: ")
@@ -178,12 +199,16 @@ def main(argv: Optional[list[str]] = None) -> None:
     w.add_argument("--secure-cookie", action="store_true", help="send the session cookie only over HTTPS (use behind an HTTPS proxy)")
     w.add_argument("--session-hours", type=float, default=12.0, help="how long a login lasts")
     w.add_argument("--metrics", action="store_true", help="serve Prometheus metrics on /metrics (token: $COGENT_CHAT_METRICS_TOKEN)")
+    e = sub.add_parser("eval", help="ask a question list of the real stack (MCP server + Ollama) and check the answers, prompt sizes and latency")
+    add_common(e)
+    e.add_argument("--questions", type=Path, default=Path("chat_eval/questions.json"))
+    e.add_argument("--report", type=Path, help="write a Markdown report here")
     h = sub.add_parser("hash-password", help="make a CHAT_PASSWORD_HASH line for the .env file")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     if a.command != "hash-password":
         telemetry.init("cogent-chat", getattr(a, "otlp_endpoint", None))
-    {"chat": do_chat, "web": do_web, "hash-password": do_hash_password}[a.command](a)
+    {"chat": do_chat, "web": do_web, "eval": do_eval, "hash-password": do_hash_password}[a.command](a)
 
 
 if __name__ == "__main__":

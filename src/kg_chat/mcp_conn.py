@@ -124,6 +124,16 @@ class McpConnection:
             return {t.name for t in (await s.list_tools()).tools}
         return self._run(go)
 
+    def list_tool_details(self) -> list[dict[str, Any]]:
+        """Name, description and the read-only annotation of every tool the server offers."""
+        async def go(s: ClientSession) -> list[dict[str, Any]]:
+            out = []
+            for t in (await s.list_tools()).tools:
+                ann = getattr(t, "annotations", None)
+                out.append({"name": t.name, "description": (t.description or "").strip(), "read_only": getattr(ann, "readOnlyHint", None) if ann else None})
+            return out
+        return self._run(go)
+
     def call_tool(self, name: str, args: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         return self._run(lambda s: self._call(s, name, args))
 

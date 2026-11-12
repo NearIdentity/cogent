@@ -2697,7 +2697,7 @@
       "id": 50,
       "type": "timeseries",
       "title": "Retrieved chunks by method",
-      "description": "Text chunks handed to the model, by the method that found them: vector (embedding similarity), keyword (BM25: exact codes and identifiers) or both. `keyword` alone is what the embeddings alone would have missed.",
+      "description": "Text chunks handed to the model, by the method that found them: vector (embedding similarity), keyword (BM25: exact codes and identifiers), both, or server (the server's own state, for questions about what is staged). `keyword` alone is what the embeddings alone would have missed.",
       "datasource": {
         "type": "prometheus",
         "uid": "cogent-prometheus"
@@ -2748,6 +2748,69 @@
           "mode": "multi",
           "sort": "desc"
         }
+      }
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "Context overflows, 24 h",
+      "description": "Prompts that filled the chat model's whole context window (Ollama then cuts the START of the prompt: the instructions and the best excerpts). Any value above 0: raise --num-ctx (and OLLAMA_CONTEXT_LENGTH), lower --top-k, or use a model with a larger window.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 89,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_chat_context_overflow_total[24h])) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
       }
     }
   ],

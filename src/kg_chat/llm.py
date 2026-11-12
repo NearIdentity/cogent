@@ -41,8 +41,9 @@ class UsageOllamaEmbeddings(OllamaEmbeddings):
         return vectors
 
 
-def make_chat_model(model: str, base_url: str) -> ChatOllama:
-    return ChatOllama(model=model, base_url=base_url, temperature=0)
+def make_chat_model(model: str, base_url: str, num_ctx: int = 8192) -> ChatOllama:
+    """``num_ctx`` is sent to Ollama: without it the server's default window (often 2048 to 4096 tokens) applies, and a longer prompt is silently cut."""
+    return ChatOllama(model=model, base_url=base_url, temperature=0, num_ctx=num_ctx)
 
 
 def make_embeddings(model: str, base_url: str) -> OllamaEmbeddings:

@@ -463,6 +463,7 @@ python src/kg_chat_app.py web  --mcp-url https://your-host/mcp   # http://127.0.
 python src/kg_chat_app.py chat --mcp-url https://your-host/mcp   # terminal
 ```
 
+* **Questions about the server itself** ("what is staged, is the database read-only?") are answered from `get_overview`, `list_entries` and the tool list; a "not found" says what was searched (codes found in no text, no table row) and `/explain` shows the retrieval trace; the prompt is trimmed to the model's context window (`--num-ctx`) and an overflow is flagged. `python src/kg_chat_app.py eval` measures the real model (found-verdict, prompt size, latency) against `chat_eval/questions.json`; the unit tests use fake models and cannot.
 * **Retrieval by meaning and by keyword:** vector similarity plus BM25 over the same chunks (identifier-aware, so `NEI 18-04`, `A572`, `50.69` are matched literally), fused by reciprocal rank fusion; `--retrieval hybrid|semantic|keyword`; the table search is hybrid too.
 * **Same grounding as 0xA6E07:** answers only from retrieved excerpts, "not found" when the context lacks the answer, sources taken from retrieval metadata (never from the model; a citation that matches nothing retrieved is removed), page and table text treated as untrusted data, follow-ups rewritten first.
 * **Tables as Markdown:** table rows from the server (`lookup_values`, graph tables) are rendered in code from the original cell text, so the numbers on screen are the numbers in the document; the page renders Markdown with DOM calls only.
@@ -536,7 +537,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | `COGENT_EMBEDDER`, `COGENT_EMBED_MODEL`, `COGENT_LLM_MODEL` | embedder (`ollama` / `hash`), its model, and the Ollama chat model for join inference |
 | `COGENT_MCP_TOKEN` | MCP server: one extra static access token. Chat client: the bearer token it presents to the server (the same value works for both on one machine) |
 | `COGENT_MCP_URL`, `COGENT_CHAT_METRICS_TOKEN` | chat client: the MCP endpoint (same as `--mcp-url`); the bearer token that `/metrics` of the chat web app requires (`--metrics`) |
-| `CHAT_MODEL`, `EMBED_MODEL`, `OLLAMA_URL` | chat client: defaults of `--model`, `--embed-model`, `--ollama-url` |
+| `CHAT_MODEL`, `EMBED_MODEL`, `OLLAMA_URL`, `CHAT_NUM_CTX` | chat client: defaults of `--model`, `--embed-model`, `--ollama-url`, `--num-ctx` |
 | `CHAT_USERNAME`, `CHAT_PASSWORD` / `CHAT_PASSWORD_HASH`, `FLASK_SECRET_KEY` | chat web app login: read from the git-ignored `.env` file (`--env-file`), not from the environment (template: `.env.example`) |
 | `COGENT_WORKERS`, `COGENT_GRAPH_CACHE`, `COGENT_SESSION_STORE`, `COGENT_RATE_LIMIT` | defaults of the scale-out flags (`--workers`, `--graph-cache`, `--session-store`, `--rate-limit`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/HTTP endpoint for traces (same as `--otlp-endpoint`) and service name (needs the OpenTelemetry SDK; without it tracing is off) |
@@ -547,10 +548,10 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (465 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (485 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
-* `test_chat_render.py`, `test_chat_agent.py`, `test_chat_retrieval.py`, `test_chat_mcp.py`, `test_chat_web.py`, `test_chat_auth.py`, `test_chat_telemetry.py` cover the chat client (rendering of every table shape, grounding with fake models, a real MCP server over HTTP with token authentication, the Flask app, the login in a real browser, LLM-usage metrics and dashboard consistency); no Ollama is needed.
+* `test_chat_render.py`, `test_chat_agent.py`, `test_chat_retrieval.py`, `test_chat_meta.py`, `test_chat_llm_limits.py`, `test_chat_mcp.py`, `test_chat_web.py`, `test_chat_auth.py`, `test_chat_telemetry.py` cover the chat client (rendering of every table shape, grounding with fake models, a real MCP server over HTTP with token authentication, the Flask app, the login in a real browser, LLM-usage metrics and dashboard consistency); no Ollama is needed.
 * `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
   `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;

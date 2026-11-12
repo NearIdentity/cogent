@@ -1,0 +1,14 @@
+[
+  {"id": "staged-and-readonly", "question": "What is staged, and is the database read-only?",
+   "expect": {"found": true, "source_entry_names": ["MCP server"], "answer_contains_any": ["entries", "staged", "cogent_ro", "read-only", "read only"]},
+   "note": "A question about the server itself: answered from get_overview, list_entries and the tool list, not from the documents."},
+  {"id": "a572-allowable-stress", "question": "What is the allowable stress for ASTM A572? Quote the source.",
+   "expect": {"found": false, "notice_contains": ["A572"]},
+   "note": "On the test server neither the table database nor the graphs mention A572 (checked with lookup_values and search_graph), so a correct agent says it was not found, and says what it searched."},
+  {"id": "cfr-5069", "question": "What does 10 CFR 50.69 govern?", "expect": {"found": true, "source_entry_names": ["50.69"]},
+   "note": "Edit: pick a fact that is certainly in your staged documents."},
+  {"id": "nei-1804-guide", "question": "Which regulatory guide endorses NEI 18-04?", "expect": {"found": true, "answer_contains_any": ["1.233"]},
+   "note": "Edit: depends on what is staged. Tests the keyword leg: the code NEI 18-04 must reach the model."},
+  {"id": "out-of-scope", "question": "Who won the football world cup final in 1998?", "expect": {"found": false},
+   "note": "Must be refused: nothing in the knowledge graphs."}
+]
