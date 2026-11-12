@@ -104,11 +104,12 @@ def test_declined_prompt_lists_the_download_in_the_report(tmp_path, world, monke
     aps.records["ML99990A004"] = adams_record("ML99990A004")
     s = make_env(tmp_path, [entry(srv, "ML99990A004")])
     s.manual_prompt = "always"
+    s.local_dir = tmp_path / ("a-deliberately-long-directory-name-" * 4)          # a long path must reach the report whole (the person types it)
     monkeypatch.setattr(kg_agent, "_INPUT", lambda prompt="": "n")
     st = kg_agent.run_once(s)
     assert st["summary"]["docs_deferred"] == 1 and st["summary"]["docs_created"] == 0
     assert "### Could not be downloaded automatically" in st["report"]
-    assert str(local_dir(s) / "ML99990A004.pdf") in st["report"] and f"{srv.base}/docs/ML9999/ML99990A004.pdf" in st["report"]
+    assert str(s.local_dir / "standards" / "5" / "ML99990A004.pdf") in st["report"] and f"{srv.base}/docs/ML9999/ML99990A004.pdf" in st["report"]
 
 
 def test_skip_all_asks_only_once(tmp_path, world, monkeypatch):

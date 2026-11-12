@@ -1720,6 +1720,9 @@ def narrate(rt: Runtime, state: AgentState, summary: dict) -> Optional[RunNarrat
         return None
 
 
+FULL = 10 ** 6          # "do not truncate" for _md
+
+
 def _md(x: Any, n: int = 90) -> str:
     t = str(x).replace("|", "\\|").replace("\n", " ")
     return t if len(t) <= n else t[: n - 1] + "…"
@@ -1818,7 +1821,7 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
         by_key = {x.key: x for x in rt.entries}
         for a in blocked:
             ent = by_key.get(a["entries"][0])
-            L.append(f"| {_md(a['url'], 110)} | {_md(default_save_path(rt, ent, a['url']) if ent else '-', 100)} | {_md(', '.join(a['entries']), 40)} |")
+            L.append(f"| {_md(a['url'], FULL)} | {_md(default_save_path(rt, ent, a['url']) if ent else '-', FULL)} | {_md(', '.join(a['entries']), 40)} |")   # never shortened: the person has to type or open them
         L.append("\nRun the agent at a terminal to be shown the ADAMS record of each document and offered the browser download "
                  "(`--manual-prompt`). A file saved there is checked against its ADAMS record (`--verify-local`).\n")
     al = state.get("alerts", [])
