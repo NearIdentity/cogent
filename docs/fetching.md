@@ -35,7 +35,7 @@ Download the file in your browser and save it in the entry's local-copy folder (
 ## `fetchcheck`: one request, no polling
 
 ```bash
-python3 src/kg_agent.py fetchcheck https://www.nrc.gov/docs/ML18/ML18019A922.pdf
+python3 src/kg_agent.py fetchcheck https://www.nrc.gov/docs/ML1801/ML18019A922.pdf
 ```
 
 Makes **one** request and prints the client used, the status, the final URL after redirects, the page title, the headers that identify a filter (`Server`, `Via`, `Retry-After`, `x-reference-error`, ...), a snippet of the body, and a verdict. A block it sees starts a cooldown like any other. If the host is in a cooldown it makes no request (`--ignore-cooldown` overrides; that can prolong a block). Run it once, not in a loop: repeated requests while blocked can make a block last longer.

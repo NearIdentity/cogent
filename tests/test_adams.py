@@ -105,7 +105,7 @@ def fresh(tmp_path, monkeypatch):
 
 def test_accession_numbers_from_urls():
     f = kg_adams.accession_from_url
-    assert f("https://www.nrc.gov/docs/ML18/ML18019A922.pdf") == "ML18019A922"
+    assert f("https://www.nrc.gov/docs/ML1801/ML18019A922.pdf") == "ML18019A922"
     assert f("https://www.nrc.gov/docs/ML0706/ML070630003.pdf") == "ML070630003"
     assert f("https://www.nrc.gov/docs/ML0913/ml091320468.pdf") == "ML091320468"          # lower case in the configuration
     assert f("https://www.nrc.gov/reading-rm/doc-collections/reg-guides/index.html") is None
