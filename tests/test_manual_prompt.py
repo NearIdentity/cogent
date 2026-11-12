@@ -224,6 +224,17 @@ def test_suggested_name_gets_the_extension_the_ingest_needs():
     e15 = _entry("PDF (inferred; download endpoint and standards site)", pdf, u2)
     assert f(e15, pdf) == "5633.pdf" and f(e15, u2) == "file.pdf"
     assert Path(f(_entry("PDF", pdf), pdf)).suffix in kg_agent.LOCAL_SUFFIXES
+    # standard 29: two PDFs and an index page; standard 25: a page, a PDF and a store page; standard 17: a PDF behind a redirect note
+    p1, p2, idx = "https://www.nrc.gov/docs/ML0706/ML070630003.pdf", "https://www.nrc.gov/docs/ML1513/ML15134A484.pdf", "https://www.nrc.gov/reactors/regs-guides-comm"
+    e29 = _entry("PDF (RG 1.206, NUREG-1537 Part 1); HTML index page", p1, p2, idx)
+    assert f(e29, idx) == "regs-guides-comm.html" and f(e29, p1) == "ML070630003.pdf"
+    page, ml, store = "https://www.nrc.gov/reactors/modernizing/guidance/non-lwr", "https://www.nrc.gov/docs/ML2231/ML22318A284.pdf", "https://www.asme.org/codes/pra-standard"
+    e25 = _entry("HTML (NRC page); PDF (RG 1.247); the RA-S-1.4 standard itself is paywalled (ASME landing page, sold as PDF and print)", page, ml, store)
+    assert f(e25, page) == "non-lwr.html" and f(e25, store) == "pra-standard.html"
+    u17 = "https://www.standards.doe.gov/standards-documents/1200/1237-astd-2021"
+    assert f(_entry("PDF on the DOE standards site; the link redirected to an HTML program page", u17), u17) == "1237-astd-2021.pdf"
+    two = _entry("PDF (a); HTML (b)", "https://x.org/a/one", "https://x.org/a/two")                                   # nothing set aside: one part per link
+    assert f(two, "https://x.org/a/one") == "one.pdf" and f(two, "https://x.org/a/two") == "two.html"
 
 
 def test_prompt_suggests_a_name_the_ingest_accepts_and_the_saved_file_is_used(tmp_path, world, monkeypatch, capsys):

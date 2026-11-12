@@ -256,17 +256,26 @@ def _top_level_segments(text: str) -> list[str]:
 def suggest_filename(e: DocEntry, url: str) -> str:
     """The file name to save a download of ``url`` under, with the extension the ingest needs (.pdf .html .htm .xml).
 
-    Order: a suffix the URL's last segment already has; the format named for this link in the entry's ``format_of_data`` (one ``;``-separated
-    segment per link when every segment starts with a format, else the first format named); .pdf."""
+    1. a suffix the URL's last segment already has;
+    2. the format in the entry's ``format_of_data`` that the entry's *other* links do not already account for (links with a suffix are
+       set aside first: ``PDF (...); HTML index page`` with two ``.pdf`` links and one page gives ``.html`` for the page);
+    3. one ``;``-separated part per link, when every part starts with a format and there are as many parts as links;
+    4. the first format named anywhere; 5. ``.pdf``."""
     name = unquote(Path(urlparse(url).path).name) or "download"
     if Path(name).suffix.lower() in LOCAL_SUFFIXES:
         return name
     fmt = e.format_of_data or ""
     segs = _top_level_segments(fmt)
+    seg_formats = [m.group(1).lower() for m in (_FORMAT_WORD.match(x) for x in segs) if m]          # parts that start with a format
     urls = [l.url for l in e.links]
+    suffixes = {Path(unquote(urlparse(u).path)).suffix.lower().lstrip(".") for u in urls}
+    done = {"html" if x == "htm" else x for x in suffixes if "." + x in LOCAL_SUFFIXES}
+    left = {("html" if f == "htm" else f) for f in seg_formats} - done
     word = None
-    if segs and len(segs) == len(urls) and url in urls and all(_FORMAT_WORD.match(x) for x in segs):
-        word = _FORMAT_WORD.match(segs[urls.index(url)]).group(1)
+    if len(left) == 1:
+        word = next(iter(left))
+    elif segs and len(segs) == len(urls) and url in urls and len(seg_formats) == len(segs):
+        word = seg_formats[urls.index(url)]
     if word is None:
         m = _FORMAT_WORD.search(fmt)
         word = m.group(1) if m else "pdf"
