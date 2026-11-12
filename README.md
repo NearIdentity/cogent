@@ -38,7 +38,7 @@ src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a 
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
 src/kg_hosts.py      per-host politeness: honest user agent, pacing, persisted cooldowns after 403/429/503, interleaving (docs/fetching.md)
-src/kg_adams.py      NRC ADAMS Public Search adapter, change detection only (NRC_ADAMS_API_KEY)
+src/kg_adams.py      NRC ADAMS Public Search adapter: change detection, watch of manual links, verification of local copies (NRC_ADAMS_API_KEY)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
 src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
@@ -215,7 +215,8 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    (modified / new / removed sections, entity counts) is recorded.
    Requests are polite by construction: an honest user agent, per-host pacing, and a persisted **cooldown** (a 403: the refused area of the host, e.g. `www.nrc.gov/docs`; 429 / 503: the host) after a 403 / 429 /
    503 + `Retry-After` (documents and trackers on that host are *deferred*, keep their previous KG and never become `STALE`).
-   See [docs/fetching.md](docs/fetching.md).
+   When a download is refused, a terminal run shows the document's ADAMS record and offers to open the URL in your browser (`--manual-prompt`); a saved
+   file is checked against ADAMS (`--verify-local`). See [docs/fetching.md](docs/fetching.md).
 5. **assemble** – the KG of each standard / report whose documents (or links, name, compliance / overlap lists) changed is
    rebuilt by merging its document KGs (shared entities connect them) with `HAS_DOCUMENT`, `complies_with` and
    `overlaps_with` edges; the old entry KG is archived.
@@ -336,7 +337,9 @@ python src/kg_agent.py add-local standard:25 ASCE43-24.pdf --replace --stage   #
 python src/kg_agent.py local                                                   # list local copies and the edition each states
 ```
 `--move` moves instead of copying. Accepted: `.pdf .html .htm .xml`; scanned PDFs are OCR'd. The daily run also stages
-anything you drop into the folder by hand. The MCP server stays read-only, so copies are added on the host, not remotely.
+anything you drop into the folder by hand. With `NRC_ADAMS_API_KEY`, a local copy named like an accession (`ML18019A922.pdf`) is also compared with its ADAMS
+record on every run (file name, text, page count, PDF dates, unexplained changes; `--verify-local warn|strict|off`), see [docs/fetching.md](docs/fetching.md).
+The MCP server stays read-only, so copies are added on the host, not remotely.
 
 ## Version tracking in the configuration
 
@@ -520,7 +523,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (370 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (391 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
 * `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.

@@ -1,4 +1,4 @@
-# Fetching politely: user agent, cooldowns, manual links, ADAMS
+# Fetching politely: user agent, cooldowns, browser route, manual links, ADAMS
 
 Some hosts (www.nrc.gov behind its CDN, publisher and standards stores) answer **HTTP 403** to anything they take for a bot. The agent does not try to get around that. This page says what it does instead. Code: `src/kg_hosts.py`, `src/kg_tools.py` (`fetch`), `src/kg_ingest.py` (`_fetch_http`), `src/kg_adams.py`.
 
@@ -9,22 +9,19 @@ Some hosts (www.nrc.gov behind its CDN, publisher and standards stores) answer *
 * **Cooldown, stored on disk** (`<home>/state/hosts.json`). A **429** or a **503 with `Retry-After`** puts the whole host in a cooldown. A **403** is attributed to one *area* of the host (its first path segment, e.g. `www.nrc.gov/docs`, or `host/` for files at the root), because a 403 is often a rule on one kind of resource: on 2026-11-11 the NRC refused its `/docs/ML….pdf` files while its HTML pages answered the same agent in the same minutes. Other areas keep working. Three refused areas of one host are treated as the whole host. A cooldown lasts 6 hours, doubling each time the host blocks again after a cooldown (12 h, 24 h ... capped at 7 days), and never shorter than `Retry-After`. Nothing is requested from the host (or area) during a cooldown, in this run or later ones, and nothing is retried or polled. A good response after a cooldown resets the ladder. To lift a cooldown by hand, delete its entry (`www.nrc.gov/docs` or `www.nrc.gov`) from `hosts.json`. Entries written by earlier versions are whole-host entries and block every area: delete them.
 * **Deferral, not failure.** Documents on a blocked host are reported as `skipped` ("deferred: host is blocking this client"). They keep their previous KG and do **not** increase `consecutive_errors`, so nothing becomes `STALE` because of a block. Trackers are handled the same way.
 * **Pacing and interleaving.** At least `--min-interval` seconds between requests to one host (default 1), with +/-25 % jitter; built-in defaults of 4 s for `www.nrc.gov` and 2 s for `adams-api.nrc.gov`; override per host with `--host-interval HOST=SECONDS` (repeatable). Work is ordered round-robin over hosts, so the wait imposed on one host is spent on the others.
+* **A person's browser as the fallback.** At a terminal the agent offers to open a refused URL in your browser, after showing the ADAMS record; the saved file is verified against ADAMS (sections below). Unattended runs only list what could not be downloaded.
 * **Images.** Figures are fetched with the same user agent and cooldowns; a blocked host gets one warning per run, not one per image.
-
-## Related documents
-
-README ("The update agent", "Paywalled documents", environment variables), `docs/scheduling.md` (blocked hosts and retries), `docs/observability.md` (spans and failure counters), `CHANGELOG.md`.
 
 ## Reporting
 
-* The run summary has `fetch_problems` and `docs_deferred`; `logs/report.md` gets a section "Fetch problems by host" (problem, number deferred, requests made, cooldown end, URLs that no longer exist).
+* The run summary has `fetch_problems` and `docs_deferred`; `logs/report.md` gets a section "Fetch problems by host" (host or area, problem, number deferred, requests made, cooldown end, URLs that no longer exist) and, when documents were refused, "Could not be downloaded automatically" (URL and the path to save a browser download to).
 * A 403 reads "blocked by a bot filter (HTTP 403 from host)". A 404 or 410 on a tracker reads "tracker URL not found (HTTP 404): it may be gone (update `update_tracking_urls`), or the host may hide it from this client; open it in a browser or run `kg_agent.py fetchcheck`". Some hosts answer 404 to clients they dislike, so a 404 is not proof that a URL is dead.
 * Alerts are logged at their own severity (info alerts are no longer WARNING lines).
 * A 403 on a store page of a paywalled document (`ascelibrary.org`, `webstore.ansi.org`, ...) is the info alert `store_page_blocked`, not a run error: the previous KG is kept and the alert asks you to look at the page in a browser.
 
 ## Manual links
 
-Add `"manual": true` to a link in `config/*.json` and the agent never requests that URL:
+The browser route below is the default. Add `"manual": true` to a link in `config/*.json` only for a URL the agent should never request at all (for example a document that is superseded, or a host you know will refuse):
 
 ```json
 {"text": "RG 1.233 Rev. 1", "url": "https://www.nrc.gov/docs/ML2xx/ML2xxxxxxxx.pdf", "manual": true}
@@ -36,7 +33,7 @@ Download the file in your browser and save it in the entry's local-copy folder (
 
 ## When a host never lets the agent in
 
-Deferred documents are not `STALE`, so a permanent block would be silent. If documents of an entry on a blocked host have not been checked for `--deferred-warn-days` days (default 7; counted from the last successful check, or from the first block), the warning **NOT CHECKED FOR DAYS** appears in the report, the log and `get_warnings`. Practical answers: `"manual": true` links with the ADAMS watch, or asking the host to allow-list the agent's user agent.
+Deferred documents are not `STALE`, so a permanent block would be silent. If documents of an entry on a blocked host have not been checked for `--deferred-warn-days` days (default 7; counted from the last successful check, or from the first block), the warning **NOT CHECKED FOR DAYS** appears in the report, the log and `get_warnings`. Practical answers: the browser route (at a terminal), `"manual": true` links with the ADAMS watch, or asking the host to allow-list the agent's user agent.
 
 ## When a download is refused: the browser route (instead of forcing `manual`)
 
@@ -79,7 +76,7 @@ python3 src/kg_agent.py fetchcheck https://www.nrc.gov/docs/ML1801/ML18019A922.p
 
 Makes **one** request and prints the client used, the status, the final URL after redirects, the page title, the headers that identify a filter (`Server`, `Via`, `Retry-After`, `x-reference-error`, ...), a snippet of the body, and a verdict. A block it sees starts a cooldown like any other. If the host is in a cooldown it makes no request (`--ignore-cooldown` overrides; that can prolong a block). Run it once, not in a loop: repeated requests while blocked can make a block last longer.
 
-## ADAMS Public Search API (change detection only)
+## ADAMS Public Search API (change detection, watch and verification)
 
 For `nrc.gov/docs/ML....pdf` links, the agent can ask the sanctioned ADAMS Public Search API whether the record changed instead of requesting the PDF.
 
@@ -88,8 +85,14 @@ For `nrc.gov/docs/ML....pdf` links, the agent can ask the sanctioned ADAMS Publi
 3. The API text is not used to build graphs (the PDF stays the source) and `DocumentType` is not trusted. Both response shapes (the record itself, or an envelope with `document`) are accepted; the undocumented `DocumentSize` field is ignored. Requests are counted in the summary (`adams_requests`).
 4. `python3 src/kg_agent.py adamscheck ML18019A922` makes one request and prints a redacted summary (top-level keys, fingerprint fields, never the key or the text).
 
-Without the variable, ADAMS is off and nothing changes.
+Without the variable, ADAMS is off and nothing changes: no change detection, no watch, no verification, and the prompt's form says the record was not checked. The record's text is kept in memory only for the comparison with a local copy; it is never printed, logged or stored.
 
 ## What was not verified
 
-Everything above was tested against local mock servers (`tests/test_fetch_blocking.py`, `tests/test_adams.py`). It has **not** been run against www.nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org: whether an honest user agent is accepted by the NRC's CDN, how long a real block lasts, and the exact shape of live APS responses beyond the sample used to build the synthetic test fixture are open until you run it. The search body of `AdamsClient.search` follows the APS guide from memory and is untested against the live API; the agent itself uses only `get_document`. What the maintainer's logs show about the NRC (2026-11-12): all 12 NRC PDFs were staged on 2026-10-12 and checked without errors in every run through 2026-10-27, and fail with "HTTP 403 Forbidden; browser fallback failed: HTTP 403" in every run from 2026-11-11 (the first run after a two-week gap), so the refusal began in that window and applies to headless Chromium as well. In the same runs the NRC HTML pages were fetched without errors. A browser loads the PDFs. On 2026-11-12 plain `curl` (default user agent), Python `urllib` and the honest agent all got 403 for a PDF, from two networks (one a phone hotspot with a different IP). What this does not establish: why the rule changed, whether it will change again, or how the NRC HTML pages behave today. The dead energy.gov tracker `ehss/nuclear-and-facility-safety-directives` (404 in a browser too) was removed from entries 11 to 13 of `config/standards.json`; their other URLs were checked with `fetchcheck` from a developer machine and return 200.
+Everything above was tested against local mock servers (`tests/test_fetch_blocking.py`, `tests/test_adams.py`, `tests/test_manual_watch.py`, `tests/test_manual_prompt.py`). It has **not** been run against adams-api.nrc.gov beyond `adamscheck` and `GetDocument`, nor against ascelibrary.org or webstore.ansi.org. Not checked live: the interactive prompt with a real browser; the verification checks on a real NRC PDF and its ADAMS record (the thresholds for text overlap, page count and dates are guesses); the `AdamsClient.search` body (written from memory; the agent uses only `get_document`).
+
+What the maintainer's machine showed (2026-11-12): the 12 NRC PDFs were staged on 2026-10-12 and checked without errors in every run through 2026-10-27, and fail with "HTTP 403 Forbidden; browser fallback failed: HTTP 403" in every run from 2026-11-11 (the first run after a two-week gap), so the refusal began in that window and applies to headless Chromium as well. In the same runs the NRC HTML pages were fetched without errors, and a `fetchcheck` of one returned 200 with the honest user agent. A browser loads the PDFs; plain `curl` (default user agent), Python `urllib` and the honest agent all got 403 for a PDF from two networks (one a phone hotspot). Not established: why the rule changed, or whether it will change again. The dead energy.gov tracker `ehss/nuclear-and-facility-safety-directives` (404 in a browser too) was removed from entries 11 to 13 of `config/standards.json`; their other URLs return 200.
+
+## Related documents
+
+README ("The update agent", "Paywalled documents", environment variables), `docs/scheduling.md` (blocked hosts and retries), `docs/observability.md` (spans and failure counters), `CHANGELOG.md`.

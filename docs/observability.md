@@ -26,7 +26,7 @@ docker compose -f deploy/observability/docker-compose.observability.yml --profil
 | `agent.step <node>` | each LangGraph node of the workflow | `cogent.step`, outcome |
 | `agent.op <name>` | `track_url`, `sync_doc`, `assemble_entry`, `tabledb_build`, `tabledb_load_table`, `join_inference` | `cogent.op`, entry/table/url, `outcome`, error text |
 | `http.fetch` | every conditional download | URL (query string removed), whether it was conditional, status |
-| | | A host in a cooldown is not requested at all, so it produces no `http.fetch` span; a 403 / 429 / 503+`Retry-After` span ends with that status and is never retried (see [fetching.md](fetching.md)). |
+| | | A host (or area of a host) in a cooldown is not requested at all, so it produces no `http.fetch` span; a 403 / 429 / 503+`Retry-After` span ends with that status and is never retried (see [fetching.md](fetching.md)). |
 | `llm.chat`, `embed` | every Ollama chat / embedding call | `gen_ai.system`, `gen_ai.request.model`, `gen_ai.operation.name`, token counts, retries |
 | `joins.evaluate` | LLM join suggestion + judge for one document | table count, hallucinated/judge counters |
 | `mcp.tool <name>` | every MCP tool call | `mcp.tool.name`, `cogent.ref`, outcome; exceptions are recorded |
