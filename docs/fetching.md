@@ -48,10 +48,10 @@ You do not have to mark links `"manual": true` for the agent to be useful when a
       title            ...
       document date / added to ADAMS / pages (estimate) / author / docket
     full URL:  https://www.nrc.gov/docs/ML1801/ML18019A922.pdf
-    save as:   kg_agent_home/local/standards/18/ML18019A922.pdf
+    save as:   kg_agent_home/local/standards/18/ML18019A922.pdf       (the file name always ends in .pdf, .html, .htm or .xml)
   Open the URL in your browser and save the file there? [y]es / [n]o / [a]ll remaining / [s]kip all:
   ```
-  The ADAMS record is read first (needs `NRC_ADAMS_API_KEY`; without it the form says it was not checked). On `y` the URL is opened in your default browser, the agent waits for you to save the file, checks it against the ADAMS record, and ingests it in the same run. From then on the link counts as satisfied by the saved file (same file name as the URL's last segment): it is not requested again, and it is watched through ADAMS like a manual link.
+  The suggested file name keeps the URL's file name when it has one of those suffixes; otherwise the extension is deduced from the entry's `format_of_data` in the configuration (one `;`-separated part per link when each part starts with a format, else the first format named; `.pdf` when nothing is stated), so a link like `…/DownloadDocument/5633` is saved as `5633.pdf`. A file saved without the extension is ignored by the ingest. The ADAMS record is read first (needs `NRC_ADAMS_API_KEY`; without it the form says it was not checked). On `y` the URL is opened in your default browser, the agent waits for you to save the file, checks it against the ADAMS record, and ingests it in the same run. From then on the link counts as satisfied by the saved file (same file name as the URL's last segment): it is not requested again, and it is watched through ADAMS like a manual link.
 * **Unattended** (cron, systemd, `kg_agent.py daemon`, `kg_daemon.py`): never prompts. The report gets a section "Could not be downloaded automatically" with each URL and the path to save it to.
 
 ## Verifying local copies against ADAMS (`--verify-local warn|strict|off`)

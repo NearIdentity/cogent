@@ -523,7 +523,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (391 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (393 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
 * `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.

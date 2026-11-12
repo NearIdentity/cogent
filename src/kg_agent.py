@@ -231,21 +231,59 @@ def local_files(rt: Runtime, e: DocEntry) -> list[Path]:
 def entry_sources(rt: Runtime, e: DocEntry) -> list[tuple[str, str]]:
     """(url, label) of everything that feeds an entry's KG: its links plus local copies."""
     files = local_files(rt, e)
-    out = [(l.url, l.text or e.name) for l in e.links if not l.manual and not _local_match(l, files)]    # a manual link, or one the user already saved, is not requested
+    out = [(l.url, l.text or e.name) for l in e.links if not l.manual and not _local_match(e, l, files)]    # a manual link, or one the user already saved, is not requested
     out += [(f"file://{f.resolve()}", f"{e.name} (local copy: {f.name})") for f in files]
     return out
 
 
-def _local_match(link: Any, files: list[Path]) -> bool:
-    """Has the user already saved this link's file? (same file name as the URL's last path segment)"""
-    name = unquote(Path(urlparse(link.url).path).name).lower()
-    return bool(name) and any(f.name.lower() == name for f in files)
+_FORMATS = {"pdf": ".pdf", "html": ".html", "htm": ".html", "xml": ".xml"}
+_FORMAT_WORD = re.compile(r"\b(pdf|html?|xml)\b", re.I)
+
+
+def _top_level_segments(text: str) -> list[str]:
+    """Split ``format_of_data`` at the semicolons that are not inside parentheses."""
+    out, depth, cur = [], 0, ""
+    for ch in text:
+        depth += (ch == "(") - (ch == ")")
+        if ch == ";" and depth <= 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return [x.strip() for x in out + [cur] if x.strip()]
+
+
+def suggest_filename(e: DocEntry, url: str) -> str:
+    """The file name to save a download of ``url`` under, with the extension the ingest needs (.pdf .html .htm .xml).
+
+    Order: a suffix the URL's last segment already has; the format named for this link in the entry's ``format_of_data`` (one ``;``-separated
+    segment per link when every segment starts with a format, else the first format named); .pdf."""
+    name = unquote(Path(urlparse(url).path).name) or "download"
+    if Path(name).suffix.lower() in LOCAL_SUFFIXES:
+        return name
+    fmt = e.format_of_data or ""
+    segs = _top_level_segments(fmt)
+    urls = [l.url for l in e.links]
+    word = None
+    if segs and len(segs) == len(urls) and url in urls and all(_FORMAT_WORD.match(x) for x in segs):
+        word = _FORMAT_WORD.match(segs[urls.index(url)]).group(1)
+    if word is None:
+        m = _FORMAT_WORD.search(fmt)
+        word = m.group(1) if m else "pdf"
+    return name + _FORMATS[word.lower()]
+
+
+def _local_match(e: DocEntry, link: Any, files: list[Path]) -> bool:
+    """Has the user already saved this link's file? (the suggested file name, or the URL's last segment with any suffix)"""
+    want = suggest_filename(e, link.url).lower()
+    raw = unquote(Path(urlparse(link.url).path).name).lower()
+    return any(f.name.lower() == want or (raw and f.stem.lower() == raw) for f in files)
 
 
 def manual_items(rt: Runtime, e: DocEntry) -> list[dict[str, Any]]:
     """For each ``"manual": true`` link of an entry: the URL to download in a browser, the path to save it to, and whether it is there."""
     files = local_files(rt, e)
-    manual = [l for l in e.links if l.manual or _local_match(l, files)]
+    manual = [l for l in e.links if l.manual or _local_match(e, l, files)]
     if not manual:
         return []
     base = Path(e.local_copy).expanduser() if e.local_copy else rt.p.local / f"{e.kind}s" / str(e.id)
@@ -253,7 +291,7 @@ def manual_items(rt: Runtime, e: DocEntry) -> list[dict[str, Any]]:
     out = []
     for l in manual:
         target = default_save_path(rt, e, l.url)
-        out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or _local_match(l, files) or (len(manual) == 1 and l.manual and bool(files))})
+        out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or _local_match(e, l, files) or (len(manual) == 1 and l.manual and bool(files))})
     return out
 
 
@@ -261,7 +299,7 @@ def default_save_path(rt: Runtime, e: DocEntry, url: str) -> Path:
     """Where a file downloaded by hand from ``url`` must be saved for ``e``: its local-copy folder (or file), named like the URL's file."""
     base = Path(e.local_copy).expanduser() if e.local_copy else rt.p.local / f"{e.kind}s" / str(e.id)
     glob = any(c in base.name for c in "*?[")
-    name = unquote(Path(urlparse(url).path).name) or "download.html"
+    name = suggest_filename(e, url)
     return base if (e.local_copy and not glob and not base.is_dir() and base.suffix) else (base.parent if glob else base) / name
 
 

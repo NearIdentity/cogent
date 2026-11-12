@@ -199,3 +199,54 @@ def test_verify_checks_name_pages_and_dates(tmp_path):
 
 def test_daemon_children_have_no_stdin():
     assert "stdin=subprocess.DEVNULL" in (Path(__file__).resolve().parents[1] / "src" / "kg_daemon.py").read_text()
+
+
+# ---------------------------------------------------------------------------- the suggested file name
+
+def _entry(fmt, *urls):
+    return kg_agent.DocEntry.from_raw("standard", {"id": 1, "document": "D", "format_of_data": fmt, "links": [{"text": "t", "url": u} for u in urls]})
+
+
+def test_suggested_name_gets_the_extension_the_ingest_needs():
+    f = kg_agent.suggest_filename
+    pdf = "https://id.energy.gov/Home/DownloadDocument/5633"
+    assert f(_entry("PDF (download endpoint, inferred from a matching public copy)", pdf), pdf) == "5633.pdf"        # standard 14
+    assert f(_entry("HTML (eCFR web); XML/JSON through the eCFR API", "https://www.ecfr.gov/current/title-10/part-50"),
+             "https://www.ecfr.gov/current/title-10/part-50") == "part-50.html"
+    assert f(_entry("whatever", "https://www.nrc.gov/docs/ML1801/ML18019A922.pdf"), "https://www.nrc.gov/docs/ML1801/ML18019A922.pdf") == "ML18019A922.pdf"   # URL suffix wins
+    assert f(_entry("", pdf), pdf) == "5633.pdf"                                                                      # nothing stated: PDF
+    # one segment per link when every segment starts with a format (standard 18)
+    a, b = "https://www.nrc.gov/docs/ML1801/ML18019A922", "https://www.energy.gov/ehss/doe-technical-standards-program"
+    e18 = _entry("PDF (NRC copy of 3009); HTML program page for 1104", a, b)
+    assert f(e18, a) == "ML18019A922.pdf" and f(e18, b) == "doe-technical-standards-program.html"
+    # semicolons inside parentheses do not split (standard 15), and a non-format segment falls back to the first format
+    u2 = "https://www.standards.doe.gov/standards-documents/1000/1027-astd-2018/@@images/file"
+    e15 = _entry("PDF (inferred; download endpoint and standards site)", pdf, u2)
+    assert f(e15, pdf) == "5633.pdf" and f(e15, u2) == "file.pdf"
+    assert Path(f(_entry("PDF", pdf), pdf)).suffix in kg_agent.LOCAL_SUFFIXES
+
+
+def test_prompt_suggests_a_name_the_ingest_accepts_and_the_saved_file_is_used(tmp_path, world, monkeypatch, capsys):
+    srv, aps = world
+    srv.block_all = 403
+    url = f"{srv.base}/Home/DownloadDocument/5633"
+    s = make_env(tmp_path, [{"id": 14, "document": "DOE-STD", "format_of_data": "PDF (download endpoint, inferred from a matching public copy)",
+                             "links": [{"text": "pdf", "url": url}], "update_tracking_urls": []}])
+    s.manual_prompt = "always"
+    d = s.home / "local" / "standards" / "14"
+    d.mkdir(parents=True)
+    target = d / "5633.pdf"
+    answers = iter(["y", ""])
+    monkeypatch.setattr(kg_agent, "_INPUT", lambda prompt="": next(answers))
+    monkeypatch.setattr(kg_agent, "_OPEN", lambda u: target.write_bytes(make_pdf("Standard", BODY)))
+    st = kg_agent.run_once(s)
+    assert f"save as:   {target}" in capsys.readouterr().out
+    assert st["summary"]["docs_created"] == 1 and st["summary"]["docs_deferred"] == 0, st["report"]
+    monkeypatch.setattr(kg_agent, "_INPUT", lambda prompt="": pytest.fail("no prompt expected"))
+    before = srv.count()
+    st = kg_agent.run_once(s)                                                    # the saved file satisfies the link: nothing requested
+    assert srv.count() == before and st["summary"]["docs_deferred"] == 0
+    # a file saved without the extension is not a local copy (the ingest ignores it)
+    target.rename(d / "5633")
+    rt = kg_agent.Runtime(s)
+    assert not kg_agent.local_files(rt, rt.entries[0]) if rt.entries else not [p for p in d.iterdir() if p.suffix in kg_agent.LOCAL_SUFFIXES]
