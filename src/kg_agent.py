@@ -80,6 +80,7 @@ class Settings(BaseModel):
     only: list[str] = Field(default_factory=list)   # restrict to entries, e.g. ["standard:22"]
     keep_archive: int = 0               # versions kept per document (0 = keep all)
     host_intervals: dict[str, float] = Field(default_factory=dict)   # seconds between requests per host (overrides the built-in defaults, e.g. www.nrc.gov = 4)
+    deferred_warn_days: int = 7         # warn when documents on a blocked host have not been checked for this many days
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
     tables: bool = False                # after staging: build / refresh the table database (PostgreSQL + pgvector), see kg_tabledb.py
@@ -165,6 +166,7 @@ class Runtime:
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
         self.adams = kg_adams.AdamsClient.from_env()   # None without $NRC_ADAMS_API_KEY: change detection through ADAMS is then off
         self.ctx.adams = self.adams
+        self.manual_changes: list[dict] = []      # manual NRC links whose ADAMS record changed (see adams_watch_manual)
         self.hosts_report: dict[str, dict] = {}   # per-host fetch problems of this run
 
     # -- persistence helpers (no-ops in dry-run) --------------------------------
@@ -239,6 +241,48 @@ def manual_items(rt: Runtime, e: DocEntry) -> list[dict[str, Any]]:
         name = unquote(Path(urlparse(l.url).path).name) or "download.html"
         target = base if (e.local_copy and not glob and not base.is_dir() and base.suffix) else (base.parent if glob else base) / name
         out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or (len(manual) == 1 and bool(files))})
+    return out
+
+
+def adams_watch_manual(rt: Runtime) -> list[dict[str, Any]]:
+    """Manual links on ``nrc.gov/docs/ML…`` URLs are never requested, but their ADAMS record can still be read (one API request each,
+    only with $NRC_ADAMS_API_KEY). A record that changed after the baseline stays reported until the saved file is newer than the
+    change. State: ``state/adams_manual.json`` ({url: {fp, checked, pending: {fp, detected, detected_ts}}})."""
+    if not rt.adams:
+        return []
+    path = rt.p.state / "adams_manual.json"
+    book: dict[str, dict] = read_json(path, {})
+    out: list[dict[str, Any]] = []
+    for e in rt.entries:
+        if not rt.selected(e):
+            continue
+        for it in manual_items(rt, e):
+            acc = kg_adams.accession_from_url(it["url"])
+            if not acc:
+                continue
+            ar = rt.adams.get_document(acc)
+            if not ar.ok:
+                log.info("ADAMS watch for %s skipped: %s", acc, ar.error)
+                continue
+            rec = book.setdefault(it["url"], {"fp": ar.fp})                  # first sight: this fingerprint is the baseline
+            rec["checked"] = utcnow()
+            pend = rec.get("pending")
+            if ar.fp != rec["fp"]:
+                if not pend or pend["fp"] != ar.fp:
+                    pend = rec["pending"] = {"fp": ar.fp, "detected": utcnow(), "detected_ts": time.time()}
+            else:
+                rec.pop("pending", None)
+                pend = None
+            if pend:
+                target = Path(it["save_to"])
+                files = [target] if target.is_file() else local_files(rt, e)
+                if files and max(f.stat().st_mtime for f in files) > pend["detected_ts"]:      # saved after the change was seen
+                    rec["fp"] = pend["fp"]
+                    rec.pop("pending", None)
+                    continue
+                out.append({"entry": e.key, "url": it["url"], "accession": acc, "save_to": it["save_to"],
+                            "detected": pend["detected"], "present": it["present"]})
+    rt.write_json(path, book)
     return out
 
 
@@ -499,6 +543,7 @@ def make_nodes(rt: Runtime):
                 out["errors"].append(f"document {url}: {act.detail}")
             out["doc_actions"].append(act.model_dump())
         rt.hosts_report = rt.hosts.report()
+        rt.manual_changes = adams_watch_manual(rt)
         return out
 
     # 5 -------------------------------------------------------------- assemble
@@ -1341,6 +1386,30 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
             if a["action"] == "updated" and e.key in a["entries"] and not a["url"].startswith("file://"):
                 out.append(Alert(kind="store_page_changed", entry=e.key, identity=a["url"], severity="info", message=(
                     f"{e.key}: the store/landing page changed ({a['url']}); check it for a new edition, errata or a price/availability change.")))
+    for ch in rt.manual_changes:                             # a manual NRC document changed in ADAMS: the user must download it again
+        out.append(Alert(kind="manual_document_changed", entry=ch["entry"], identity=ch["url"], details=ch, message=(
+            f"{ch['entry']}: ADAMS record {ch['accession']} changed since {ch['detected'][:10]} (the copy on board predates it). "
+            f"Download {ch['url']} in a browser again and save it as {ch['save_to']}.")))
+    now_ts = time.time()
+    seen_dd: set[tuple[str, str]] = set()                    # (entry, host): documents on a blocked host that have not been checked for days
+    hs = rt.hosts.state
+    for a in state.get("doc_actions", []):
+        if not a.get("host_blocked"):
+            continue
+        host = kg_hosts.host_of(a["url"])
+        ds = read_json(rt.p.doc(docid_of(a["url"])) / "state.json", {})
+        since = ds.get("last_checked") or (hs.get(host) or {}).get("first_blocked") or ""
+        try:
+            age = (now_ts - datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()) / 86400 if since else 0.0
+        except ValueError:
+            age = 0.0
+        if age >= rt.s.deferred_warn_days:
+            for k in a["entries"]:
+                if (k, host) not in seen_dd:
+                    seen_dd.add((k, host))
+                    out.append(Alert(kind="deferred_too_long", entry=k, identity=host, details={"since": since, "days": round(age, 1)}, message=(
+                        f"{k}: documents on {host} have not been checked since {since[:10]} ({age:.0f} days; the host is refusing this client). "
+                        f"The knowledge graph may be out of date; use \"manual\": true links, or ask the host to allow-list the agent.")))
     for e in rt.entries:                                     # links the agent must never request: the user downloads them
         if not rt.selected(e):
             continue
@@ -1548,7 +1617,8 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
         titles = {"no_local_copy": "NO LOCAL COPY", "new_edition_for_purchase": "NEW EDITION FOR PURCHASE",
                   "local_copy_outdated": "LOCAL COPY OUTDATED", "local_copy_unidentified": "local copy not identified",
                   "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED",
-                  "store_page_blocked": "store page blocked", "manual_download_needed": "MANUAL DOWNLOAD NEEDED"}
+                  "store_page_blocked": "store page blocked", "manual_download_needed": "MANUAL DOWNLOAD NEEDED",
+                  "manual_document_changed": "MANUAL DOCUMENT CHANGED", "deferred_too_long": "NOT CHECKED FOR DAYS"}
         for a in sorted(al, key=lambda a: (a["severity"] != "warning", a["kind"], a["entry"])):
             tag = "**WARNING**" if a["severity"] == "warning" else "note"
             age = "NEW" if a["is_new"] else f"open since {a['first_seen'][:10]}, {a['runs']} runs"
@@ -1917,6 +1987,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("--ollama-host")
     common.add_argument("--llm", help="Ollama model used only to narrate the report")
     common.add_argument("--min-interval", type=float, default=1.0, help="default seconds between requests to one host (www.nrc.gov: 4, adams-api.nrc.gov: 2 unless --host-interval says otherwise)")
+    common.add_argument("--deferred-warn-days", type=int, default=7, help="warn when documents on a blocked host have not been checked for this many days")
     common.add_argument("--host-interval", action="append", default=[], metavar="HOST=SECONDS", help="seconds between requests to HOST (repeatable)")
     common.add_argument("--no-auto-apply", action="store_true", help="never edit the configuration; list as pending")
     common.add_argument("--no-assets", action="store_true", help="skip figure/table export")
@@ -1990,7 +2061,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  ollama_host=a.ollama_host, llm=a.llm, min_interval=a.min_interval,
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
-                 host_intervals=_parse_intervals(a.host_interval),
+                 host_intervals=_parse_intervals(a.host_interval), deferred_warn_days=a.deferred_warn_days,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
                  force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False), recipe_refresh=not getattr(a, "no_recipe_refresh", False),
                  publish_snapshot=getattr(a, "publish_snapshot", None), otlp_endpoint=getattr(a, "otlp_endpoint", None),

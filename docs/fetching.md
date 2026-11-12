@@ -32,6 +32,12 @@ Add `"manual": true` to a link in `config/*.json` and the agent never requests t
 
 Download the file in your browser and save it in the entry's local-copy folder (`<home>/local/<standards|reports>/<id>/`, or the entry's `local_copy`). Until it is there the report carries the warning **MANUAL DOWNLOAD NEEDED** with the URL to download and the exact path to save to; the folder is created for you.
 
+**Watching manual NRC links.** With `NRC_ADAMS_API_KEY` set, a manual link on `nrc.gov/docs/ML…` is still watched through the ADAMS API (one request per run, never to www.nrc.gov). The first fingerprint seen is the baseline. If the record later changes, the warning **MANUAL DOCUMENT CHANGED** names the accession, the URL to download and the path to save to, and stays open until the saved file is newer than the change (state: `state/adams_manual.json`). Without the key nothing is watched.
+
+## When a host never lets the agent in
+
+Deferred documents are not `STALE`, so a permanent block would be silent. If documents of an entry on a blocked host have not been checked for `--deferred-warn-days` days (default 7; counted from the last successful check, or from the first block), the warning **NOT CHECKED FOR DAYS** appears in the report, the log and `get_warnings`. Practical answers: `"manual": true` links with the ADAMS watch, or asking the host to allow-list the agent's user agent.
+
 ## `fetchcheck`: one request, no polling
 
 ```bash

@@ -138,6 +138,7 @@ class HostPolicy:
         rec = {"until": self.clock() + seconds, "level": level, "reason": reason,
                "since": datetime.fromtimestamp(self.clock(), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                "url": url.split("?")[0][:200], "blocks": int(prev.get("blocks", 0)) + 1}
+        rec["first_blocked"] = prev.get("first_blocked") or rec["since"]       # when this host first refused us (cleared by a good response)
         if headers:
             rec["headers"] = {k: str(v)[:200] for k, v in headers.items()}
         self.state[host] = rec
