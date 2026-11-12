@@ -114,7 +114,7 @@ chmod 600 deploy/observability/.env
 docker compose -f deploy/observability/docker-compose.observability.yml up -d
 curl -s http://127.0.0.1:9090/api/v1/targets | grep -o '"health":"[a-z]*"'      # expect "up" within ~15 s
 ```
-Open http://127.0.0.1:3000 (user `admin`, your password) → Dashboards → **cogent: agent and MCP server**. Prometheus' Alerts page is http://127.0.0.1:9090/alerts.
+Open http://127.0.0.1:3000 (user `admin`, your password) → Dashboards → **cogent: agent, MCP server and chat client**. Prometheus' Alerts page is http://127.0.0.1:9090/alerts.
 
 **8b. Fill the agent panels with a run** (terminal A, owner login as in step 2). Add `--llm-joins --join-model llama3.1:8b` if Ollama has the model, otherwise the token, cost, judge and hallucination panels stay empty:
 ```bash

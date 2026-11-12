@@ -111,7 +111,7 @@ timeseries("MCP tool latency (p50 / p95)", 16, 6, 8, 9,
 row("Tokens, cost and findings", 15)
 timeseries("Tokens (cumulative)", 0, 16, 8, 8,
            [{"expr": "sum by (model, direction) (cogent_llm_tokens_total)", "legendFormat": "{{model}} {{direction}}"}], unit="short",
-           description="Chat and embedding tokens from agent and server (Ollama's prompt_eval_count / eval_count).")
+           description="Chat and embedding tokens from the daily agent, the MCP server and the chat client together (Ollama's prompt_eval_count / eval_count). The breakdown by service is in the row \"LLM usage by service\" below.")
 timeseries("Cost (cumulative, USD)", 8, 16, 5, 8, [{"expr": "sum by (model) (cogent_llm_cost_usd_total)", "legendFormat": "{{model}}"}], unit="currencyUSD")
 pie("Findings: auto-applied vs human-reviewed", 13, 16, 11, 8, "sum by (outcome) (cogent_agent_findings_total)", "{{outcome}}",
     description="auto_applied: the configuration was rewritten by the agent. needs_review: left for a person. human_resolved: a pending finding a person has since dealt with.")
@@ -144,10 +144,58 @@ timeseries("Rate-limited requests, graph cache, embedder", 16, 40, 8, 7,
             {"expr": 'sum by (event) (rate(cogent_graph_cache_events_total[1m]))', "legendFormat": "graph cache {{event}}"},
             {"expr": 'sum by (event) (rate(cogent_embed_events_total[1m]))', "legendFormat": "embedder {{event}}"}], unit="ops")
 
-dash = {"uid": "cogent-observability", "title": "cogent: agent and MCP server", "tags": ["cogent", "mcp", "agent"], "timezone": "browser", "editable": True,
+# ---------------------------------------------------------------------------------------------------------------- row 6: combined LLM usage
+row("LLM usage by service: daily agent, MCP server, chat client", 47)
+timeseries("Tokens by service (cumulative)", 0, 48, 8, 8,
+           [{"expr": "sum by (service, direction) (cogent_llm_tokens_total)", "legendFormat": "{{service}} {{direction}}"}], unit="short",
+           description="The same counters as the token panel above, split by the `service` label: agent (daily update run, incl. LLM joins), mcp (the server's own LLM calls: question embeddings, on-request join evaluation) and chat (the conversational agent). The three added together are the first panel.")
+timeseries("LLM calls per minute, by service and kind", 8, 48, 8, 8,
+           [{"expr": "sum by (service, kind) (rate(cogent_llm_calls_total[5m])) * 60", "legendFormat": "{{service}} {{kind}}"}], unit="short",
+           description="Chat, rewrite, embed, suggest, judge ... calls of every component.")
+bargauge("Tokens in the last 24 h, by service", 16, 48, 8, 8,
+         [{"expr": "round(sum by (service) (increase(cogent_llm_tokens_total[24h])))", "instant": True, "legendFormat": "{{service}}"}],
+         description="Input plus output tokens each component used in the last 24 hours.")
+timeseries("LLM call latency p95, by service and kind", 0, 56, 12, 7,
+           [{"expr": "histogram_quantile(0.95, sum by (le, service, kind) (rate(cogent_llm_call_duration_seconds_bucket[5m])))", "legendFormat": "{{service}} {{kind}}"}], unit="s")
+stat("LLM tokens, 24 h (all services)", 12, 56, 6, 7, "sum(increase(cogent_llm_tokens_total[24h]))", unit="short", color_mode="value",
+     description="Agent + MCP server + chat client.")
+stat("LLM cost, 24 h (all services)", 18, 56, 6, 7, "sum(increase(cogent_llm_cost_usd_total[24h]))", unit="currencyUSD", decimals=4, color_mode="value",
+     description="Zero unless COGENT_LLM_PRICES prices the models (local Ollama models are free).")
+
+# ---------------------------------------------------------------------------------------------------------------- row 7: the conversational agent
+row("Conversational agent (kg_chat)", 63)
+stat("Questions, 24 h", 0, 64, 4, 4, 'sum(increase(cogent_chat_questions_total{outcome!="command"}[24h]))', unit="short", color_mode="value",
+     description="Questions put to the chat client (slash commands excluded).")
+gauge("Answered share, 24 h", 4, 64, 5, 4,
+      'sum(increase(cogent_chat_questions_total{outcome="answered"}[24h])) / clamp_min(sum(increase(cogent_chat_questions_total{outcome=~"answered|not_found"}[24h])), 1)',
+      steps(("red", None), ("orange", 0.5), ("green", 0.8)),
+      description="Questions whose answer was found in the context / questions that reached the model. A low share means the knowledge graphs do not cover what is asked (or retrieval misses it); it is not an accuracy figure.")
+stat("Error rate, 24 h", 9, 64, 4, 4, 'sum(increase(cogent_chat_questions_total{outcome="error"}[24h])) / clamp_min(sum(increase(cogent_chat_questions_total{outcome!="command"}[24h])), 1)',
+     unit="percentunit", decimals=1, thresholds=steps(("green", None), ("orange", 0.05), ("red", 0.2)), description="Questions that failed (model server or MCP server unreachable, token rejected).")
+stat("Index chunks", 13, 64, 3, 4, "max(cogent_chat_index_chunks)", unit="short", color_mode="value", description="Text chunks in the chat client's vector index.")
+stat("Conversations", 16, 64, 3, 4, "max(cogent_chat_conversations)", unit="short", color_mode="value", description="Conversations held in memory by the web app.")
+pie("Table lookups, 24 h", 19, 64, 5, 4, "sum by (outcome) (increase(cogent_chat_table_lookups_total[24h]))", "{{outcome}}",
+    description="rows: the table database returned rows; no_match: no row mentions what was asked; error: the table service was unavailable.")
+timeseries("Questions by outcome", 0, 68, 8, 7, [{"expr": "sum by (outcome) (increase(cogent_chat_questions_total[5m]))", "legendFormat": "{{outcome}}"}],
+           draw="bars", stack=True, fill=70, description="answered, not_found (the context had no answer), error, command.")
+timeseries("Question latency (p50 / p95)", 8, 68, 8, 7,
+           [{"expr": "histogram_quantile(0.5, sum by (le) (rate(cogent_chat_question_duration_seconds_bucket[5m])))", "legendFormat": "p50"},
+            {"expr": "histogram_quantile(0.95, sum by (le) (rate(cogent_chat_question_duration_seconds_bucket[5m])))", "legendFormat": "p95"}], unit="s",
+           description="Retrieval, table lookup and the language model.")
+timeseries("MCP calls of the chat client, by tool", 16, 68, 8, 7,
+           [{"expr": "sum by (tool, outcome) (rate(cogent_chat_mcp_calls_total[1m]))", "legendFormat": "{{tool}} {{outcome}}"}], unit="reqps",
+           description="What the chat client asks of the MCP server (the server's own view is the row above).")
+timeseries("Chat client tokens by model", 0, 75, 12, 7,
+           [{"expr": 'sum by (model, direction) (cogent_llm_tokens_total{service="chat"})', "legendFormat": "{{model}} {{direction}}"}], unit="short",
+           description="Chat model and embedding model of the conversational agent only.")
+timeseries("Chat client LLM calls by outcome", 12, 75, 12, 7,
+           [{"expr": 'sum by (kind, outcome) (increase(cogent_llm_calls_total{service="chat"}[5m]))', "legendFormat": "{{kind}} {{outcome}}"}],
+           draw="bars", stack=True, fill=70, description="answer, rewrite and embed calls of the chat client; error = the model server failed.")
+
+dash = {"uid": "cogent-observability", "title": "cogent: agent, MCP server and chat client", "tags": ["cogent", "mcp", "agent", "chat"], "timezone": "browser", "editable": True,
         "graphTooltip": 1, "schemaVersion": 39, "version": 1, "refresh": "10s", "time": {"from": "now-30m", "to": "now"},
         "templating": {"list": []}, "annotations": {"list": []}, "links": [], "panels": panels,
-        "description": "Per-run and live metrics of the cogent update agent and MCP server. Source: docs/observability.md."}
+        "description": "Per-run and live metrics of the cogent update agent, the MCP server and the chat client, with the LLM usage of all three. Source: docs/observability.md."}
 
 if __name__ == "__main__":
     print(json.dumps(dash, indent=2))

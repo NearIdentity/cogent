@@ -4,6 +4,7 @@ The MCP server serves the knowledge graphs that the update agent has staged, plu
 - **Transport:** streamable HTTP at `/mcp` and an open `/healthz` (`src/kg_mcp.py`, `create_server`, `build_app`).
   - It is stateless by default (`--stateful` switches that off).
   - It runs behind your own HTTPS proxy or tunnel (`docs/mcp.md`, section 3).
+- **Own client:** `src/kg_chat/` (docs/chat-client.md) is a LangChain + Ollama conversational front-end that uses these tools over a bearer token: graph text for answers, `lookup_values` rows rendered as Markdown tables, `get_entry_metadata` caveats relayed with every answer.
 - **Instructions to the client:** the server's built-in guidance tells an agent how to use the tools and to relay warnings (`INSTRUCTIONS` in `kg_mcp.py`). When a table database is configured, it adds `TABLE_INSTRUCTIONS`: ask for numbers and row-type facts through `lookup_values`, then `query_table` or `describe_table`, relay warnings, paywall flags, inferred-unit notes and the disclaimer, and when a lookup answers `no_confident_match` say the value was not found instead of presenting `nearest_neighbours`.
 - **Two back ends:**
   - the graph store (`src/kg_store.py`), which reads the staged files;

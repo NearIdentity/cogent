@@ -15,3 +15,5 @@ deploy/.env
 .env
 deploy/observability/.env
 deploy/observability/prometheus/mcp_token
+deploy/observability/prometheus/chat_token
+/chat_cache/

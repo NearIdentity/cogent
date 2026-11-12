@@ -14,5 +14,5 @@ groups:
         annotations:
           summary: "cogent agent: {{ $value | humanizePercentage }} of operations failed in the last 24 h"
           description: >-
-            More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard "cogent: agent and MCP server",
+            More than 25% of the daily agent's operations failed. Look at 'Failures by stage' on the Grafana dashboard "cogent: agent, MCP server and chat client",
             at the report (logs/report.md) and at <home>/logs/metrics.jsonl for the last run.

@@ -21,6 +21,11 @@ langchain-ollama   # optional: --llm narration / local Ollama
 # tests (python -m pytest tests)
 pytest
 reportlab
+pyyaml   # tests/test_chat_telemetry.py reads prometheus.yml
+
+# chat client (src/kg_chat, kg_chat_app.py) -- docs/chat-client.md; also needs langchain-core, langchain-ollama, pydantic and mcp from the sections around it
+flask
+langchain-text-splitters
 
 # MCP server (kg_mcp.py) -- docs/mcp.md
 mcp>=1.12,<2

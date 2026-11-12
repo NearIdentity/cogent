@@ -51,6 +51,7 @@ from pydantic import BaseModel, Field
 import kg_adams
 import kg_combine
 import kg_hosts
+from kg_llm_usage import UsageCallback
 import kg_telemetry as telemetry
 import kg_ingest
 import kg_tools as T
@@ -1714,7 +1715,8 @@ def narrate(rt: Runtime, state: AgentState, summary: dict) -> Optional[RunNarrat
         chain = llm.with_structured_output(RunNarrative)
         return chain.invoke("Summarise this documentation-update run for a nuclear licensing team in at most "
                             "4 sentences, then list the most important changes. Use only the facts given.\n"
-                            + json.dumps(facts, default=str)[:6000])
+                            + json.dumps(facts, default=str)[:6000],
+                            config={"callbacks": [UsageCallback(getattr(llm, "model", None) or rt.s.llm or "narration", "narrate")]})
     except Exception as exc:
         log.warning("LLM narration failed: %s", exc)
         return None

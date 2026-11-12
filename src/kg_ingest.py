@@ -38,6 +38,7 @@ import logging
 import os
 import re
 import statistics
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -1268,8 +1269,15 @@ class OllamaExtractor(LLMExtractor):
         }).encode()
         req = Request(self.host + "/api/chat", data=body,
                       headers={"Content-Type": "application/json"})
-        with urlopen(req, timeout=self.timeout) as resp:
-            return json.loads(resp.read())["message"]["content"]
+        t0 = time.perf_counter()
+        try:
+            with urlopen(req, timeout=self.timeout) as resp:
+                out = json.loads(resp.read())
+        except Exception:
+            _telemetry.record_llm(self.model, "extract", 0, 0, time.perf_counter() - t0, "error")
+            raise
+        _telemetry.record_llm(self.model, "extract", int(out.get("prompt_eval_count") or 0), int(out.get("eval_count") or 0), time.perf_counter() - t0, "ok")
+        return out["message"]["content"]
 
     def extract_text(self, text: str) -> list[Triple]:
         out: list[Triple] = []

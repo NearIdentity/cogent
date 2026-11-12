@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cogent chat</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1f24; --muted:#59636e; --line:#d0d7de; --user:#ddf4ff; --bot:#f6f8fa; --warn:#fff8c5; --warnline:#d4a72c; --accent:#0969da; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --user:#0c2d6b; --bot:#161b22; --warn:#3b2e00; --warnline:#9e6a03; --accent:#58a6ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; display:flex; flex-direction:column; height:100vh; }
+  header { padding:10px 16px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
+  header h1 { font-size:16px; margin:0; } header span { color:var(--muted); font-size:13px; flex:1; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--bot); color:var(--fg); cursor:pointer; }
+  #log { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:min(920px,96%); padding:10px 14px; border-radius:10px; border:1px solid var(--line); overflow-wrap:anywhere; }
+  .user { align-self:flex-end; background:var(--user); white-space:pre-wrap; } .bot { align-self:flex-start; background:var(--bot); }
+  .msg p { margin:6px 0; } .msg h1,.msg h2,.msg h3,.msg h4 { margin:10px 0 4px; font-size:1.05em; }
+  .msg table { border-collapse:collapse; margin:8px 0; font-size:13.5px; display:block; overflow-x:auto; max-width:100%; }
+  .msg th,.msg td { border:1px solid var(--line); padding:4px 8px; text-align:left; vertical-align:top; } .msg th { background:var(--bg); }
+  .msg code { background:var(--bg); padding:1px 4px; border-radius:4px; font-size:.92em; } .msg pre { background:var(--bg); padding:8px; border-radius:6px; overflow:auto; }
+  .msg blockquote { margin:6px 0; padding:2px 10px; border-left:3px solid var(--line); color:var(--muted); }
+  .msg a { color:var(--accent); } .tbl { margin-top:8px; }
+  .notes { margin-top:8px; font-size:13px; } .note { padding:4px 8px; margin:3px 0; border-radius:6px; border:1px solid var(--line); }
+  .note.warning { background:var(--warn); border-color:var(--warnline); }
+  .sources { margin-top:8px; font-size:13px; color:var(--muted); } .sources ul { margin:2px 0 0; padding-left:18px; }
+  .nf { color:var(--muted); font-style:italic; font-size:13px; }
+  form { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); }
+  textarea { flex:1; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); resize:vertical; min-height:42px; max-height:160px; }
+  footer { padding:6px 16px 10px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header><h1>cogent chat</h1><span>{{ title }} &middot; {{ chunks }} chunks indexed{% if tables %} &middot; table search on{% endif %}</span><button id="reset" type="button">New conversation</button></header>
+<div id="log" aria-live="polite"></div>
+<form id="form"><textarea id="q" rows="1" maxlength="2000" placeholder="Ask about the standards and reports, or type /help" autofocus></textarea><button id="send" type="submit">Send</button></form>
+<footer>{{ disclaimer }}</footer>
+<script>
+"use strict";
+// ---- A small, safe Markdown renderer: it builds DOM nodes with textContent only, so nothing from a document or a table cell can inject HTML.
+const SAFE_URL = /^https?:\/\//i;
+function inline(parent, s) {
+  let i = 0, buf = "";
+  const flush = () => { if (buf) { parent.appendChild(document.createTextNode(buf)); buf = ""; } };
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "\\" && i + 1 < s.length) { buf += s[i + 1]; i += 2; continue; }
+    if (c === "`") { const j = s.indexOf("`", i + 1); if (j > i) { flush(); const e = document.createElement("code"); e.textContent = s.slice(i + 1, j); parent.appendChild(e); i = j + 1; continue; } }
+    if (s.startsWith("**", i)) { const j = s.indexOf("**", i + 2); if (j > i + 2) { flush(); const e = document.createElement("strong"); inline(e, s.slice(i + 2, j)); parent.appendChild(e); i = j + 2; continue; } }
+    if ((c === "*" || c === "_") && s[i + 1] !== " " && (i === 0 || /[\s(]/.test(s[i - 1]) || c === "*")) {
+      const j = s.indexOf(c, i + 1); if (j > i + 1 && s[j - 1] !== " ") { flush(); const e = document.createElement("em"); inline(e, s.slice(i + 1, j)); parent.appendChild(e); i = j + 1; continue; } }
+    if (c === "[") { const m = /^\[([^\]]+)\]\(([^)\s]+)\)/.exec(s.slice(i));
+      if (m) { flush(); if (SAFE_URL.test(m[2])) { const a = document.createElement("a"); a.href = m[2]; a.target = "_blank"; a.rel = "noopener noreferrer"; inline(a, m[1]); parent.appendChild(a); }
+               else parent.appendChild(document.createTextNode(m[1])); i += m[0].length; continue; } }
+    buf += c; i++;
+  }
+  flush();
+}
+function cells(line) {                       // split a table row at unescaped pipes
+  let t = line.trim(); if (t.startsWith("|")) t = t.slice(1); if (t.endsWith("|") && !t.endsWith("\\|")) t = t.slice(0, -1);
+  const out = []; let cur = "";
+  for (let i = 0; i < t.length; i++) { if (t[i] === "\\" && t[i + 1] === "|") { cur += "|"; i++; } else if (t[i] === "\\" && t[i + 1] === "\\") { cur += "\\\\"; i++; } else if (t[i] === "|") { out.push(cur.trim()); cur = ""; } else cur += t[i]; }
+  out.push(cur.trim()); return out;
+}
+const isSep = l => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(l);
+function markdown(text) {
+  const root = document.createDocumentFragment(), lines = String(text || "").replace(/\r/g, "").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    if (l.startsWith("```")) { const buf = []; i++; while (i < lines.length && !lines[i].startsWith("```")) buf.push(lines[i++]); i++;
+      const pre = document.createElement("pre"), c = document.createElement("code"); c.textContent = buf.join("\n"); pre.appendChild(c); root.appendChild(pre); continue; }
+    let m = /^(#{1,6})\s+(.*)$/.exec(l);
+    if (m) { const h = document.createElement("h" + Math.min(4, m[1].length)); inline(h, m[2]); root.appendChild(h); i++; continue; }
+    if (l.includes("|") && i + 1 < lines.length && isSep(lines[i + 1])) {
+      const head = cells(l), tbl = document.createElement("table"), th = document.createElement("thead"), tb = document.createElement("tbody"), hr = document.createElement("tr");
+      head.forEach(h => { const e = document.createElement("th"); inline(e, h); hr.appendChild(e); }); th.appendChild(hr); tbl.appendChild(th); i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { const r = document.createElement("tr"), cs = cells(lines[i]);
+        for (let k = 0; k < head.length; k++) { const e = document.createElement("td"); inline(e, cs[k] || ""); r.appendChild(e); } tb.appendChild(r); i++; }
+      tbl.appendChild(tb); root.appendChild(tbl); continue; }
+    if (/^\s*>/.test(l)) { const buf = []; while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      const q = document.createElement("blockquote"); inline(q, buf.join(" ")); root.appendChild(q); continue; }
+    if (/^\s*([-*]|\d+\.)\s+/.test(l)) { const ordered = /^\s*\d+\./.test(l), list = document.createElement(ordered ? "ol" : "ul");
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) { const li = document.createElement("li"); inline(li, lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, "")); list.appendChild(li); }
+      root.appendChild(list); continue; }
+    const buf = []; while (i < lines.length && lines[i].trim() && !lines[i].startsWith("```") && !/^#{1,6}\s/.test(lines[i]) && !/^\s*>/.test(lines[i])
+                           && !/^\s*([-*]|\d+\.)\s+/.test(lines[i]) && !(lines[i].includes("|") && i + 1 < lines.length && isSep(lines[i + 1]))) buf.push(lines[i++]);
+    const p = document.createElement("p"); inline(p, buf.join(" ")); root.appendChild(p);
+  }
+  return root;
+}
+// ---- chat
+const log = document.getElementById("log"), q = document.getElementById("q"), send = document.getElementById("send");
+function add(kind) { const d = document.createElement("div"); d.className = "msg " + kind; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; }
+function show(reply) {
+  const d = add("bot");
+  if (reply.answer) d.appendChild(markdown(reply.answer));
+  if (!reply.found_in_context && reply.answer && !(reply.tables || []).length) { const n = document.createElement("div"); n.className = "nf"; n.textContent = "Not found in the knowledge graphs."; d.appendChild(n); }
+  (reply.tables || []).forEach(t => { const w = document.createElement("div"); w.className = "tbl"; w.appendChild(markdown(t.markdown)); d.appendChild(w); });
+  if ((reply.notices || []).length) { const n = document.createElement("div"); n.className = "notes";
+    reply.notices.forEach(x => { const e = document.createElement("div"); e.className = "note " + x.level; e.textContent = (x.level === "warning" ? "⚠ " : "ℹ ") + x.text; n.appendChild(e); }); d.appendChild(n); }
+  if ((reply.sources || []).length) { const s = document.createElement("div"); s.className = "sources"; s.textContent = "Sources"; const ul = document.createElement("ul");
+    reply.sources.forEach(r => { const li = document.createElement("li"); li.appendChild(document.createTextNode("[" + r.label + "] "));
+      const title = (r.kind === "table" ? "table: " : "") + [r.entry_name || r.entry, r.caption || r.section].filter(Boolean).join(" — ") + (r.page ? " (p. " + r.page + ")" : "");
+      if (SAFE_URL.test(r.url || "")) { const a = document.createElement("a"); a.href = r.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = title || r.url; li.appendChild(a); }
+      else li.appendChild(document.createTextNode(title + (r.url ? " · " + r.url : "")));
+      ul.appendChild(li); }); s.appendChild(ul); d.appendChild(s); }
+  log.scrollTop = log.scrollHeight;
+}
+async function ask(text) {
+  add("user").textContent = text; send.disabled = true; const wait = add("bot"); wait.textContent = "…";
+  try { const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+        const body = await r.json(); wait.remove(); if (!r.ok) { add("bot").textContent = body.error || "Request failed."; } else show(body); }
+  catch (e) { wait.remove(); add("bot").textContent = "Could not reach the app."; }
+  send.disabled = false; q.focus();
+}
+document.getElementById("form").addEventListener("submit", e => { e.preventDefault(); const t = q.value.trim(); if (t) { q.value = ""; ask(t); } });
+q.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("form").requestSubmit(); } });
+document.getElementById("reset").addEventListener("click", async () => { await fetch("/api/reset", { method: "POST" }); log.textContent = ""; q.focus(); });
+</script>
+</body>
+</html>

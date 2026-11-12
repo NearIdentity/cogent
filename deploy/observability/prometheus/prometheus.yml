@@ -20,6 +20,19 @@ scrape_configs:
         labels:
           instance: cogent-mcp
 
+  # The conversational agent (kg_chat_app.py web --metrics): its own LLM calls (service="chat" in the cogent_llm_* metrics), questions and MCP calls. The
+  # LLM panels add this job to the agent and the MCP server. Needs `export COGENT_CHAT_METRICS_TOKEN=...` when the app starts; the same value goes into
+  # deploy/observability/prometheus/chat_token. Remove this job if you do not run the chat client.
+  - job_name: cogent-chat
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/chat_token
+    static_configs:
+      - targets: ["127.0.0.1:5000"]
+        labels:
+          instance: cogent-chat
+
   # Optional: the agent on a host with no MCP server, via a Pushgateway (kg_agent.py run --pushgateway http://127.0.0.1:9091).
   # - job_name: pushgateway
   #   honor_labels: true

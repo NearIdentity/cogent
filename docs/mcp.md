@@ -5,6 +5,8 @@
 on board** editions, open warnings and disclaimers. It is read-only and can run beside the daemon (the agent replaces
 files atomically; graphs are re-read when their mtime changes).
 
+Clients: any MCP client with a bearer token (Claude web app, Claude Code, ...), or the project's own conversational front-end `src/kg_chat/` ([chat-client.md](chat-client.md)), which keeps the grounding rules of the website Q&A agent it was adapted from and renders the table tools' answers as Markdown.
+
 Open-source parts: the official [`mcp` Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP, streamable
 HTTP), `uvicorn`/Starlette, `networkx`; for the public URL Caddy, `cloudflared` or Tailscale.
 

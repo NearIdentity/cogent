@@ -1,12 +1,12 @@
 # Observability: traces, metrics, dashboard, alert
 
-The daily agent and the MCP server emit **OpenTelemetry traces** and **Prometheus metrics**. A Grafana dashboard and one alert rule ship in `deploy/observability/`.
+The daily agent, the MCP server and the chat client ([chat-client.md](chat-client.md)) emit **OpenTelemetry traces** and **Prometheus metrics**. A Grafana dashboard and one alert rule ship in `deploy/observability/`.
 
 ![Grafana dashboard](img/grafana-dashboard.png)
 
 The screenshot was taken from a real Prometheus and Grafana, fed by `deploy/observability/demo/generate_traffic.py` (see "Reproduce the screenshot"). The traffic is synthetic: a mock web site, a mock Ollama that reports token counts and sometimes invents a column, and an illustrative price. It shows what the panels look like, not how your sources behave.
 
-Code: `src/kg_telemetry.py` (registry, tracing helpers, per-run summary); calls are spread through `kg_agent.py`, `kg_mcp.py`, `kg_llm.py`, `kg_llmjoin.py`, `kg_embed.py`, `kg_tools.py`, `kg_tabledb.py`, `kg_ingest.py` and `kg_daemon.py`.
+Code: `src/kg_telemetry.py` (registry, tracing helpers, per-run summary); `src/kg_chat/llm.py` and `mcp_conn.py` (the chat client's LLM and MCP calls); calls are spread through `kg_agent.py`, `kg_mcp.py`, `kg_llm.py`, `kg_llmjoin.py`, `kg_embed.py`, `kg_tools.py`, `kg_tabledb.py`, `kg_ingest.py` and `kg_daemon.py`.
 
 ## 1. Tracing (OpenTelemetry)
 
@@ -63,9 +63,35 @@ The daemon passes its trace to the agent it starts through the environment varia
 * **p50 / p95 over runs**: the "last run" panels are exact for that run; the "over time" panels use histogram buckets (Prometheus interpolates inside a bucket, so small differences are normal).
 * **Several MCP workers** (`--workers N`): each process has its own counters and `/metrics` is answered by whichever worker accepts the connection. Run one worker for scraping, or scrape per-worker ports; counters are never summed across processes for you. The agent's totals come from a file and are consistent.
 
+## Combined LLM usage: agent, MCP server and chat client
+
+Three components call Ollama, and all three record their calls with the same metrics, told apart by the `service` label:
+
+| `service` | who | LLM calls |
+|---|---|---|
+| `agent` | the daily update agent (`kg_agent.py run`) | triple extraction (`--extractor ollama\|hybrid`, kind `extract`), report narration (`--llm`, kind `narrate`), table-row and table embeddings (`--tables`, kind `embed`), LLM join suggestions and the judge (`--llm-joins`, kinds `suggest` / `judge`) |
+| `mcp` | the MCP server (`kg_mcp.py serve`) | embeddings of the questions put to `lookup_values` / `search_tables`, on-request join evaluation (`evaluate_joins`) |
+| `chat` | the conversational agent (`kg_chat_app.py`) | `answer` and `rewrite` chat calls (kind), `embed` calls for the index and for questions |
+
+The metrics are `cogent_llm_calls_total{service,model,kind,outcome}`, `cogent_llm_tokens_total{service,model,direction}`, `cogent_llm_cost_usd_total{service,model}` and `cogent_llm_call_duration_seconds{service,kind}`. **Adding them together is a plain `sum`**, which is what the existing panels ("Tokens (cumulative)", "Cost (cumulative, USD)") do, so they now include the chat client as soon as Prometheus scrapes it; the row "LLM usage by service" splits them (tokens, calls per minute, tokens in 24 h, p95 latency, combined 24 h tokens and cost). Tokens are the counts Ollama reports: `usage_metadata` of the chat response, and `prompt_eval_count` of the embedding call (the chat client subclasses `OllamaEmbeddings` because LangChain's wrapper drops it). Embeddings served from the client's disk cache are not LLM usage and are not counted. Triple extraction and narration were not counted before this change (they bypassed the recording hooks); they are now, so agent token totals recorded earlier do not include them. A failed call counts as `outcome="error"` and under `cogent_agent_failures_total{stage="chat_llm"|"chat_embed"}`.
+
+The chat client adds `cogent_chat_*` metrics:
+
+| Metric | Meaning |
+|---|---|
+| `cogent_chat_questions_total{outcome}` | `answered`, `not_found` (the context had no answer), `error`, `command` (slash commands, no model) |
+| `cogent_chat_question_duration_seconds` | time to answer one question (retrieval, table lookup, model) |
+| `cogent_chat_mcp_calls_total{tool,outcome}`, `cogent_chat_mcp_call_duration_seconds{tool}` | what the client asks of the MCP server (`ok`, `error`, `auth` = token rejected) |
+| `cogent_chat_table_lookups_total{outcome}` | `rows`, `no_match`, `error` |
+| `cogent_chat_index_chunks`, `cogent_chat_conversations` | size of the vector index, conversations held in memory |
+
+"Answered share" is `answered / (answered + not_found)`. It says how often the knowledge graphs covered the question, not whether the answer was right. The chat client is a long-running web process, so unlike the batch agent its metrics are live and are served by the process itself (below); they reset when it restarts, which Prometheus' `rate` / `increase` handle.
+
 ## 3. Scraping
 
-Pick one:
+The chat client is a third scrape target. Start it with `--metrics` and a token: `export COGENT_CHAT_METRICS_TOKEN=...; python src/kg_chat_app.py web --metrics ...`. `/metrics` is off without `--metrics`, needs `Authorization: Bearer` with that token, and the app refuses `--metrics` on a non-loopback address without one. In `prometheus.yml` the job `cogent-chat` (target `127.0.0.1:5000`) reads the token from `deploy/observability/prometheus/chat_token` (git-ignored; `touch` it if you do not run the chat client, because Docker would otherwise create a directory). Remove the job if you do not run the chat client; nothing else changes.
+
+Pick one for the agent and the server:
 
 1. **Scrape the MCP server** (default in `deploy/observability/prometheus/prometheus.yml`): start it with `--metrics`, create a token with `kg_mcp.py token create --name prometheus` and put it in `deploy/observability/prometheus/mcp_token` (git-ignored). Agent totals appear on the same target.
 2. **Textfile collector**: point node_exporter's `--collector.textfile.directory` at `<home>/metrics/` (it picks up `cogent_agent.prom`).
@@ -78,9 +104,9 @@ cp deploy/observability/env.example deploy/observability/.env       # set GRAFAN
 python3 src/kg_mcp.py --home kg_agent_home token create --name prometheus      # paste into deploy/observability/prometheus/mcp_token
 docker compose -f deploy/observability/docker-compose.observability.yml up -d
 ```
-Grafana is on http://127.0.0.1:3000 (user `admin`), Prometheus on http://127.0.0.1:9090. Both use the host network and listen on loopback only, because the MCP server does. The data source (uid `cogent-prometheus`) and the dashboard "cogent: agent and MCP server" (uid `cogent-observability`) are provisioned from files.
+Grafana is on http://127.0.0.1:3000 (user `admin`), Prometheus on http://127.0.0.1:9090. Both use the host network and listen on loopback only, because the MCP server does. The data source (uid `cogent-prometheus`) and the dashboard "cogent: agent, MCP server and chat client" (uid `cogent-observability`) are provisioned from files.
 
-`deploy/observability/grafana/dashboards/cogent-observability.json` is generated by `deploy/observability/grafana/build_dashboard.py` (edit the script, run `python3 build_dashboard.py > dashboards/cogent-observability.json` in that folder, commit both). Rows: last run (status, duration, tokens, cost, failure rate, alert state), latency p50/p95, tokens/cost/findings, LLM quality, failures and retries, MCP server.
+`deploy/observability/grafana/dashboards/cogent-observability.json` is generated by `deploy/observability/grafana/build_dashboard.py` (edit the script, run `python3 build_dashboard.py > dashboards/cogent-observability.json` in that folder, commit both). Rows: last run (status, duration, tokens, cost, failure rate, alert state), latency p50/p95, tokens/cost/findings, LLM quality, failures and retries, MCP server, **LLM usage by service** (agent, MCP server and chat client added together and apart) and **Conversational agent (kg_chat)** (questions, answered share, error rate, latency, MCP calls of the client, table lookups, its tokens and calls).
 
 **The alert** (`deploy/observability/prometheus/alerts.yml`), `CogentAgentFailureRateHigh`:
 
@@ -108,6 +134,7 @@ It needs the PostgreSQL server binaries and pgvector (like the test suite). It s
 ## Limits
 
 * The Prometheus, Grafana and promtool parts were run here against the demo traffic. The OTLP exporter was tested with the SDK's in-memory exporter and the console exporter, not against a real Jaeger, Tempo or collector. The Pushgateway push was tested against a stub HTTP server, not a real Pushgateway.
-* No Alertmanager or notification channel is configured.
+* No Alertmanager or notification channel is configured. The one alert covers the daily agent only; there is no alert for the chat client.
+* The new chat rows and the combined LLM panels were checked as JSON (every metric they query exists, the committed file is the output of `build_dashboard.py`) and by unit tests of the metric recording, but **not rendered in a running Grafana**; the screenshot above predates them. The chat client's `/metrics` was tested with the Flask test client, not scraped by a real Prometheus. `deploy/observability/demo/generate_traffic.py` does not generate chat traffic.
 * Hallucination and judge-agreement are proxies (see the definitions). Cost depends on prices you supply.
 * Metrics are per process for the MCP server; the agent's persisted totals are cumulative across runs until `<home>/metrics/` is deleted.

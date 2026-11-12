@@ -21,9 +21,9 @@ processing to a minimum: update detection is done by hard-coded parsers and trac
 * [The update agent](#the-update-agent) (`kg_agent.py`)
 * [Paywalled documents](#paywalled-documents-warnings) · [Version tracking](#version-tracking-in-the-configuration) · [OCR](#ocr-for-scanned-pdfs)
 * [Scheduling](#scheduling)
-* [MCP server](#mcp-server-serve-the-kgs-to-ai-agents) · [Combined graph](#combined-graph-which-reports-depend-on-which-standards) · [Table database](#table-database-design-values-from-the-tables-of-the-standards) · [Scaling out](#scaling-out)
+* [MCP server](#mcp-server-serve-the-kgs-to-ai-agents) · [Chat client](#chat-client-ask-questions-of-the-mcp-server) · [Combined graph](#combined-graph-which-reports-depend-on-which-standards) · [Table database](#table-database-design-values-from-the-tables-of-the-standards) · [Scaling out](#scaling-out)
 * [Environment variables](#environment-variables) · [Tests](#tests) · [Status and limits](#status-and-limits)
-* Further reading: [CHANGELOG.md](CHANGELOG.md) · [docs/mcp.md](docs/mcp.md) · [docs/tabledb.md](docs/tabledb.md) · [docs/scaling.md](docs/scaling.md) · [docs/scheduling.md](docs/scheduling.md) · [notes/MCP_Server.md](notes/MCP_Server.md)
+* Further reading: [CHANGELOG.md](CHANGELOG.md) · [docs/mcp.md](docs/mcp.md) · [docs/tabledb.md](docs/tabledb.md) · [docs/scaling.md](docs/scaling.md) · [docs/scheduling.md](docs/scheduling.md) · [docs/chat-client.md](docs/chat-client.md) · [notes/MCP_Server.md](notes/MCP_Server.md)
 
 ## Repository layout
 
@@ -55,10 +55,12 @@ src/kg_tableservice.py  MCP query front-end of the table database (preferences, 
 src/kg_sessions.py   session-preference stores: memory, sqlite, redis
 src/kg_oauth.py      OAuth 2.1 provider for claude.ai custom connectors
 src/kg_snapshot.py   publish / pull versioned bundles of the agent home for other MCP servers
-src/kg_telemetry.py  OpenTelemetry tracing helpers (optional) and the Prometheus metrics registry used by the agent and the MCP server
+src/kg_telemetry.py  OpenTelemetry tracing helpers (optional) and the Prometheus metrics registry used by the agent, the MCP server and the chat client
+src/kg_llm_usage.py  LangChain callback that reports Ollama calls (tokens, duration, outcome) as `cogent_llm_*` metrics
+src/kg_chat/         the chat client: LangChain + Ollama RAG over what the MCP server serves, token-authenticated MCP connection, Markdown tables, Flask UI (docs/chat-client.md); launcher `src/kg_chat_app.py`
 deploy/              systemd units (run timer, daemon, MCP server, tunnel), cron, Caddy, compose files for PostgreSQL + pgvector, tunnel scripts and examples
 deploy/observability/  Prometheus config + failure-rate alert (with promtool test), Grafana provisioning and dashboard JSON, compose file, demo traffic generator
-docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md · fetching.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
+docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md · fetching.md · chat-client.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
 tests/               one file per area (agent, ocr, daemon, mcp, tables, units, llm joins, scale-out, …) + mock_site.py (a local mock of the sources)
 requirements.txt     dependencies (optional ones are commented)      venv-setup.sh   uv-based virtualenv setup
 ```
@@ -449,6 +451,24 @@ python src/kg_mcp.py --home kg_agent_home serve --port 8765 --public-host kg.exa
   `deploy/named-tunnel.sh setup <hostname>` ([docs/scaling.md](docs/scaling.md)). Other options, Claude Code / API / Desktop instructions and the authentication notes:
   [docs/mcp.md](docs/mcp.md).
 
+## Chat client (ask questions of the MCP server)
+
+`src/kg_chat/` (launcher `src/kg_chat_app.py`) is a conversational front-end for the MCP server, adapted from the website Q&A agent in [NearIdentity/0xA6E07](https://github.com/NearIdentity/0xA6E07):
+the same LangChain + Ollama retrieval-augmented design, Pydantic-validated `AgentAnswer(answer, found_in_context)`, in-memory vector index and Flask UI, but the documents are the
+knowledge graphs and tables the server serves, over a **bearer-token authenticated MCP connection** (`--mcp-url https://host/mcp`, token in `$COGENT_MCP_TOKEN` or `--token-file`).
+
+```bash
+export COGENT_MCP_TOKEN=...                                      # a token from: python src/kg_mcp.py token create --name chat
+python src/kg_chat_app.py web  --mcp-url https://your-host/mcp   # http://127.0.0.1:5000
+python src/kg_chat_app.py chat --mcp-url https://your-host/mcp   # terminal
+```
+
+* **Same grounding as 0xA6E07:** answers only from retrieved excerpts, "not found" when the context lacks the answer, sources taken from retrieval metadata (never from the model; a citation that matches nothing retrieved is removed), page and table text treated as untrusted data, follow-ups rewritten first.
+* **Tables as Markdown:** table rows from the server (`lookup_values`, graph tables) are rendered in code from the original cell text, so the numbers on screen are the numbers in the document; the page renders Markdown with DOM calls only.
+* **The server's caveats are relayed by code:** not the latest edition, stale capture, open warnings, paywall and copyright notices.
+* **Monitoring:** its LLM calls are recorded as `cogent_llm_*{service="chat"}` next to the agent's and the server's, so the Grafana dashboard shows the three combined and apart ([docs/observability.md](docs/observability.md)).
+* The web app has no login and holds the token: it binds to 127.0.0.1. Details, options, limits and what was not verified (no live Ollama, no real table database): [docs/chat-client.md](docs/chat-client.md).
+
 ## Combined graph (which reports depend on which standards)
 
 The last stage of every run derives `<home>/staging/combined/{kg.json,dependents.json,meta.json}` from the per-entry graphs and
@@ -491,7 +511,7 @@ named Cloudflare tunnel: `deploy/named-tunnel.sh setup <hostname>`, with systemd
 
 ## Observability
 
-The agent and the MCP server emit OpenTelemetry traces (agent steps, LLM calls, fetches, MCP tools) and Prometheus metrics: latency p50/p95, tokens and cost per run, auto-applied versus human-reviewed findings,
+The agent, the MCP server and the chat client emit OpenTelemetry traces (agent steps, LLM calls, fetches, MCP tools) and Prometheus metrics: latency p50/p95, tokens and cost per run (**LLM usage of the three added together and split by service**), auto-applied versus human-reviewed findings,
 judge agreement, hallucination rate, failures and retries. `deploy/observability/` holds the Prometheus config, one alert (`CogentAgentFailureRateHigh`), and a Grafana dashboard (JSON below, screenshot at
 `docs/img/grafana-dashboard.png`). Quick start: `kg_mcp.py serve --metrics`, a token for Prometheus in `deploy/observability/prometheus/mcp_token`, a password in `deploy/observability/.env`, then `docker compose -f deploy/observability/docker-compose.observability.yml up -d`; tracing needs
 `pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http` and `--otlp-endpoint`. Definitions (the hallucination rate is a heuristic), scrape options and limits: [docs/observability.md](docs/observability.md). A demo with a public Cloudflare address and the dashboard: [notes/LiveDemo.md](notes/LiveDemo.md), step 8.
@@ -513,7 +533,9 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | `COGENT_HOME`, `COGENT_STANDARDS`, `COGENT_REPORTS` | defaults of `--home`, `--standards`, `--reports` of the MCP server and snapshot tool |
 | `COGENT_TABLEDB_DSN` | PostgreSQL DSN of the table database (the owner login for the agent, the read-only login for the MCP server) |
 | `COGENT_EMBEDDER`, `COGENT_EMBED_MODEL`, `COGENT_LLM_MODEL` | embedder (`ollama` / `hash`), its model, and the Ollama chat model for join inference |
-| `COGENT_MCP_TOKEN` | one extra static access token for the MCP server |
+| `COGENT_MCP_TOKEN` | MCP server: one extra static access token. Chat client: the bearer token it presents to the server (the same value works for both on one machine) |
+| `COGENT_MCP_URL`, `COGENT_CHAT_METRICS_TOKEN` | chat client: the MCP endpoint (same as `--mcp-url`); the bearer token that `/metrics` of the chat web app requires (`--metrics`) |
+| `CHAT_MODEL`, `EMBED_MODEL`, `OLLAMA_URL` | chat client: defaults of `--model`, `--embed-model`, `--ollama-url` |
 | `COGENT_WORKERS`, `COGENT_GRAPH_CACHE`, `COGENT_SESSION_STORE`, `COGENT_RATE_LIMIT` | defaults of the scale-out flags (`--workers`, `--graph-cache`, `--session-store`, `--rate-limit`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/HTTP endpoint for traces (same as `--otlp-endpoint`) and service name (needs the OpenTelemetry SDK; without it tracing is off) |
 | `COGENT_PUSHGATEWAY` | Prometheus Pushgateway URL the agent pushes its run metrics to (same as `--pushgateway`) |
@@ -523,9 +545,10 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (393 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (439 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
+* `test_chat_render.py`, `test_chat_agent.py`, `test_chat_mcp.py`, `test_chat_web.py`, `test_chat_telemetry.py` cover the chat client (rendering of every table shape, grounding with fake models, a real MCP server over HTTP with token authentication, the Flask app, the page in headless Chromium, LLM-usage metrics and dashboard consistency); no Ollama is needed.
 * `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
   `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;

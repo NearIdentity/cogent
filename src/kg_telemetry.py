@@ -69,6 +69,14 @@ SCHEMA: dict[str, tuple[str, str, Optional[tuple]]] = {
     "cogent_join_judge_verdicts_total": ("counter", "Judge verdicts (accept | reject | uncertain).", None),
     "cogent_join_llm_vs_deterministic_total": ("counter", "Join candidates by who proposed them: both | llm_only | deterministic_only.", None),
     "cogent_join_judge_agreement_ratio": ("gauge", "Share of judged candidates with unanimous votes, last run.", None),
+    # --- conversational agent (kg_chat): the LLM calls it makes use the cogent_llm_* metrics above with service="chat"
+    "cogent_chat_questions_total": ("counter", "Questions asked of the conversational agent by outcome: answered | not_found (the context had no answer) | error | command.", None),
+    "cogent_chat_question_duration_seconds": ("histogram", "Time to answer one question (retrieval, table lookup, LLM).", OP_BUCKETS),
+    "cogent_chat_mcp_calls_total": ("counter", "MCP calls made by the conversational agent by tool and outcome (ok | error | auth).", None),
+    "cogent_chat_mcp_call_duration_seconds": ("histogram", "Latency of the MCP calls made by the conversational agent.", OP_BUCKETS),
+    "cogent_chat_table_lookups_total": ("counter", "Table lookups (lookup_values) of the conversational agent by outcome: rows | no_match | error.", None),
+    "cogent_chat_index_chunks": ("gauge", "Text chunks in the conversational agent's vector index.", None),
+    "cogent_chat_conversations": ("gauge", "Conversations currently held in memory by the chat web app.", None),
     # --- MCP server
     "cogent_mcp_tool_calls_total": ("counter", "MCP tool calls by tool and outcome (ok | not_found | error).", None),
     "cogent_mcp_tool_duration_seconds": ("histogram", "MCP tool latency.", OP_BUCKETS),
@@ -500,6 +508,37 @@ def record_judge(unanimous: bool, verdict: str, proposed_by: str) -> None:
     m.inc("cogent_join_judge_candidates_total", agreement="unanimous" if unanimous else "split")
     m.inc("cogent_join_judge_verdicts_total", verdict=verdict)
     m.inc("cogent_join_llm_vs_deterministic_total", result=proposed_by)
+
+
+@safe
+def record_chat_question(outcome: str, seconds: float) -> None:
+    """outcome: answered | not_found | error | command."""
+    m = metrics()
+    m.inc("cogent_chat_questions_total", outcome=outcome)
+    m.observe("cogent_chat_question_duration_seconds", seconds)
+
+
+@safe
+def record_chat_mcp(tool: str, outcome: str, seconds: float) -> None:
+    """One MCP call of the conversational agent; outcome: ok | error | auth."""
+    m = metrics()
+    m.inc("cogent_chat_mcp_calls_total", tool=tool, outcome=outcome)
+    m.observe("cogent_chat_mcp_call_duration_seconds", seconds, tool=tool)
+
+
+@safe
+def record_chat_lookup(outcome: str) -> None:
+    """outcome: rows | no_match | error."""
+    metrics().inc("cogent_chat_table_lookups_total", outcome=outcome)
+
+
+@safe
+def set_chat_gauges(chunks: Optional[int] = None, conversations: Optional[int] = None) -> None:
+    m = metrics()
+    if chunks is not None:
+        m.set("cogent_chat_index_chunks", float(chunks))
+    if conversations is not None:
+        m.set("cogent_chat_conversations", float(conversations))
 
 
 @safe

@@ -1,10 +1,11 @@
 {
   "uid": "cogent-observability",
-  "title": "cogent: agent and MCP server",
+  "title": "cogent: agent, MCP server and chat client",
   "tags": [
     "cogent",
     "mcp",
-    "agent"
+    "agent",
+    "chat"
   ],
   "timezone": "browser",
   "editable": true,
@@ -756,7 +757,7 @@
       "id": 14,
       "type": "timeseries",
       "title": "Tokens (cumulative)",
-      "description": "Chat and embedding tokens from agent and server (Ollama's prompt_eval_count / eval_count).",
+      "description": "Chat and embedding tokens from the daily agent, the MCP server and the chat client together (Ollama's prompt_eval_count / eval_count). The breakdown by service is in the row \"LLM usage by service\" below.",
       "datasource": {
         "type": "prometheus",
         "uid": "cogent-prometheus"
@@ -1593,7 +1594,1048 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "LLM usage by service: daily agent, MCP server, chat client",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Tokens by service (cumulative)",
+      "description": "The same counters as the token panel above, split by the `service` label: agent (daily update run, incl. LLM joins), mcp (the server's own LLM calls: question embeddings, on-request join evaluation) and chat (the conversational agent). The three added together are the first panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (service, direction) (cogent_llm_tokens_total)",
+          "legendFormat": "{{service}} {{direction}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "LLM calls per minute, by service and kind",
+      "description": "Chat, rewrite, embed, suggest, judge ... calls of every component.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 48,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (service, kind) (rate(cogent_llm_calls_total[5m])) * 60",
+          "legendFormat": "{{service}} {{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "bargauge",
+      "title": "Tokens in the last 24 h, by service",
+      "description": "Input plus output tokens each component used in the last 24 hours.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 48,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "round(sum by (service) (increase(cogent_llm_tokens_total[24h])))",
+          "instant": true,
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "minVizHeight": 10,
+        "minVizWidth": 0
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "LLM call latency p95, by service and kind",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, service, kind) (rate(cogent_llm_call_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} {{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "LLM tokens, 24 h (all services)",
+      "description": "Agent + MCP server + chat client.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_llm_tokens_total[24h]))",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "LLM cost, 24 h (all services)",
+      "description": "Zero unless COGENT_LLM_PRICES prices the models (local Ollama models are free).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 56,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_llm_cost_usd_total[24h]))",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 4,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 37,
+      "type": "row",
+      "title": "Conversational agent (kg_chat)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Questions, 24 h",
+      "description": "Questions put to the chat client (slash commands excluded).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_chat_questions_total{outcome!=\"command\"}[24h]))",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 39,
+      "type": "gauge",
+      "title": "Answered share, 24 h",
+      "description": "Questions whose answer was found in the context / questions that reached the model. A low share means the knowledge graphs do not cover what is asked (or retrieval misses it); it is not an accuracy figure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 64,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_chat_questions_total{outcome=\"answered\"}[24h])) / clamp_min(sum(increase(cogent_chat_questions_total{outcome=~\"answered|not_found\"}[24h])), 1)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "Error rate, 24 h",
+      "description": "Questions that failed (model server or MCP server unreachable, token rejected).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 64,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum(increase(cogent_chat_questions_total{outcome=\"error\"}[24h])) / clamp_min(sum(increase(cogent_chat_questions_total{outcome!=\"command\"}[24h])), 1)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "Index chunks",
+      "description": "Text chunks in the chat client's vector index.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 13,
+        "y": 64,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "max(cogent_chat_index_chunks)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Conversations",
+      "description": "Conversations held in memory by the web app.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 64,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "max(cogent_chat_conversations)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 43,
+      "type": "piechart",
+      "title": "Table lookups, 24 h",
+      "description": "rows: the table database returned rows; no_match: no row mentions what was asked; error: the table service was unavailable.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 64,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (outcome) (increase(cogent_chat_table_lookups_total[24h]))",
+          "instant": true,
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut",
+        "displayLabels": [
+          "value"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Questions by outcome",
+      "description": "answered, not_found (the context had no answer), error, command.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (outcome) (increase(cogent_chat_questions_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Question latency (p50 / p95)",
+      "description": "Retrieval, table lookup and the language model.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 68,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(cogent_chat_question_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cogent_chat_question_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "MCP calls of the chat client, by tool",
+      "description": "What the chat client asks of the MCP server (the server's own view is the row above).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 68,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (tool, outcome) (rate(cogent_chat_mcp_calls_total[1m]))",
+          "legendFormat": "{{tool}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "Chat client tokens by model",
+      "description": "Chat model and embedding model of the conversational agent only.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 75,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (model, direction) (cogent_llm_tokens_total{service=\"chat\"})",
+          "legendFormat": "{{model}} {{direction}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 48,
+      "type": "timeseries",
+      "title": "Chat client LLM calls by outcome",
+      "description": "answer, rewrite and embed calls of the chat client; error = the model server failed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 75,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (kind, outcome) (increase(cogent_llm_calls_total{service=\"chat\"}[5m]))",
+          "legendFormat": "{{kind}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
-  "description": "Per-run and live metrics of the cogent update agent and MCP server. Source: docs/observability.md."
+  "description": "Per-run and live metrics of the cogent update agent, the MCP server and the chat client, with the LLM usage of all three. Source: docs/observability.md."
 }
