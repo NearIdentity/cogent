@@ -19,6 +19,7 @@ except ImportError:
 import kg_telemetry as telemetry
 
 from .agent import CogentAgent
+from .auth import AuthConfigError, Credentials, hash_password
 from .mcp_conn import McpConnection, McpError
 from .models import ChatReply, ClientConfig
 from .source import KnowledgeSource
@@ -120,19 +121,45 @@ def do_chat(a: argparse.Namespace) -> None:
 
 def do_web(a: argparse.Namespace) -> None:
     from .web import _is_loopback, create_app
-    if not _is_loopback(a.host) and not a.allow_remote:
-        raise SystemExit("Error: this app has no login and holds the MCP token: it binds to 127.0.0.1 only. "
-                         f"Use --allow-remote to serve on {a.host} (put authentication in front of it).")
+    loopback = _is_loopback(a.host)
+    if not loopback and not a.allow_remote:
+        raise SystemExit(f"Error: the app binds to 127.0.0.1 only. Use --allow-remote to serve on {a.host} (it asks for a login; put HTTPS in front of it).")
+    if a.no_login and not loopback:
+        raise SystemExit("Error: --no-login is only allowed on 127.0.0.1: without a login anyone who can reach the app can read what the MCP token can read.")
+    creds: Optional[Credentials] = None
+    if a.no_login:
+        print("WARNING: login is switched off (--no-login); only you on this machine can reach the app.", file=sys.stderr)
+    else:
+        try:
+            creds = Credentials.from_env_file(a.env_file)
+        except AuthConfigError as exc:
+            raise SystemExit(f"Error: {exc}")
+        for w in creds.warnings:
+            print(f"WARNING: {w}", file=sys.stderr)
+        if not loopback and not a.secure_cookie:
+            print("WARNING: serving a login over plain http to other machines sends the password in clear text; put HTTPS in front and add --secure-cookie.", file=sys.stderr)
     mtoken = os.environ.get("COGENT_CHAT_METRICS_TOKEN", "").strip() or None
-    if a.metrics and not mtoken and not _is_loopback(a.host):
+    if a.metrics and not mtoken and not loopback:
         raise SystemExit("Error: --metrics on a non-loopback address needs $COGENT_CHAT_METRICS_TOKEN.")
     cfg = build_config(a)
     telemetry.init("cogent-chat", a.otlp_endpoint)
     agent = build_agent(cfg)
     disclaimer = " ".join(agent.source.general_disclaimers()[:1])
-    app = create_app(agent, title=cfg.mcp_url.split("//", 1)[-1].split("/", 1)[0], disclaimer=disclaimer, metrics=a.metrics, metrics_token=mtoken)
-    print(f"Ready: {len(agent.chunks)} chunks indexed. Serving on http://{a.host}:{a.port}" + ("  (metrics on /metrics)" if a.metrics else ""))
+    app = create_app(agent, title=cfg.mcp_url.split("//", 1)[-1].split("/", 1)[0], disclaimer=disclaimer, metrics=a.metrics, metrics_token=mtoken,
+                     credentials=creds, session_hours=a.session_hours, secure_cookie=a.secure_cookie)
+    print(f"Ready: {len(agent.chunks)} chunks indexed. Serving on http://{a.host}:{a.port}" + ("  (login required)" if creds else "") + ("  (metrics on /metrics)" if a.metrics else ""))
     app.run(host=a.host, port=a.port, threaded=True)
+
+
+def do_hash_password(a: argparse.Namespace) -> None:
+    import getpass
+    pw = getpass.getpass("Password: ")
+    if pw != getpass.getpass("Again: "):
+        raise SystemExit("Error: the two entries differ.")
+    if not pw:
+        raise SystemExit("Error: empty password.")
+    print("CHAT_PASSWORD_HASH=" + hash_password(pw))
+    print("(put this line in your .env instead of CHAT_PASSWORD)", file=sys.stderr)
 
 
 def main(argv: Optional[list[str]] = None) -> None:
@@ -144,12 +171,18 @@ def main(argv: Optional[list[str]] = None) -> None:
     add_common(w)
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=5000)
-    w.add_argument("--allow-remote", action="store_true", help="serve on a non-loopback address (the app has no login)")
+    w.add_argument("--allow-remote", action="store_true", help="serve on a non-loopback address (needs the login; put HTTPS in front)")
+    w.add_argument("--env-file", type=Path, default=Path(".env"), help="file with CHAT_USERNAME and CHAT_PASSWORD (or CHAT_PASSWORD_HASH); default ./.env, git-ignored")
+    w.add_argument("--no-login", action="store_true", help="no login (127.0.0.1 only)")
+    w.add_argument("--secure-cookie", action="store_true", help="send the session cookie only over HTTPS (use behind an HTTPS proxy)")
+    w.add_argument("--session-hours", type=float, default=12.0, help="how long a login lasts")
     w.add_argument("--metrics", action="store_true", help="serve Prometheus metrics on /metrics (token: $COGENT_CHAT_METRICS_TOKEN)")
+    h = sub.add_parser("hash-password", help="make a CHAT_PASSWORD_HASH line for the .env file")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    telemetry.init("cogent-chat", getattr(a, "otlp_endpoint", None))
-    {"chat": do_chat, "web": do_web}[a.command](a)
+    if a.command != "hash-password":
+        telemetry.init("cogent-chat", getattr(a, "otlp_endpoint", None))
+    {"chat": do_chat, "web": do_web, "hash-password": do_hash_password}[a.command](a)
 
 
 if __name__ == "__main__":

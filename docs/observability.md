@@ -82,6 +82,7 @@ The chat client adds `cogent_chat_*` metrics:
 | `cogent_chat_questions_total{outcome}` | `answered`, `not_found` (the context had no answer), `error`, `command` (slash commands, no model) |
 | `cogent_chat_question_duration_seconds` | time to answer one question (retrieval, table lookup, model) |
 | `cogent_chat_mcp_calls_total{tool,outcome}`, `cogent_chat_mcp_call_duration_seconds{tool}` | what the client asks of the MCP server (`ok`, `error`, `auth` = token rejected) |
+| `cogent_chat_logins_total{outcome}` | login attempts of the web app: `ok`, `failed`, `locked` (refused during a lock-out); a run of `failed` / `locked` is someone guessing the password |
 | `cogent_chat_table_lookups_total{outcome}` | `rows`, `no_match`, `error` |
 | `cogent_chat_index_chunks`, `cogent_chat_conversations` | size of the vector index, conversations held in memory |
 

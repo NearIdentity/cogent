@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cogent chat: sign in</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1f24; --muted:#59636e; --line:#d0d7de; --card:#f6f8fa; --err:#cf222e; --accent:#0969da; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --card:#161b22; --err:#ff7b72; --accent:#58a6ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }
+  form { width:min(360px,100%); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; } p { margin:0 0 16px; color:var(--muted); font-size:13px; }
+  label { display:block; font-size:13px; margin:12px 0 4px; }
+  input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  button { margin-top:18px; width:100%; font:inherit; padding:8px; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; }
+  .err { color:var(--err); font-size:13px; margin-top:12px; min-height:1.2em; }
+</style>
+</head>
+<body>
+<form method="post" action="/login" autocomplete="on">
+  <h1>cogent chat</h1><p>{{ title }}</p>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="username">Username</label><input id="username" name="username" autocomplete="username" required autofocus maxlength="200">
+  <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="500">
+  <div class="err" role="alert">{{ error }}</div>
+  <button type="submit">Sign in</button>
+</form>
+</body>
+</html>

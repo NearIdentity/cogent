@@ -8,24 +8,30 @@ Design (as in 0xA6E07):
   * browser <-> server traffic is JSON; the page is templates/index.html. Answers and tables arrive as Markdown and are rendered by the page
     with DOM calls only (never as HTML), because they derive from untrusted documents.
 
-The MCP token stays on the server. The app has no login of its own, so it binds to 127.0.0.1 and refuses another address unless you say
-``--allow-remote``: anyone who can reach this app can read what the token can read.
+The MCP token stays on the server. The app asks for a login (one user, credentials in a git-ignored ``.env``, see auth.py) because anyone who
+can reach it can read what the token can read; it binds to 127.0.0.1 and refuses another address unless you say ``--allow-remote``.
+Serve it over HTTPS when it is reachable from other machines: a password sent over plain HTTP can be read on the way.
 """
 from __future__ import annotations
 
 import copy
 import hmac
+import logging
 import os
 import secrets
 import threading
+import time
 from collections import OrderedDict
+from datetime import timedelta
 from typing import Optional
 
-from flask import Flask, Response, jsonify, render_template, request, session
+from flask import Flask, Response, jsonify, redirect, render_template, request, session
 
 import kg_telemetry as telemetry
 
+from . import auth as authmod
 from .agent import CogentAgent
+from .auth import Credentials, LoginThrottle
 from .mcp_conn import McpAuthError, McpError
 
 MAX_MESSAGE_CHARS = 2000   # reject absurdly long questions
@@ -62,16 +68,93 @@ def _is_loopback(host: str) -> bool:
     return host in ("127.0.0.1", "localhost", "::1")
 
 
-def create_app(agent: CogentAgent, title: str = "", disclaimer: str = "", metrics: bool = False, metrics_token: Optional[str] = None) -> Flask:
+def create_app(agent: CogentAgent, title: str = "", disclaimer: str = "", metrics: bool = False, metrics_token: Optional[str] = None,
+               credentials: Optional[Credentials] = None, session_hours: float = 12.0, secure_cookie: bool = False,
+               throttle: Optional[LoginThrottle] = None) -> Flask:
     """Build the Flask app around an already-indexed agent (injectable for tests).
 
+    ``credentials``: require this login for the page and the API (``None`` = no login: only for tests and ``--no-login`` on loopback).
     ``metrics``: serve the Prometheus text of this process on ``/metrics`` (the chat client's LLM usage, questions, MCP calls). It needs
-    ``Authorization: Bearer <metrics_token>`` when a token is given."""
+    ``Authorization: Bearer <metrics_token>`` when a token is given; it is not behind the login (Prometheus cannot log in)."""
     app = Flask(__name__)
-    # Signs the session cookie. Set FLASK_SECRET_KEY to keep sessions valid across restarts.
-    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+    # Signs the session cookie. FLASK_SECRET_KEY (environment or the .env file) keeps sessions valid across restarts.
+    app.config["SECRET_KEY"] = (credentials.secret_key if credentials and credentials.secret_key else "") or os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SECURE"] = bool(secure_cookie)
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=session_hours)
     store = ConversationStore(agent)
+    throttle = throttle or LoginThrottle()
+    log = logging.getLogger("kg_chat.web")
+    OPEN_PATHS = ("/login", "/healthz", "/metrics", "/static")
+
+    def logged_in() -> bool:
+        return credentials is None or session.get("user") == credentials.username
+
+    @app.before_request
+    def require_login():
+        if credentials is None or request.path.startswith(OPEN_PATHS) or logged_in():
+            return None
+        if request.path.startswith("/api/"):
+            return jsonify(error="login required"), 401
+        return redirect("/login")
+
+    @app.after_request
+    def headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        if not request.path.startswith("/metrics"):
+            resp.headers.setdefault("Cache-Control", "no-store")
+        return resp
+
+    def csrf_token() -> str:
+        if "csrf" not in session:
+            session["csrf"] = secrets.token_hex(16)
+        return session["csrf"]
+
+    def csrf_ok(given: str) -> bool:
+        return bool(given) and hmac.compare_digest(given.encode(), str(session.get("csrf", "")).encode())
+
+    if credentials is not None:
+        @app.route("/login", methods=["GET", "POST"])
+        def login():
+            if request.method == "GET":
+                if logged_in():
+                    return redirect("/")
+                return render_template("login.html", csrf=csrf_token(), error="", title=title)
+            if not csrf_ok(request.form.get("csrf", "")):
+                return render_template("login.html", csrf=csrf_token(), error="The form expired. Try again.", title=title), 400
+            key = request.remote_addr or "?"
+            wait = throttle.wait(key)
+            if wait > 0:
+                authmod.record("locked")
+                resp = render_template("login.html", csrf=csrf_token(), error=f"Too many failed attempts. Wait {int(wait) + 1} seconds.", title=title)
+                return Response(resp, 429, headers={"Retry-After": str(int(wait) + 1)})
+            if credentials.verify(request.form.get("username", ""), request.form.get("password", "")):
+                throttle.succeeded(key)
+                authmod.record("ok")
+                session.clear()                                  # a new session on login: no fixation, a fresh CSRF token
+                session["user"] = credentials.username
+                session.permanent = True
+                csrf_token()
+                log.info("login ok from %s", key)
+                return redirect("/")
+            throttle.failed(key)
+            authmod.record("failed")
+            log.warning("login failed from %s", key)
+            time.sleep(0.2)                                      # a small fixed cost per guess
+            return render_template("login.html", csrf=csrf_token(), error="Invalid username or password.", title=title), 401
+
+        @app.post("/logout")
+        def logout():
+            if not csrf_ok(request.form.get("csrf", "")):
+                return jsonify(error="bad request"), 400
+            sid = session.get("sid")
+            if sid:
+                store.reset(sid)
+            session.clear()
+            return redirect("/login")
 
     def current_sid() -> str:
         if "sid" not in session:
@@ -81,7 +164,8 @@ def create_app(agent: CogentAgent, title: str = "", disclaimer: str = "", metric
     @app.get("/")
     def index():
         current_sid()
-        return render_template("index.html", title=title, chunks=len(agent.chunks), disclaimer=disclaimer, tables=agent.source.has_tables)
+        return render_template("index.html", title=title, chunks=len(agent.chunks), disclaimer=disclaimer, tables=agent.source.has_tables,
+                               user=session.get("user") if credentials else "", csrf=csrf_token() if credentials else "")
 
     @app.get("/healthz")
     def healthz():
@@ -118,6 +202,8 @@ def create_app(agent: CogentAgent, title: str = "", disclaimer: str = "", metric
 
     @app.post("/api/reset")
     def reset():
+        if not isinstance(request.get_json(silent=True), dict):          # JSON only, like /api/chat (a cross-site form post cannot send it)
+            return jsonify(error='Send JSON like {}.'), 400
         store.reset(current_sid())
         return jsonify(ok=True)
 

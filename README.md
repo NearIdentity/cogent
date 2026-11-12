@@ -467,7 +467,7 @@ python src/kg_chat_app.py chat --mcp-url https://your-host/mcp   # terminal
 * **Tables as Markdown:** table rows from the server (`lookup_values`, graph tables) are rendered in code from the original cell text, so the numbers on screen are the numbers in the document; the page renders Markdown with DOM calls only.
 * **The server's caveats are relayed by code:** not the latest edition, stale capture, open warnings, paywall and copyright notices.
 * **Monitoring:** its LLM calls are recorded as `cogent_llm_*{service="chat"}` next to the agent's and the server's, so the Grafana dashboard shows the three combined and apart ([docs/observability.md](docs/observability.md)).
-* The web app has no login and holds the token: it binds to 127.0.0.1. Details, options, limits and what was not verified (no live Ollama, no real table database): [docs/chat-client.md](docs/chat-client.md).
+* **Login:** the web app holds the MCP token, so it asks for a login: one user from a git-ignored `.env` (`CHAT_USERNAME`, `CHAT_PASSWORD` or `CHAT_PASSWORD_HASH`; template `.env.example`), session cookie, CSRF-protected forms, lock-out after repeated failures; it binds to 127.0.0.1 unless `--allow-remote` (then use HTTPS). Details, options, limits and what was not verified (no live Ollama, no real table database): [docs/chat-client.md](docs/chat-client.md).
 
 ## Combined graph (which reports depend on which standards)
 
@@ -536,6 +536,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | `COGENT_MCP_TOKEN` | MCP server: one extra static access token. Chat client: the bearer token it presents to the server (the same value works for both on one machine) |
 | `COGENT_MCP_URL`, `COGENT_CHAT_METRICS_TOKEN` | chat client: the MCP endpoint (same as `--mcp-url`); the bearer token that `/metrics` of the chat web app requires (`--metrics`) |
 | `CHAT_MODEL`, `EMBED_MODEL`, `OLLAMA_URL` | chat client: defaults of `--model`, `--embed-model`, `--ollama-url` |
+| `CHAT_USERNAME`, `CHAT_PASSWORD` / `CHAT_PASSWORD_HASH`, `FLASK_SECRET_KEY` | chat web app login: read from the git-ignored `.env` file (`--env-file`), not from the environment (template: `.env.example`) |
 | `COGENT_WORKERS`, `COGENT_GRAPH_CACHE`, `COGENT_SESSION_STORE`, `COGENT_RATE_LIMIT` | defaults of the scale-out flags (`--workers`, `--graph-cache`, `--session-store`, `--rate-limit`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | OTLP/HTTP endpoint for traces (same as `--otlp-endpoint`) and service name (needs the OpenTelemetry SDK; without it tracing is off) |
 | `COGENT_PUSHGATEWAY` | Prometheus Pushgateway URL the agent pushes its run metrics to (same as `--pushgateway`) |
@@ -545,10 +546,10 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (439 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (455 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
-* `test_chat_render.py`, `test_chat_agent.py`, `test_chat_mcp.py`, `test_chat_web.py`, `test_chat_telemetry.py` cover the chat client (rendering of every table shape, grounding with fake models, a real MCP server over HTTP with token authentication, the Flask app, the page in headless Chromium, LLM-usage metrics and dashboard consistency); no Ollama is needed.
+* `test_chat_render.py`, `test_chat_agent.py`, `test_chat_mcp.py`, `test_chat_web.py`, `test_chat_auth.py`, `test_chat_telemetry.py` cover the chat client (rendering of every table shape, grounding with fake models, a real MCP server over HTTP with token authentication, the Flask app, the login in a real browser, LLM-usage metrics and dashboard consistency); no Ollama is needed.
 * `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
   `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;

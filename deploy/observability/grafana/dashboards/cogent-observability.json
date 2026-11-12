@@ -2635,6 +2635,63 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 49,
+      "type": "timeseries",
+      "title": "Chat logins by outcome",
+      "description": "Login attempts of the chat web app: ok, failed, locked (refused while the address is locked out). A run of failed or locked attempts is someone guessing the password.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (outcome) (increase(cogent_chat_logins_total[15m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "description": "Per-run and live metrics of the cogent update agent, the MCP server and the chat client, with the LLM usage of all three. Source: docs/observability.md."

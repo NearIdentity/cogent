@@ -70,7 +70,8 @@ def test_history_is_per_session_and_resettable():
     a.post("/api/chat", json={"message": "and for concrete?"})
     assert agent.history == []                                                   # the shared base agent is never mutated
     assert b.post("/api/chat", json={"message": "damping"}).status_code == 200
-    assert a.post("/api/reset").get_json() == {"ok": True}
+    assert a.post("/api/reset", json={}).get_json() == {"ok": True}
+    assert a.post("/api/reset", data="x=1", content_type="application/x-www-form-urlencoded").status_code == 400
 
 
 def test_failures_return_502_without_details():
@@ -129,13 +130,15 @@ def test_url_validation_and_token_sources(tmp_path, monkeypatch):
         cli.read_token(tmp_path / "missing")
 
 
-def test_web_refuses_a_remote_bind_without_the_flag(monkeypatch):
+def test_web_refuses_a_remote_bind_without_the_flag(monkeypatch, tmp_path):
     monkeypatch.setenv("COGENT_MCP_TOKEN", "x")
+    env = tmp_path / ".env"
+    env.write_text("CHAT_USERNAME=u\nCHAT_PASSWORD=a-long-enough-passphrase\n")
     with pytest.raises(SystemExit) as e:
-        cli.main(["web", "--mcp-url", "https://h/mcp", "--host", "0.0.0.0"])
+        cli.main(["web", "--mcp-url", "https://h/mcp", "--host", "0.0.0.0", "--env-file", str(env)])
     assert "--allow-remote" in str(e.value)
     with pytest.raises(SystemExit) as e2:
-        cli.main(["web", "--mcp-url", "https://h/mcp", "--host", "0.0.0.0", "--allow-remote", "--metrics"])
+        cli.main(["web", "--mcp-url", "https://h/mcp", "--host", "0.0.0.0", "--allow-remote", "--metrics", "--env-file", str(env)])
     assert "COGENT_CHAT_METRICS_TOKEN" in str(e2.value)
 
 

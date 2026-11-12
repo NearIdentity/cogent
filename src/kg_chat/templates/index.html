@@ -31,7 +31,7 @@
 </style>
 </head>
 <body>
-<header><h1>cogent chat</h1><span>{{ title }} &middot; {{ chunks }} chunks indexed{% if tables %} &middot; table search on{% endif %}</span><button id="reset" type="button">New conversation</button></header>
+<header><h1>cogent chat</h1><span>{{ title }} &middot; {{ chunks }} chunks indexed{% if tables %} &middot; table search on{% endif %}</span><button id="reset" type="button">New conversation</button>{% if user %}<form method="post" action="/logout" style="display:inline;padding:0;border:0"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" title="Signed in as {{ user }}">Sign out</button></form>{% endif %}</header>
 <div id="log" aria-live="polite"></div>
 <form id="form"><textarea id="q" rows="1" maxlength="2000" placeholder="Ask about the standards and reports, or type /help" autofocus></textarea><button id="send" type="submit">Send</button></form>
 <footer>{{ disclaimer }}</footer>
@@ -111,13 +111,14 @@ function show(reply) {
 async function ask(text) {
   add("user").textContent = text; send.disabled = true; const wait = add("bot"); wait.textContent = "…";
   try { const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+        if (r.status === 401) { location.href = "/login"; return; }
         const body = await r.json(); wait.remove(); if (!r.ok) { add("bot").textContent = body.error || "Request failed."; } else show(body); }
   catch (e) { wait.remove(); add("bot").textContent = "Could not reach the app."; }
   send.disabled = false; q.focus();
 }
 document.getElementById("form").addEventListener("submit", e => { e.preventDefault(); const t = q.value.trim(); if (t) { q.value = ""; ask(t); } });
 q.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("form").requestSubmit(); } });
-document.getElementById("reset").addEventListener("click", async () => { await fetch("/api/reset", { method: "POST" }); log.textContent = ""; q.focus(); });
+document.getElementById("reset").addEventListener("click", async () => { await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); log.textContent = ""; q.focus(); });
 </script>
 </body>
 </html>

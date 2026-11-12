@@ -192,6 +192,9 @@ timeseries("Chat client LLM calls by outcome", 12, 75, 12, 7,
            [{"expr": 'sum by (kind, outcome) (increase(cogent_llm_calls_total{service="chat"}[5m]))', "legendFormat": "{{kind}} {{outcome}}"}],
            draw="bars", stack=True, fill=70, description="answer, rewrite and embed calls of the chat client; error = the model server failed.")
 
+timeseries("Chat logins by outcome", 0, 82, 12, 7, [{"expr": "sum by (outcome) (increase(cogent_chat_logins_total[15m]))", "legendFormat": "{{outcome}}"}],
+           draw="bars", stack=True, fill=70, description="Login attempts of the chat web app: ok, failed, locked (refused while the address is locked out). A run of failed or locked attempts is someone guessing the password.")
+
 dash = {"uid": "cogent-observability", "title": "cogent: agent, MCP server and chat client", "tags": ["cogent", "mcp", "agent", "chat"], "timezone": "browser", "editable": True,
         "graphTooltip": 1, "schemaVersion": 39, "version": 1, "refresh": "10s", "time": {"from": "now-30m", "to": "now"},
         "templating": {"list": []}, "annotations": {"list": []}, "links": [], "panels": panels,
