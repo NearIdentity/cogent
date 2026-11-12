@@ -51,6 +51,7 @@ import networkx as nx
 from bs4 import BeautifulSoup, Tag
 from langgraph.graph import END, StateGraph
 
+import kg_hosts
 import kg_layout as _kg_layout
 from kg_models import EXTRACTION_RECIPE
 import kg_predicates as _pred
@@ -120,8 +121,9 @@ def is_url(src: str) -> bool:
     return urlparse(src).scheme in ("http", "https")
 
 
-# Many sites (e.g. nrc.gov, behind a CDN/WAF) answer 403 to non-browser clients,
-# so URLs are fetched with a headless browser (Playwright/Chromium) by default.
+# Some sites (e.g. nrc.gov, behind a CDN/WAF) answer 403 to non-browser clients. The agent
+# does not disguise itself: it identifies honestly (kg_hosts.user_agent), a 403 puts the host in a
+# cooldown, and a browser is used only for a direct ingest call in "browser"/"auto" mode.
 # $KG_FETCH (or ``set_fetch_mode``) selects the strategy:
 #   "browser" (default): headless Chromium; falls back to plain HTTP with a
 #                        warning if Playwright/Chromium isn't installed
@@ -129,9 +131,13 @@ def is_url(src: str) -> bool:
 #   "auto"             : plain HTTP first, headless browser if that fails
 # Setup: ``pip install playwright && playwright install chromium``.
 FETCH_MODES = ("browser", "http", "auto")
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36")
+def _user_agent() -> str:
+    """Honest, identifying user agent (``$KG_USER_AGENT`` overrides); the agent does not pose as a browser."""
+    return kg_hosts.user_agent()
+
+
+class HostBlocked(RuntimeError):
+    """The host is in a cooldown or just refused this client (403 / 429 / 503+Retry-After); nothing more is requested from it."""
 
 
 def set_fetch_mode(mode: str) -> None:
@@ -142,13 +148,26 @@ def set_fetch_mode(mode: str) -> None:
 
 
 def _fetch_http(url: str, timeout: float) -> bytes:
-    req = Request(url, headers={
-        "User-Agent": os.environ.get("KG_USER_AGENT") or DEFAULT_USER_AGENT,
-        "Accept": "application/pdf,text/html,application/xhtml+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-    })
-    with urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    host = kg_hosts.host_of(url)
+    pol = kg_hosts.HOSTS
+    if pol.cooldown(host):
+        pol.defer(host, url)
+        raise HostBlocked(f"{host}: deferred: host is blocking this client")
+    pol.pace(host)
+    req = Request(url, headers={"User-Agent": _user_agent(),
+                                "Accept": "application/pdf,text/html,application/xhtml+xml,image/*,*/*;q=0.8"})
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+    except HTTPError as exc:
+        hdrs = {k: v for k, v in (exc.headers.items() if exc.headers else [])}
+        reason = kg_hosts.block_reason(exc.code, hdrs)
+        if reason:
+            pol.block(host, reason, kg_hosts.parse_retry_after(hdrs.get("Retry-After", "")), url=url)
+            raise HostBlocked(f"{host}: {reason}") from exc
+        raise
+    pol.success(host)
+    return data
 
 
 def _fetch_browser(url: str, timeout: float) -> bytes:
@@ -160,14 +179,18 @@ def _fetch_browser(url: str, timeout: float) -> bytes:
     from playwright.sync_api import TimeoutError as PWTimeout
     from playwright.sync_api import sync_playwright
 
+    host = kg_hosts.host_of(url)
+    if kg_hosts.HOSTS.cooldown(host):
+        kg_hosts.HOSTS.defer(host, url)
+        raise HostBlocked(f"{host}: deferred: host is blocking this client")
+    kg_hosts.HOSTS.pace(host)
     ms = int(timeout * 1000)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
-            headless=True, executable_path=os.environ.get("KG_BROWSER_PATH") or None,
-            args=["--disable-blink-features=AutomationControlled"])
+            headless=True, executable_path=os.environ.get("KG_BROWSER_PATH") or None)
         try:
             ctx = browser.new_context(
-                user_agent=os.environ.get("KG_USER_AGENT") or DEFAULT_USER_AGENT,
+                user_agent=_user_agent(),
                 locale="en-US", accept_downloads=True)
             page = ctx.new_page()
             page.set_default_timeout(ms)
@@ -181,6 +204,10 @@ def _fetch_browser(url: str, timeout: float) -> bytes:
                     raise
             if not downloads and resp is not None:
                 if resp.status >= 400:
+                    reason = kg_hosts.block_reason(resp.status, dict(resp.headers))
+                    if reason:
+                        kg_hosts.HOSTS.block(host, reason, url=url)
+                        raise HostBlocked(f"{host}: {reason}")
                     raise RuntimeError(f"HTTP {resp.status} {resp.status_text}")
                 ctype = (resp.headers.get("content-type") or "").lower()
                 if "html" in ctype:
@@ -215,6 +242,8 @@ def _fetch_url(url: str, mode: str, timeout: float) -> bytes:
         return _fetch_http(url, timeout)
     try:
         return _fetch_browser(url, timeout)
+    except HostBlocked:
+        raise
     except ImportError:
         reason = "Playwright is not installed (pip install playwright && playwright install chromium)"
     except Exception as exc:
@@ -224,6 +253,8 @@ def _fetch_url(url: str, mode: str, timeout: float) -> bytes:
     log.warning("%s; falling back to plain HTTP for %s", reason, url)
     try:
         return _fetch_http(url, timeout)
+    except HostBlocked:
+        raise
     except HTTPError as exc:
         raise RuntimeError(
             f"Could not download {url}: HTTP {exc.code} {exc.reason} ({reason}). "
@@ -256,6 +287,8 @@ def read_source(src: str, timeout: float = 60.0) -> bytes:
     if mode == "auto":
         try:
             return _fetch_url(src, "http", timeout)
+        except HostBlocked:
+            raise                                          # a blocked host is never retried with a browser
         except Exception as exc:
             log.info("plain HTTP fetch failed (%s); retrying with headless browser", exc)
             mode = "browser"
@@ -905,6 +938,13 @@ def _image_ext(data: bytes) -> str:
         return ""
 
 
+_IMAGE_WARNED: set[str] = set()
+
+
+def reset_image_warnings() -> None:
+    _IMAGE_WARNED.clear()
+
+
 def _figure_bytes(e: Element) -> Optional[bytes]:
     """Image bytes of a figure: rendered at parse time (PDF) or fetched from
     its ``src`` (HTML: data URI, local file or URL)."""
@@ -920,7 +960,13 @@ def _figure_bytes(e: Element) -> Optional[bytes]:
         if src:
             return Path(src).read_bytes()
     except Exception as exc:
-        log.warning("could not read image %s (%s)", src[:100], exc)
+        host = kg_hosts.host_of(src) if is_url(src) else ""
+        if isinstance(exc, HostBlocked) and host:
+            if host not in _IMAGE_WARNED:                     # one warning per host and run, not one per image
+                _IMAGE_WARNED.add(host)
+                log.warning("images from %s are not downloaded: %s", host, exc)
+        else:
+            log.warning("could not read image %s (%s)", src[:100], exc)
     return None
 
 

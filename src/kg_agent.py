@@ -47,11 +47,13 @@ import networkx as nx
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+import kg_adams
 import kg_combine
+import kg_hosts
 import kg_telemetry as telemetry
 import kg_ingest
 import kg_tools as T
-from kg_models import (EXTRACTION_RECIPE, Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
+from kg_models import (EXTRACTION_RECIPE, PAYWALL_HOSTS, Alert, ConfigChange, VersionTracking, DocAction, DocEntry, DocState, EntryAction, Finding,
                        RunNarrative, TrackerState, utcnow)
 
 log = logging.getLogger("kg_agent")
@@ -77,6 +79,7 @@ class Settings(BaseModel):
     assets: bool = True                 # export figures (PNG) / tables (CSV) of each document
     only: list[str] = Field(default_factory=list)   # restrict to entries, e.g. ["standard:22"]
     keep_archive: int = 0               # versions kept per document (0 = keep all)
+    host_intervals: dict[str, float] = Field(default_factory=dict)   # seconds between requests per host (overrides the built-in defaults, e.g. www.nrc.gov = 4)
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
     tables: bool = False                # after staging: build / refresh the table database (PostgreSQL + pgvector), see kg_tabledb.py
@@ -145,6 +148,7 @@ class Runtime:
 
     def __init__(self, s: Settings, llm: Any = None):
         self.s, self.p, self.llm = s, Paths(s.home, s.local_dir), llm
+        self.hosts = kg_hosts.configure(self.p.state / "hosts.json", s.host_intervals, s.min_interval, persist=not s.dry_run)
         self.dry = s.dry_run
         self.run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.started = utcnow()
@@ -159,6 +163,8 @@ class Runtime:
         self.ecfr_dates: dict[str, Optional[str]] = {}
         self.config_errors: list[str] = []
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
+        self.adams = kg_adams.AdamsClient.from_env()   # None without $NRC_ADAMS_API_KEY: change detection through ADAMS is then off
+        self.hosts_report: dict[str, dict] = {}   # per-host fetch problems of this run
 
     # -- persistence helpers (no-ops in dry-run) --------------------------------
     def write(self, path: Path, text: str) -> None:
@@ -214,8 +220,24 @@ def local_files(rt: Runtime, e: DocEntry) -> list[Path]:
 
 def entry_sources(rt: Runtime, e: DocEntry) -> list[tuple[str, str]]:
     """(url, label) of everything that feeds an entry's KG: its links plus local copies."""
-    out = [(l.url, l.text or e.name) for l in e.links]
+    out = [(l.url, l.text or e.name) for l in e.links if not l.manual]
     out += [(f"file://{f.resolve()}", f"{e.name} (local copy: {f.name})") for f in local_files(rt, e)]
+    return out
+
+
+def manual_items(rt: Runtime, e: DocEntry) -> list[dict[str, Any]]:
+    """For each ``"manual": true`` link of an entry: the URL to download in a browser, the path to save it to, and whether it is there."""
+    manual = [l for l in e.links if l.manual]
+    if not manual:
+        return []
+    files = local_files(rt, e)
+    base = Path(e.local_copy).expanduser() if e.local_copy else rt.p.local / f"{e.kind}s" / str(e.id)
+    glob = any(c in base.name for c in "*?[")
+    out = []
+    for l in manual:
+        name = unquote(Path(urlparse(l.url).path).name) or "download.html"
+        target = base if (e.local_copy and not glob and not base.is_dir() and base.suffix) else (base.parent if glob else base) / name
+        out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or (len(manual) == 1 and bool(files))})
     return out
 
 
@@ -346,7 +368,7 @@ def make_nodes(rt: Runtime):
         rt.alerts = read_json(p.state / "alerts.json", {})
         if not rt.dry:                       # show the user where purchased copies go
             for e in rt.entries:
-                if e.paywalled and not e.local_copy:
+                if (e.paywalled or any(l.manual for l in e.links)) and not e.local_copy:
                     (p.local / f"{e.kind}s" / str(e.id)).mkdir(parents=True, exist_ok=True)
         return out
 
@@ -358,7 +380,7 @@ def make_nodes(rt: Runtime):
                 for u in e.tracking_urls:
                     watchers.setdefault(u, []).append(e)
         out: AgentState = {"findings": [], "tracker_log": [], "errors": []}
-        for url, ents in watchers.items():
+        for url, ents in [(u, watchers[u]) for u in kg_hosts.interleave(list(watchers), kg_hosts.host_of)]:
             tr = T.tracker_for(url)
             with telemetry.op("track_url", **{"cogent.tracker": tr.name, "http.url": url[:200]}) as top:
                 try:
@@ -366,14 +388,14 @@ def make_nodes(rt: Runtime):
                 except Exception as exc:                      # a broken tracker must not stop the run
                     log.exception("tracker %s failed on %s", tr.name, url)
                     res = tr._error(url, rt.tracker_state.get(url), f"{type(exc).__name__}: {exc}")
-                if res.error:
+                if res.error and not res.deferred:
                     top.error(res.error)
             if s.force:
                 res.state.last_forced, res.state.forced_runs = utcnow(), res.state.forced_runs + 1
             rt.tracker_state[url] = res.state
             out["tracker_log"].append({"url": url, "tracker": tr.name, "changed": res.changed,
                                        "summary": res.summary, "error": res.error,
-                                       "watchers": [e.key for e in ents], "forced": s.force,
+                                       "watchers": [e.key for e in ents], "forced": s.force, "deferred": res.deferred,
                                        "findings": [f"{f.type}:{f.identity}" + (f" {f.old}->{f.new}" if f.new else "") for f in res.findings if f.type != "baseline"],
                                        "stale": res.state.consecutive_errors >= s.stale_after})
             if s.force:
@@ -381,7 +403,7 @@ def make_nodes(rt: Runtime):
                                  "result": "error" if res.error else "changed" if res.changed else "unchanged",
                                  "detail": res.error or res.summary,
                                  "findings": out["tracker_log"][-1]["findings"]})
-            if res.error:
+            if res.error and not res.deferred:
                 out["errors"].append(f"tracker {url}: {res.error}")
             out["findings"] += [f.model_dump() for f in res.findings]
         return out
@@ -453,7 +475,8 @@ def make_nodes(rt: Runtime):
             first = next(iter(variants))
             if first[0]:
                 rt.scopes.setdefault(url, first)
-        for url, keys in urls.items():
+        for url in kg_hosts.interleave(list(urls), kg_hosts.host_of):
+            keys = urls[url]
             with telemetry.op("sync_doc", **{"http.url": url.split("?")[0][:200], "cogent.entries": ",".join(keys)}) as dop:
                 try:
                     act = _sync_one(rt, url, keys, labels[url])
@@ -474,6 +497,7 @@ def make_nodes(rt: Runtime):
             if act.action == "error":
                 out["errors"].append(f"document {url}: {act.detail}")
             out["doc_actions"].append(act.model_dump())
+        rt.hosts_report = rt.hosts.report()
         return out
 
     # 5 -------------------------------------------------------------- assemble
@@ -555,7 +579,7 @@ def make_nodes(rt: Runtime):
             a.runs = (old["runs"] + 1) if old else 1
             a.last_seen, a.is_new = now, old is None
             merged[a.key] = a.model_dump()
-            log.warning("[%s] %s", a.kind, a.message)
+            (log.info if a.severity == "info" else log.warning)("[%s] %s", a.kind, a.message)
         if rt.s.only:                                  # a run limited by --only knows nothing new about the other entries: keep their open alerts as they were
             merged.update({k: v for k, v in rt.alerts.items() if v.get("entry") not in rt.s.only and k not in merged})
         rt.alerts = merged
@@ -574,6 +598,8 @@ def make_nodes(rt: Runtime):
                 if (state["tabledb"] or {}).get("error"):
                     tdop.error(state["tabledb"]["error"])
         summary = summarize(state)
+        summary["fetch_problems"] = rt.hosts.report()
+        summary["adams_requests"] = rt.adams.requests if rt.adams else 0
         narrative = narrate(rt, state, summary)
         text = render_report(rt, state, summary, narrative)
         rt.append(p.report, text)
@@ -743,12 +769,29 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
             rt.write_json(ddir / "state.json", st.model_dump())
             return DocAction(url=url, entries=keys, action="error", detail="eCFR titles API unavailable"), fetch_url, None
         fetch_url = T.ecfr_api_url(url, date) or url
+    adams_fp = ""
+    acc = kg_adams.accession_from_url(url) if rt.adams else None
+    if acc and rt.adams:                                # ADAMS record first: unchanged metadata and text -> nrc.gov is not contacted
+        ar = rt.adams.get_document(acc)
+        if ar.ok:
+            adams_fp = ar.fp
+            if kg_path.exists() and st.adams_fp == ar.fp and not s.force and not behind:
+                st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
+                rt.write_json(ddir / "state.json", st.model_dump())
+                return DocAction(url=url, entries=keys, action="unchanged", detail=f"ADAMS record {acc} unchanged (no request to the document host)"), fetch_url, None
+        else:
+            log.info("ADAMS check for %s skipped: %s", acc, ar.error)
     same = st.fetch_url == fetch_url and not s.force and not behind      # forced update (or KG built with an older recipe): never send If-None-Match / If-Modified-Since
     r = T.fetch(fetch_url, st.etag if same else "", st.last_modified if same else "",
                 min_interval=s.min_interval, accept="application/pdf,text/html,application/xml,*/*;q=0.8")
+    r.adams_fp = adams_fp
 
+    if r.host_problem:                                  # the host blocks this client: keep the previous KG, do not count towards STALE
+        why = r.error if r.deferred else f"{r.error}; host in cooldown until {rt.hosts.report().get(kg_hosts.host_of(fetch_url), {}).get('cooldown_until') or 'later'}"
+        return DocAction(url=url, entries=keys, action="skipped", detail=why, host_blocked=True), fetch_url, None
     if r.not_modified and kg_path.exists():
         st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
+        st.adams_fp = adams_fp or st.adams_fp
         rt.write_json(ddir / "state.json", st.model_dump())
         return DocAction(url=url, entries=keys, action="unchanged", detail="304 not modified"), fetch_url, None
     if not r.ok:
@@ -960,6 +1003,7 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
     kind = T.sniff_kind(r.data, r.content_type, fetch_url)
     raw_sha, text_sha = T.fingerprint(r.data, kind)
     st.etag, st.last_modified, st.fetch_url, st.content_kind = r.etag, r.last_modified, fetch_url, kind
+    st.adams_fp = getattr(r, "adams_fp", "") or st.adams_fp
     st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
     same_text = kg_path.exists() and st.text_sha == text_sha
     if same_text and not forced and not behind:
@@ -1296,6 +1340,30 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
             if a["action"] == "updated" and e.key in a["entries"] and not a["url"].startswith("file://"):
                 out.append(Alert(kind="store_page_changed", entry=e.key, identity=a["url"], severity="info", message=(
                     f"{e.key}: the store/landing page changed ({a['url']}); check it for a new edition, errata or a price/availability change.")))
+    for e in rt.entries:                                     # links the agent must never request: the user downloads them
+        if not rt.selected(e):
+            continue
+        for it in manual_items(rt, e):
+            if not it["present"]:
+                out.append(Alert(kind="manual_download_needed", entry=e.key, identity=it["url"], details=it, message=(
+                    f"{e.key} {e.name}: marked manual, so the agent never requests it. Download {it['url']} in a browser and save it as "
+                    f"{it['save_to']}.")))
+    blocked: dict[tuple[str, str], str] = {}                 # (entry, host) of paywalled store pages that refused this client
+    for a in state.get("doc_actions", []):
+        if a.get("host_blocked"):
+            for k in a["entries"]:
+                blocked[(k, kg_hosts.host_of(a["url"]))] = a["detail"]
+    for t in state.get("tracker_log", []):
+        if t.get("deferred"):
+            for k in t["watchers"]:
+                blocked[(k, kg_hosts.host_of(t["url"]))] = t["error"]
+    by_key = {e.key: e for e in rt.entries}
+    for (k, host), why in sorted(blocked.items()):
+        bare = host.split(":")[0]
+        if any(bare == x or bare.endswith("." + x) for x in PAYWALL_HOSTS) and k in by_key:
+            out.append(Alert(kind="store_page_blocked", entry=k, identity=host, severity="info", message=(
+                f"{k} {by_key[k].name}: the store page at {host} refuses automated requests ({why.split(';')[0]}). Nothing was lost: "
+                f"the previous knowledge graph is kept. Check the page in a browser for a new edition or errata.")))
     for e in rt.entries:                                     # editions a regulator endorses (any entry, paywalled or not)
         if not (e.endorsed_editions and rt.selected(e)):
             continue
@@ -1333,6 +1401,7 @@ def summarize(state: AgentState) -> dict[str, Any]:
         "documents": len(da),
         "docs_created": count(da, "action", "created"), "docs_updated": count(da, "action", "updated"),
         "docs_unchanged": count(da, "action", "unchanged"), "docs_error": count(da, "action", "error"),
+        "docs_deferred": sum(1 for x in da if x.get("host_blocked")),
         "forced": bool(state.get("forced")), "docs_refreshed": count(da, "action", "refreshed"),
         "entries_refreshed": sum(1 for x in state.get("entry_actions", []) if x["action"] == "refreshed"),
         "error_messages": [str(x)[:300] for x in state.get("errors", [])][:50],
@@ -1463,12 +1532,22 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
             L += [f"- **WARNING** {_md(w, 200)}" for w in td.get("warnings", [])] + [f"- **ERROR** {_md(e, 200)}" for e in td.get("errors", [])]
         L.append("")
 
+    fp = summary.get("fetch_problems") or {}
+    if fp:
+        L.append("### Fetch problems by host\n")
+        L.append("| host | problem | deferred | requests | cooldown until | other |\n|---|---|---|---|---|---|")
+        for h, d in sorted(fp.items()):
+            other = "; ".join(f"{k}: {len(v)} URL(s)" for k, v in d.items() if isinstance(v, list))
+            L.append(f"| {h} | {_md(d.get('blocked') or '-', 60)} | {d.get('deferred', 0)} | {d.get('requests', 0)} | {d.get('cooldown_until') or '-'} | {_md(other or '-', 60)} |")
+        L.append("\nDeferred documents keep their previous KG and do not count towards STALE. Nothing is requested from a host "
+                 "in a cooldown; download such files in a browser and use `\"manual\": true` links, or wait for the cooldown to end.\n")
     al = state.get("alerts", [])
     if al:
-        L.append("### Warnings: paywalled documents\n")
+        L.append("### Warnings and notes\n")
         titles = {"no_local_copy": "NO LOCAL COPY", "new_edition_for_purchase": "NEW EDITION FOR PURCHASE",
                   "local_copy_outdated": "LOCAL COPY OUTDATED", "local_copy_unidentified": "local copy not identified",
-                  "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED"}
+                  "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED",
+                  "store_page_blocked": "store page blocked", "manual_download_needed": "MANUAL DOWNLOAD NEEDED"}
         for a in sorted(al, key=lambda a: (a["severity"] != "warning", a["kind"], a["entry"])):
             tag = "**WARNING**" if a["severity"] == "warning" else "note"
             age = "NEW" if a["is_new"] else f"open since {a['first_seen'][:10]}, {a['runs']} runs"
@@ -1748,6 +1827,78 @@ def status(settings: Settings) -> None:
           f"{sum(1 for _ in p.changes.open()) if p.changes.exists() else 0}; report: {p.report}")
 
 
+def _parse_intervals(items: list[str]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for it in items:
+        host, _, sec = it.partition("=")
+        try:
+            out[host.strip().lower()] = float(sec)
+        except ValueError:
+            raise SystemExit(f"error: --host-interval expects HOST=SECONDS, got {it!r}")
+    return out
+
+
+def fetchcheck(s: Settings, url: str, ignore_cooldown: bool = False, out=print) -> int:
+    """One request, no retries, no polling. Prints what a person needs to tell a bot filter from a dead URL."""
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+    pol = kg_hosts.configure(Paths(s.home).state / "hosts.json", s.host_intervals, s.min_interval, persist=True)
+    host = kg_hosts.host_of(url)
+    ua = kg_hosts.user_agent()
+    out(f"URL         {url}\nclient      urllib, user agent: {ua}")
+    cd = pol.cooldown(host)
+    if cd and not ignore_cooldown:
+        until = datetime.fromtimestamp(cd.get("until", 0), timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        out(f"NOT REQUESTED: {host} is in a cooldown until {until} ({cd.get('reason')}). Use --ignore-cooldown to request anyway.")
+        return 2
+    pol.pace(host, s.min_interval)
+    shown = ("server", "via", "retry-after", "x-reference-error", "content-type", "content-length", "x-cache", "cf-ray")
+    try:
+        with urlopen(Request(url, headers={"User-Agent": ua, "Accept": "*/*"}), timeout=45) as r:
+            status, headers, body = r.status, dict(r.headers.items()), r.read(2000)
+        pol.success(host)
+    except HTTPError as exc:
+        status, headers, body = exc.code, dict(exc.headers.items()) if exc.headers else {}, exc.read(2000)
+        reason = kg_hosts.block_reason(status, headers)
+        if reason:
+            pol.block(host, reason, kg_hosts.parse_retry_after(headers.get("Retry-After", "")), url=url, headers={k: v for k, v in headers.items() if k.lower() in shown})
+    except (URLError, TimeoutError, OSError) as exc:
+        out(f"status      transport error: {type(exc).__name__}: {getattr(exc, 'reason', exc)}")
+        return 1
+    out(f"status      {status}")
+    for k, v in headers.items():
+        if k.lower() in shown:
+            out(f"{k.lower():11} {v}")
+    snippet = body[:200]
+    out("body        " + (snippet.decode("utf-8", "replace").replace("\n", " ").strip() if snippet[:5] != b"%PDF-" and b"\x00" not in snippet
+                          else f"binary ({'PDF' if snippet[:5] == b'%PDF-' else 'data'}), first bytes {snippet[:8]!r}"))
+    reason = kg_hosts.block_reason(status, headers)
+    if reason:
+        out(f"verdict     {reason}; the host is now in a cooldown (state/hosts.json)")
+    elif status in (404, 410):
+        out("verdict     the URL no longer exists: update the configuration")
+    return 0 if status < 400 else 1
+
+
+def adamscheck(s: Settings, accession: str, out=print) -> int:
+    """One ADAMS Public Search request; prints a redacted summary (never the key, never the document text)."""
+    client = kg_adams.AdamsClient.from_env()
+    if not client:
+        out(f"{kg_adams.KEY_ENV} is not set; export it in this shell (never put it on the command line or in a file in the repository)")
+        return 2
+    kg_hosts.configure(Paths(s.home).state / "hosts.json", s.host_intervals, s.min_interval, persist=True)
+    r = client.get_document(accession)
+    out(f"accession   {r.accession}\nstatus      {r.status}")
+    if not r.ok:
+        out(f"error       {r.error}")
+        return 1
+    out(f"top-level   {', '.join(r.raw_keys)}")
+    for k, v in r.fields.items():
+        out(f"{k:20} {v}")
+    out(f"fingerprint {r.fp}")
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description="Keep per-standard / per-report knowledge graphs up to date.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1759,7 +1910,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("--model", help="Ollama model for triple extraction")
     common.add_argument("--ollama-host")
     common.add_argument("--llm", help="Ollama model used only to narrate the report")
-    common.add_argument("--min-interval", type=float, default=1.0)
+    common.add_argument("--min-interval", type=float, default=1.0, help="default seconds between requests to one host (www.nrc.gov: 4, adams-api.nrc.gov: 2 unless --host-interval says otherwise)")
+    common.add_argument("--host-interval", action="append", default=[], metavar="HOST=SECONDS", help="seconds between requests to HOST (repeatable)")
     common.add_argument("--no-auto-apply", action="store_true", help="never edit the configuration; list as pending")
     common.add_argument("--no-assets", action="store_true", help="skip figure/table export")
     common.add_argument("--only", help="comma-separated entries, e.g. standard:22,report:1")
@@ -1806,6 +1958,12 @@ def main(argv: Optional[list[str]] = None) -> None:
     d.add_argument("--at", default="06:00", help="local time HH:MM")
     pr = sub.add_parser("probe", parents=[common], help="run a tracker on one URL and print what it parsed")
     pr.add_argument("url")
+    fc = sub.add_parser("fetchcheck", parents=[common], help="ONE request to URL (never polls): status, key response headers, body snippet, user agent used")
+    fc.add_argument("url")
+    fc.add_argument("--ignore-cooldown", action="store_true", help="make the request even though the host is in a cooldown (it can extend a block)")
+    ac = sub.add_parser("adamscheck", parents=[common], help="ONE ADAMS Public Search request for an accession number; prints a redacted summary "
+                        "(needs NRC_ADAMS_API_KEY in the environment)")
+    ac.add_argument("accession", help="e.g. ML18019A922")
     sub.add_parser("status", parents=[common], help="show staged documents")
     sub.add_parser("local", parents=[common], help="list paywalled entries and their local copies")
     al = sub.add_parser("add-local", parents=[common], help="import purchased copies of a paywalled entry")
@@ -1826,6 +1984,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  ollama_host=a.ollama_host, llm=a.llm, min_interval=a.min_interval,
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
+                 host_intervals=_parse_intervals(a.host_interval),
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
                  force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False), recipe_refresh=not getattr(a, "no_recipe_refresh", False),
                  publish_snapshot=getattr(a, "publish_snapshot", None), otlp_endpoint=getattr(a, "otlp_endpoint", None),
@@ -1842,6 +2001,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         daemon(s, a.at)
     elif a.cmd == "probe":
         probe(s, a.url)
+    elif a.cmd == "fetchcheck":
+        fetchcheck(s, a.url, a.ignore_cooldown)
+    elif a.cmd == "adamscheck":
+        adamscheck(s, a.accession)
     elif a.cmd == "status":
         status(s)
     elif a.cmd == "local":

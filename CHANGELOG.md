@@ -3,6 +3,22 @@
 Reconstructed on 2026-11-09 from the git history of `main` (to `1f237f0`, PR #10) and from the code and documents at that commit; earlier commits carried no change log. Newest first, by pull request. Dates are commit dates.
 The README links here for the limits of each change; the statements below describe what the code and tests at `1f237f0` do, not results on real standards (see "Known limits").
 
+## Unreleased: HTTP 403 handling (branch `claude/http403-fixes`)
+
+Diagnosis: nrc.gov's CDN refuses clients it takes for bots (403 with `x-reference-error`); the agent posed as Chrome, retried, and then started headless Chromium, which made blocks last longer and filled the report with errors. Details and usage: `docs/fetching.md`.
+
+* **Honest user agent** (`cogent-kg-agent/<version>`, `KG_USER_AGENT` override) on all HTTP paths; `kg_tools.fetch` now honours `KG_USER_AGENT` (it ignored it before). No `Referer`, no browser disguise, no automation-hiding Chromium flag.
+* **No automatic browser fallback**; opt-in with `KG_BROWSER_FALLBACK=1`, once per request, never during a cooldown.
+* **Persisted per-host cooldowns** (`<home>/state/hosts.json`): 403, 429 or 503+`Retry-After` start 6 h, doubling to a 7-day cap; no retries or polling inside a cooldown. Blocked documents and trackers are *deferred*: previous KG kept, no `consecutive_errors`, no STALE.
+* **Per-host pacing** with jitter and `--host-interval HOST=SECONDS` (defaults: www.nrc.gov 4 s, adams-api.nrc.gov 2 s); work is interleaved across hosts.
+* **`"manual": true` links** are never requested; the report lists the URL to download and the path to save to (alert `manual_download_needed`).
+* **`kg_agent.py fetchcheck URL`**: one request, prints status, filter headers, body snippet, user agent.
+* **Reporting:** "blocked by a bot filter (HTTP 403 from host)"; 404/410 on trackers says to update `update_tracking_urls`; per-host "Fetch problems" section and `fetch_problems` / `docs_deferred` in the summary; info alerts are logged as INFO; a 403 on a paywalled store page is the info alert `store_page_blocked`, not an error; one image warning per host and run.
+* **ADAMS Public Search adapter** (`src/kg_adams.py`, `NRC_ADAMS_API_KEY`): change detection for `nrc.gov/docs/ML...` links from the record's date added, document date and a content hash; the API text is not used for graphs. `kg_agent.py adamscheck ML...` prints a redacted summary. One request every 2 s; requests are counted in the summary.
+* New tests: `tests/test_fetch_blocking.py`, `tests/test_adams.py` (mock servers only).
+* Not changed: the energy.gov URLs of entries 11 to 13 (404; the correct URL is unknown).
+* **Not verified:** nothing was run against the live nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org (see `docs/fetching.md`, "What was not verified").
+
 ## PR #9 and #10 (2026-10-27): test round 6 and its review
 
 Fixes for the MCP client's fix list of 2026-10-26 (ids R6-01 to R6-15) and for the reviews of the first fixes. `tests/test_round6.py` holds the regression tests.

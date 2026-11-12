@@ -35,6 +35,7 @@ class Link(BaseModel):
     model_config = ConfigDict(extra="allow")
     text: str = ""
     url: str
+    manual: bool = False        # never requested by the agent: download it in a browser and save it in the entry's local-copy folder
 
 
 class DocEntry(BaseModel):
@@ -111,6 +112,7 @@ class DocState(BaseModel):
     versions: int = 0                 # number of KG versions built so far
     consecutive_errors: int = 0
     last_error: str = ""
+    adams_fp: str = ""                # ADAMS change-detection fingerprint (accession|date added|document date|content hash)
     identities: dict[str, Optional[str]] = Field(default_factory=dict)  # "ASCE 43" -> "19" (as stated in the text)
     ocr_pages: list[int] = Field(default_factory=list)                  # pages read by OCR (no text layer)
     last_forced: str = ""                                               # last forced (unconditional) re-read
@@ -181,6 +183,7 @@ class DocAction(BaseModel):
     forced: bool = False                       # the run was a forced update
     purged: dict[str, Any] = Field(default_factory=dict)   # stale asset files removed by a forced re-read {files, bytes, dirs, names}
     shas: list[str] = Field(default_factory=list)   # [text sha before, after] (12 chars) for forced re-reads
+    host_blocked: bool = False                 # skipped because the host blocks this client (cooldown); not an error, the previous KG is kept
 
 
 class EntryAction(BaseModel):
@@ -201,7 +204,7 @@ class Alert(BaseModel):
     """A condition a human should act on (persisted until it is resolved)."""
 
     kind: Literal["no_local_copy", "new_edition_for_purchase", "local_copy_outdated", "edition_not_endorsed",
-                  "local_copy_unidentified", "store_page_changed"]
+                  "local_copy_unidentified", "store_page_changed", "store_page_blocked", "manual_download_needed"]
     entry: str
     identity: str = ""
     severity: Literal["warning", "info"] = "warning"

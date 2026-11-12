@@ -76,7 +76,7 @@ playwright install chromium                                          # headless 
 | optional piece | for | how |
 |---|---|---|
 | `pymupdf-layout`, `pymupdf4llm` | layout-aware PDF parsing (falls back to plain PyMuPDF if absent). AGPL-3.0 or Artifex commercial licence | `requirements.txt` |
-| `playwright` + Chromium | URL downloads through a headless browser (default `--fetch browser`); falls back to plain HTTP if absent | `playwright install chromium` |
+| `playwright` + Chromium | direct ingest of a URL through a headless browser (`--fetch browser`); the agent's own downloads are plain HTTP with an honest user agent (see [docs/fetching.md](docs/fetching.md)) | `playwright install chromium` |
 | `rapidocr-onnxruntime` **or** the Tesseract program | OCR of scanned pages | `pip` / `apt install tesseract-ocr` |
 | `pyvis`, `matplotlib` | offline vis-network library for `kg_show.py` (else a CDN `<script>`), PNG output | `requirements.txt` |
 | Ollama + `langchain-ollama` | `--extractor ollama\|hybrid` (triples) and `--llm` (report narration) | `ollama pull llama3.1` |
@@ -227,7 +227,7 @@ check a tracker against a live page), `status`, `local` and `add-local` (purchas
 `--no-kg-context` (leave the KG neighbourhood out of the embedded text); `--publish-snapshot DIR` writes a bundle for other
 servers after the run (`--snapshot-keep N` bundles are kept, default 5). Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
-`--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--fetch`,
+`--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--host-interval HOST=SECONDS`, `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
 
 ### Extraction recipe (rebuild after a parser change)
@@ -489,7 +489,9 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 | variable | effect |
 |---|---|
 | `KG_FETCH` | URL download mode: `browser` (default), `http`, `auto` |
-| `KG_USER_AGENT`, `KG_BROWSER_PATH` | override the browser identity / Chromium executable |
+| `KG_USER_AGENT`, `KG_BROWSER_PATH` | override the honest user agent (`cogent-kg-agent/<version>`) / the Chromium executable |
+| `KG_BROWSER_FALLBACK` | `1`: try one headless-browser request after a 403 (off by default; never during a cooldown) |
+| `NRC_ADAMS_API_KEY` | ADAMS Public Search key: change detection for `nrc.gov/docs/ML...` links; never logged or stored (docs/fetching.md) |
 | `KG_PDF_ENGINE` | `auto` (default), `layout`, `basic` |
 | `KG_OCR`, `KG_OCR_ENGINE`, `KG_OCR_LANG`, `KG_OCR_DPI` | OCR mode / engine / language / render resolution (default 200) |
 | `COGENT_LOOKUP_MIN_SIMILARITY` | MCP server: a server-wide minimum for the `min_similarity` preference (0..1; profile `strict` sets 0.70). With a value above 0, `lookup_values` calls its result `no_confident_match` when even the best row is less similar than this (default 0 = off; calibrate against your embedder) |
