@@ -380,3 +380,13 @@ def test_fetchcheck_404_verdict(tmp_path, srv):
     lines = []
     kg_agent.fetchcheck(make_env(tmp_path, []), srv.base + "/gone", out=lines.append)
     assert "not found" in "\n".join(lines) and "hide it from this client" in "\n".join(lines)
+
+
+def test_fetchcheck_shows_redirect_and_title(tmp_path, srv):
+    srv.add("/old", b"", "text/html", status=302, Location="/new")
+    srv.add("/new", b"<html><head><title>  Directives \n Library </title></head><body>x</body></html>", "text/html", status=404)
+    lines = []
+    kg_agent.fetchcheck(make_env(tmp_path, []), srv.base + "/old", out=lines.append)
+    text = "\n".join(lines)
+    assert "final url   " + srv.base + "/new" in text and "(redirected)" in text
+    assert "title       Directives Library" in text and "status      404" in text

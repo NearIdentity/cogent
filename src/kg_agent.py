@@ -1856,10 +1856,10 @@ def fetchcheck(s: Settings, url: str, ignore_cooldown: bool = False, out=print) 
     shown = ("server", "via", "retry-after", "x-reference-error", "content-type", "content-length", "x-cache", "cf-ray")
     try:
         with urlopen(Request(url, headers={"User-Agent": ua, "Accept": "*/*"}), timeout=45) as r:
-            status, headers, body = r.status, dict(r.headers.items()), r.read(2000)
+            status, headers, body, final = r.status, dict(r.headers.items()), r.read(60000), r.geturl()
         pol.success(host)
     except HTTPError as exc:
-        status, headers, body = exc.code, dict(exc.headers.items()) if exc.headers else {}, exc.read(2000)
+        status, headers, body, final = exc.code, dict(exc.headers.items()) if exc.headers else {}, exc.read(60000), exc.geturl()
         reason = kg_hosts.block_reason(status, headers)
         if reason:
             pol.block(host, reason, kg_hosts.parse_retry_after(headers.get("Retry-After", "")), url=url, headers={k: v for k, v in headers.items() if k.lower() in shown})
@@ -1867,9 +1867,14 @@ def fetchcheck(s: Settings, url: str, ignore_cooldown: bool = False, out=print) 
         out(f"status      transport error: {type(exc).__name__}: {getattr(exc, 'reason', exc)}")
         return 1
     out(f"status      {status}")
+    if final and final != url:
+        out(f"final url   {final}   (redirected)")
     for k, v in headers.items():
         if k.lower() in shown:
             out(f"{k.lower():11} {v}")
+    m = re.search(rb"<title[^>]*>(.*?)</title>", body, re.I | re.S)
+    if m:
+        out("title       " + re.sub(r"\s+", " ", m.group(1).decode("utf-8", "replace")).strip()[:150])
     snippet = body[:200]
     out("body        " + (snippet.decode("utf-8", "replace").replace("\n", " ").strip() if snippet[:5] != b"%PDF-" and b"\x00" not in snippet
                           else f"binary ({'PDF' if snippet[:5] == b'%PDF-' else 'data'}), first bytes {snippet[:8]!r}"))
