@@ -37,6 +37,8 @@ src/kg_predicates.py relation vocabulary for the extracted triples
 src/kg_show.py       interactive HTML (vis-network) and static PNG viewer for a KG
 src/kg_agent.py      the daily agent: LangGraph workflow, staging, archive, config edits, version tracking, alerts, report
 src/kg_daemon.py     the daemon: schedule, catch-up, retries, supervised runs, signals, start/stop/status, systemd notify
+src/kg_hosts.py      per-host politeness: honest user agent, pacing, persisted cooldowns after 403/429/503, interleaving (docs/fetching.md)
+src/kg_adams.py      NRC ADAMS Public Search adapter, change detection only (NRC_ADAMS_API_KEY)
 src/kg_tools.py      the agent's hard-coded tools: conditional fetch, fingerprints, identifier parsers, trackers, KG merge/diff
 src/kg_models.py     Pydantic models (configuration views, state, findings, alerts, version_tracking block)
 src/kg_combine.py    secondary staging: combined entry-level graph + dependents index (reports <-> standards)
@@ -56,7 +58,7 @@ src/kg_snapshot.py   publish / pull versioned bundles of the agent home for othe
 src/kg_telemetry.py  OpenTelemetry tracing helpers (optional) and the Prometheus metrics registry used by the agent and the MCP server
 deploy/              systemd units (run timer, daemon, MCP server, tunnel), cron, Caddy, compose files for PostgreSQL + pgvector, tunnel scripts and examples
 deploy/observability/  Prometheus config + failure-rate alert (with promtool test), Grafana provisioning and dashboard JSON, compose file, demo traffic generator
-docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
+docs/                mcp.md · tabledb.md · scaling.md · scheduling.md · observability.md · fetching.md        notes/  MCP_Server.md · LiveDemo.md (public demo incl. Grafana)        CHANGELOG.md
 tests/               one file per area (agent, ocr, daemon, mcp, tables, units, llm joins, scale-out, …) + mock_site.py (a local mock of the sources)
 requirements.txt     dependencies (optional ones are commented)      venv-setup.sh   uv-based virtualenv setup
 ```
@@ -70,7 +72,7 @@ Python 3.10 or newer (developed on 3.12 / 3.13).
 ```bash
 uv venv --python 3.12 cogent && source cogent/bin/activate          # or see venv-setup.sh; plain venv + pip works too
 uv pip install -r requirements.txt
-playwright install chromium                                          # headless browser for sites that block scripted downloads
+playwright install chromium                                          # optional: direct URL ingest in browser mode / opt-in fallback (the agent itself does not use it after a 403)
 ```
 
 | optional piece | for | how |
@@ -123,7 +125,7 @@ Each entry is a standard or a report format; the agent reads these fields:
 | field | meaning |
 |---|---|
 | `id`, `document` / `report` | numeric id and name. The name carries the edition (`NRC RG 1.233`, `DOE-STD-1271-2025, …`, `ASME NQA-1-2026, …`) |
-| `links` / `template_links` | `[{"text", "url", "scope"?, "scope_end"?}]`: the documents to ingest (PDF, HTML or an eCFR page). `scope` (a case-insensitive regular expression) keeps only the part of the page under a matching heading, e.g. `"Appendix B to Part 50"` for an entry that covers one appendix of a page carrying the whole regulation; it ends at the next heading of the same or a higher level, or at the first heading matching `scope_end`. A pattern that matches no heading keeps the whole page and says so in the run report. Changing the scope rebuilds that document |
+| `links` / `template_links` | `[{"text", "url", "scope"?, "scope_end"?, "manual"?}]`: the documents to ingest (`"manual": true`: the agent never requests the URL; you download it and save it in the entry's local-copy folder, see [docs/fetching.md](docs/fetching.md)) (PDF, HTML or an eCFR page). `scope` (a case-insensitive regular expression) keeps only the part of the page under a matching heading, e.g. `"Appendix B to Part 50"` for an entry that covers one appendix of a page carrying the whole regulation; it ends at the next heading of the same or a higher level, or at the first heading matching `scope_end`. A pattern that matches no heading keeps the whole page and says so in the run report. Changing the scope rebuilds that document |
 | `update_tracking_urls` | pages watched for new editions (see [trackers](#the-update-agent)) |
 | `standards_to_comply_with_ids` | reports → ids of the standards they must comply with (becomes `complies_with` edges) |
 | `paywalled` (standards) | `true` if the document must be bought (see below); also inferred from "paywalled" in `format_of_data` |
@@ -206,22 +208,25 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
 3. **apply** – a `new_edition` finding with a link and confidence ≥ 0.8 rewrites the entry's link (URL and text) and the
    edition in its name, and every other entry that shared the old URL (e.g. reports). Lower-confidence findings go to
    "Pending (needs human review)" and are retried on later runs. `--no-auto-apply` never edits the configuration.
-4. **sync_docs** – each unique document URL (or local copy) is fetched conditionally (ETag / Last-Modified) and
+4. **sync_docs** – each unique document URL (or local copy) is fetched conditionally (ETag / Last-Modified; for `nrc.gov/docs/ML…` links with `NRC_ADAMS_API_KEY` set, the ADAMS record is checked first) and
    fingerprinted by *content*: PDF text (page images for scans), visible HTML text without volatile page furniture,
    eCFR XML. A re-rendered file or a changed footer is not an update. eCFR pages are read from the versioner XML API
    instead of the JavaScript page. A changed document is re-ingested; its previous KG is **archived**; a structured diff
    (modified / new / removed sections, entity counts) is recorded.
+   Requests are polite by construction: an honest user agent, per-host pacing, and a persisted **cooldown** after a 403 / 429 /
+   503 + `Retry-After` (documents and trackers on that host are *deferred*, keep their previous KG and never become `STALE`).
+   See [docs/fetching.md](docs/fetching.md).
 5. **assemble** – the KG of each standard / report whose documents (or links, name, compliance / overlap lists) changed is
    rebuilt by merging its document KGs (shared entities connect them) with `HAS_DOCUMENT`, `complies_with` and
    `overlaps_with` edges; the old entry KG is archived.
 6. **versions** – writes the `version_tracking` block of every entry (below).
-7. **alerts** – warnings for paywalled documents (below).
+7. **alerts** – warnings for paywalled documents and manual downloads (below).
 8. **finalize** – persists state and **appends** a section to `logs/report.md`: summary, warnings, version status,
    configuration changes, document KGs created / updated (with diffs), entry KGs rebuilt, tracker findings, pending
    review, errors, trackers that keep failing. Optionally a local LLM (`--llm`) narrates the structured results at the top.
 
 Subcommands: `run [--dry-run] [--force [--no-prune]]`, `daemon --at HH:MM`, `probe <url>` (run one tracker and print what it parsed: use this to
-check a tracker against a live page), `status`, `local` and `add-local` (purchased copies, below). Table database options of `run`: `--tables`
+check a tracker against a live page), `fetchcheck <url>` (ONE request: status, filter headers, body snippet, user agent; no polling), `adamscheck <ML…>` (one redacted ADAMS API request), `status`, `local` and `add-local` (purchased copies, below). Table database options of `run`: `--tables`
 (after staging, load the tables; needs `COGENT_TABLEDB_DSN` or `--tabledb-dsn`), `--embedder`, `--embed-model`, `--row-mode full|text`, `--llm-joins` with
 `--join-model`, `--join-judge-model`, `--join-samples`, `--join-judge-runs`, `--join-max-pairs`, `--join-max-seconds`, plus `--tabledb-schema` (default `kgtables`) and
 `--no-kg-context` (leave the KG neighbourhood out of the embedded text); `--publish-snapshot DIR` writes a bundle for other
@@ -295,7 +300,7 @@ staging/documents/<id>/{state.json,kg.json,assets/}    one per unique URL (asset
 staging/{standards,reports}/<n>/{kg.json,meta.json}    the KG of each entry
 archive/documents/<id>/<ts>_<sha>/   archive/entries/<key>/<ts>/    superseded versions
 local/{standards,reports}/<id>/      purchased copies you drop in (folders are created for paywalled entries)
-state/{trackers,identities,pending,alerts,config_hashes,orphans}.json       logs/{report.md,runs.jsonl,forced.jsonl}
+state/{trackers,identities,pending,alerts,config_hashes,orphans,hosts}.json       logs/{report.md,runs.jsonl,forced.jsonl}
 archive/orphans/<kind>_<id>_<run>.tar.gz    compressed orphaned staging data (forced updates)
 staging/combined/{kg.json,dependents.json,meta.json}    entry-level graph (below)
 tabledb/<docid>/{data_dictionary,relationships,join_evaluation}.*    published by the table agent; logs/{tabledb.jsonl,tabledb_report.md}
@@ -314,7 +319,8 @@ warnings appear at the top of each report section, in the log, and in `state/ale
   local copy states that edition;
 * **LOCAL COPY OUTDATED** – the local copy's own title page states an older edition than the latest known one;
 * **EDITION NOT ENDORSED** – the edition on board is not one of the entry's `endorsed_editions` (any entry, paywalled or not);
-* (info) *local copy not identified*, *store page changed*.
+* **MANUAL DOWNLOAD NEEDED** – a `"manual": true` link has no file yet; the warning gives the URL to download and the path to save to;
+* (info) *local copy not identified*, *store page changed*, *store page blocked* (the store refused automated requests; the previous KG is kept).
 
 A run limited with `--only` leaves the open alerts of the other entries untouched.
 
@@ -511,9 +517,10 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 ## Tests
 
 ```bash
-python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (341 tests collected on 2026-11-09; 42 of them need PostgreSQL + pgvector and are skipped without it)
+python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (370 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
+* `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
   `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;
   `COGENT_STRICT_CONFIG=1` turns dangling report→standard references from warnings into failures.
@@ -533,6 +540,7 @@ python -m pytest tests          # no internet: the agent tests run against tests
   agent's trackers were written from the public API documentation of eCFR and the Federal Register and from the general
   structure of the NRC / DOE pages: use `kg_agent.py probe <url>` to see what a tracker parses from a page and adjust
   `src/kg_tools.py` if a layout differs. Review the first runs with `--dry-run` or `--no-auto-apply`.
+* Fetch politeness (honest user agent, cooldowns, ADAMS change detection) was tested against mock servers only; it has not been run against the live nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org (see [docs/fetching.md](docs/fetching.md)).
 * The identifier watcher needs the identifier in the page text; a page that changes without one is reported as
   `page_changed` (informational), never applied. Where an entry's name or link text states no edition, `latest` carries the
   identifier without an edition until a page shows one.

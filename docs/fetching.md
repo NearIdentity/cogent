@@ -11,6 +11,10 @@ Some hosts (www.nrc.gov behind its CDN, publisher and standards stores) answer *
 * **Pacing and interleaving.** At least `--min-interval` seconds between requests to one host (default 1), with +/-25 % jitter; built-in defaults of 4 s for `www.nrc.gov` and 2 s for `adams-api.nrc.gov`; override per host with `--host-interval HOST=SECONDS` (repeatable). Work is ordered round-robin over hosts, so the wait imposed on one host is spent on the others.
 * **Images.** Figures are fetched with the same user agent and cooldowns; a blocked host gets one warning per run, not one per image.
 
+## Related documents
+
+README ("The update agent", "Paywalled documents", environment variables), `docs/scheduling.md` (blocked hosts and retries), `docs/observability.md` (spans and failure counters), `CHANGELOG.md`.
+
 ## Reporting
 
 * The run summary has `fetch_problems` and `docs_deferred`; `logs/report.md` gets a section "Fetch problems by host" (problem, number deferred, requests made, cooldown end, URLs that no longer exist).
