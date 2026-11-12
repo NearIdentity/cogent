@@ -64,6 +64,22 @@ def parse_retry_after(value: str, now: Optional[float] = None) -> Optional[float
         return None
 
 
+def scope_of(url: str) -> str:
+    """The part of a host that a refusal is attributed to: ``host/firstdir`` (``www.nrc.gov/docs``), or ``host/`` for files at the root.
+    A 403 often comes from a rule on one area of a site (here: the PDFs under /docs) while the rest of the host answers normally."""
+    u = urlparse(url)
+    segs = [x for x in u.path.split("/") if x]
+    return f"{u.netloc.lower()}/{segs[0] if len(segs) > 1 else ''}"
+
+
+def block_key(url: str, status: int) -> str:
+    """429 and 503+Retry-After mean the HOST is overloaded or rate limiting us; a 403 is attributed to one area (``scope_of``)."""
+    return host_of(url) if status in (429, 503) else scope_of(url)
+
+
+SCOPES_FOR_HOST_BLOCK = 3          # this many refused areas of one host -> treat the whole host as blocking us
+
+
 def block_reason(status: int, headers: Optional[dict] = None) -> str:
     """Why an HTTP status puts the host in a cooldown ('' = it does not)."""
     h = {k.lower(): v for k, v in (headers or {}).items()}
@@ -117,19 +133,32 @@ class HostPolicy:
             self.requests[host] += 1
 
     # ---- cooldowns
-    def cooldown(self, host: str) -> Optional[dict]:
-        """The active cooldown of ``host`` ({until, reason, level, ...}) or None."""
-        host = host.lower()
-        if host in self._run_blocked:
-            rec = self.state.get(host) or {}
-            return {**rec, "reason": self._run_blocked[host], "until": rec.get("until", self.clock())}
-        rec = self.state.get(host)
+    def cooldown(self, key: str) -> Optional[dict]:
+        """The active cooldown of a key (a host, or ``host/area``): {until, reason, level, ...} or None."""
+        key = key.lower()
+        if key in self._run_blocked:
+            rec = self.state.get(key) or {}
+            return {**rec, "reason": self._run_blocked[key], "until": rec.get("until", self.clock())}
+        rec = self.state.get(key)
         if rec and rec.get("until", 0) > self.clock():
             return rec
         return None
 
+    def cooldown_for(self, url: str) -> Optional[dict]:
+        """The active cooldown that applies to ``url``: its area first, then its whole host. The record carries its ``key``."""
+        for key in (scope_of(url), host_of(url)):
+            rec = self.cooldown(key)
+            if rec:
+                return {**rec, "key": key}
+        return None
+
+    def record_for(self, url: str) -> dict:
+        """The stored record for ``url`` (area, else host), expired or not."""
+        return self.state.get(scope_of(url)) or self.state.get(host_of(url)) or {}
+
     def block(self, host: str, reason: str, retry_after: Optional[float] = None, url: str = "",
               headers: Optional[dict] = None) -> dict:
+        """Start (or lengthen) a cooldown for ``host`` -- really a key: a host, or ``host/area`` (see ``block_key``)."""
         host = host.lower()
         prev = self.state.get(host) or {}
         level = int(prev.get("level", 0)) + 1 if prev else 1
@@ -145,14 +174,23 @@ class HostPolicy:
         self._run_blocked[host] = reason
         self.problems.setdefault(host, {})["blocked"] = reason
         log.warning("%s: %s; no requests to this host for %.0f h (cooldown level %d)", host, reason, seconds / 3600, level)
+        if "/" in host:                                          # several refused areas of one host: the host as a whole is the problem
+            base = host.split("/", 1)[0]
+            areas = [k for k in self.state if k.startswith(base + "/") and self.cooldown(k)]
+            if len(areas) >= SCOPES_FOR_HOST_BLOCK and not self.cooldown(base):
+                self.block(base, f"{len(areas)} areas of the host refuse this client", url=url)
         self._save()
         return rec
 
-    def success(self, host: str) -> None:
-        """A good response: a host whose cooldown has ended starts again from level 0."""
-        host = host.lower()
-        if host in self.state and host not in self._run_blocked:
-            del self.state[host]
+    def success(self, where: str) -> None:
+        """A good response (``where``: a URL, or a key): cooldowns that have ended start again from level 0."""
+        keys = [scope_of(where), host_of(where)] if "://" in where else [where.lower()]
+        changed = False
+        for k in keys:
+            if k in self.state and k not in self._run_blocked and not self.cooldown(k):
+                del self.state[k]
+                changed = True
+        if changed:
             self._save()
 
     def defer(self, host: str, url: str) -> None:

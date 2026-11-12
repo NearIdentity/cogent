@@ -108,9 +108,9 @@ def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45
         headers["If-Modified-Since"] = last_modified
     host = hosts.host_of(url)
     pol = hosts.HOSTS
-    cd = pol.cooldown(host)
+    cd = pol.cooldown_for(url)
     if cd:
-        pol.defer(host, url)
+        pol.defer(cd["key"], url)
         return FetchResult(url, 0, error=DEFERRED_MSG, deferred=True)
     res = FetchResult(url)
     with telemetry.span("http.fetch", **{"http.url": url.split("?")[0][:200], "http.request.conditional": bool(etag or last_modified)}) as sp:
@@ -119,14 +119,14 @@ def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45
             try:
                 with urlopen(Request(url, headers=headers), timeout=timeout) as r:
                     sp.set_attribute("http.response.status_code", 200)
-                    pol.success(host)
+                    pol.success(url)
                     return FetchResult(url, 200, r.read(), r.headers.get("ETag", ""),
                                        r.headers.get("Last-Modified", ""),
                                        r.headers.get("Content-Type", ""), r.geturl())
             except HTTPError as exc:
                 sp.set_attribute("http.response.status_code", exc.code)
                 if exc.code == 304:
-                    pol.success(host)
+                    pol.success(url)
                     return FetchResult(url, 304, etag=etag, last_modified=last_modified, final_url=url)
                 hdrs = {k: v for k, v in exc.headers.items() if k.lower() in _FILTER_HEADERS} if exc.headers else {}
                 reason = hosts.block_reason(exc.code, hdrs)
@@ -137,7 +137,7 @@ def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45
                         if got.ok:
                             return got
                         res.error = got.error
-                    pol.block(host, reason, hosts.parse_retry_after(hdrs.get("Retry-After") or hdrs.get("retry-after", "")),
+                    pol.block(hosts.block_key(url, exc.code), reason, hosts.parse_retry_after(hdrs.get("Retry-After") or hdrs.get("retry-after", "")),
                               url=url, headers=hdrs)
                     return res
                 res = FetchResult(url, exc.code, error=f"HTTP {exc.code} {exc.reason}", headers=hdrs)
@@ -551,7 +551,7 @@ class Tracker:
         if r.status in (404, 410):
             msg = (f"tracker URL not found (HTTP {r.status}): it may be gone (update `update_tracking_urls`), or the host may hide it "
                    f"from this client; open it in a browser or run `kg_agent.py fetchcheck`")
-        hosts.HOSTS.note(hosts.host_of(url), "gone" if r.status in (404, 410) else "errors", url)
+        hosts.HOSTS.note(hosts.scope_of(url), "gone" if r.status in (404, 410) else "errors", url)
         return self._error(url, prev, msg)
 
     def _error(self, url: str, prev: Optional[TrackerState], msg: str) -> TrackerOutcome:

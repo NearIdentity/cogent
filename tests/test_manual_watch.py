@@ -99,7 +99,7 @@ def test_blocked_for_days_raises_a_warning(tmp_path):
         hp = s.home / "state" / "hosts.json"
         book = json.loads(hp.read_text())
         old = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        book[srv.host]["first_blocked"] = old
+        book[srv.host + "/"]["first_blocked"] = old
         hp.write_text(json.dumps(book))
         st = kg_agent.run_once(s)
         w = alerts_of(st, "deferred_too_long")

@@ -150,8 +150,9 @@ def set_fetch_mode(mode: str) -> None:
 def _fetch_http(url: str, timeout: float) -> bytes:
     host = kg_hosts.host_of(url)
     pol = kg_hosts.HOSTS
-    if pol.cooldown(host):
-        pol.defer(host, url)
+    cd = pol.cooldown_for(url)
+    if cd:
+        pol.defer(cd["key"], url)
         raise HostBlocked(f"{host}: deferred: host is blocking this client")
     pol.pace(host)
     req = Request(url, headers={"User-Agent": _user_agent(),
@@ -163,10 +164,10 @@ def _fetch_http(url: str, timeout: float) -> bytes:
         hdrs = {k: v for k, v in (exc.headers.items() if exc.headers else [])}
         reason = kg_hosts.block_reason(exc.code, hdrs)
         if reason:
-            pol.block(host, reason, kg_hosts.parse_retry_after(hdrs.get("Retry-After", "")), url=url)
+            pol.block(kg_hosts.block_key(url, exc.code), reason, kg_hosts.parse_retry_after(hdrs.get("Retry-After", "")), url=url)
             raise HostBlocked(f"{host}: {reason}") from exc
         raise
-    pol.success(host)
+    pol.success(url)
     return data
 
 
@@ -180,8 +181,9 @@ def _fetch_browser(url: str, timeout: float) -> bytes:
     from playwright.sync_api import sync_playwright
 
     host = kg_hosts.host_of(url)
-    if kg_hosts.HOSTS.cooldown(host):
-        kg_hosts.HOSTS.defer(host, url)
+    cd = kg_hosts.HOSTS.cooldown_for(url)
+    if cd:
+        kg_hosts.HOSTS.defer(cd["key"], url)
         raise HostBlocked(f"{host}: deferred: host is blocking this client")
     kg_hosts.HOSTS.pace(host)
     ms = int(timeout * 1000)
@@ -206,7 +208,7 @@ def _fetch_browser(url: str, timeout: float) -> bytes:
                 if resp.status >= 400:
                     reason = kg_hosts.block_reason(resp.status, dict(resp.headers))
                     if reason:
-                        kg_hosts.HOSTS.block(host, reason, url=url)
+                        kg_hosts.HOSTS.block(kg_hosts.block_key(url, resp.status), reason, url=url)
                         raise HostBlocked(f"{host}: {reason}")
                     raise RuntimeError(f"HTTP {resp.status} {resp.status_text}")
                 ctype = (resp.headers.get("content-type") or "").lower()

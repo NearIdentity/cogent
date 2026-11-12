@@ -833,7 +833,7 @@ def _acquire_remote(rt: Runtime, url: str, keys: list[str], st: DocState, ddir: 
     r.adams_fp = adams_fp
 
     if r.host_problem:                                  # the host blocks this client: keep the previous KG, do not count towards STALE
-        why = r.error if r.deferred else f"{r.error}; host in cooldown until {rt.hosts.report().get(kg_hosts.host_of(fetch_url), {}).get('cooldown_until') or 'later'}"
+        why = r.error if r.deferred else f"{r.error}; host in cooldown until {rt.hosts.report().get((rt.hosts.cooldown_for(fetch_url) or {}).get('key', ''), {}).get('cooldown_until') or 'later'}"
         return DocAction(url=url, entries=keys, action="skipped", detail=why, host_blocked=True), fetch_url, None
     if r.not_modified and kg_path.exists():
         st.last_checked, st.consecutive_errors, st.last_error = now, 0, ""
@@ -1396,9 +1396,9 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
     for a in state.get("doc_actions", []):
         if not a.get("host_blocked"):
             continue
-        host = kg_hosts.host_of(a["url"])
+        host = (rt.hosts.cooldown_for(a["url"]) or {}).get("key") or kg_hosts.scope_of(a["url"])
         ds = read_json(rt.p.doc(docid_of(a["url"])) / "state.json", {})
-        since = ds.get("last_checked") or (hs.get(host) or {}).get("first_blocked") or ""
+        since = ds.get("last_checked") or rt.hosts.record_for(a["url"]).get("first_blocked") or ""
         try:
             age = (now_ts - datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()) / 86400 if since else 0.0
         except ValueError:
@@ -1917,22 +1917,22 @@ def fetchcheck(s: Settings, url: str, ignore_cooldown: bool = False, out=print) 
     host = kg_hosts.host_of(url)
     ua = kg_hosts.user_agent()
     out(f"URL         {url}\nclient      urllib, user agent: {ua}")
-    cd = pol.cooldown(host)
+    cd = pol.cooldown_for(url)
     if cd and not ignore_cooldown:
         until = datetime.fromtimestamp(cd.get("until", 0), timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        out(f"NOT REQUESTED: {host} is in a cooldown until {until} ({cd.get('reason')}). Use --ignore-cooldown to request anyway.")
+        out(f"NOT REQUESTED: {cd.get('key', host)} is in a cooldown until {until} ({cd.get('reason')}). Use --ignore-cooldown to request anyway.")
         return 2
     pol.pace(host, s.min_interval)
     shown = ("server", "via", "retry-after", "x-reference-error", "content-type", "content-length", "x-cache", "cf-ray")
     try:
         with urlopen(Request(url, headers={"User-Agent": ua, "Accept": "*/*"}), timeout=45) as r:
             status, headers, body, final = r.status, dict(r.headers.items()), r.read(60000), r.geturl()
-        pol.success(host)
+        pol.success(url)
     except HTTPError as exc:
         status, headers, body, final = exc.code, dict(exc.headers.items()) if exc.headers else {}, exc.read(60000), exc.geturl()
         reason = kg_hosts.block_reason(status, headers)
         if reason:
-            pol.block(host, reason, kg_hosts.parse_retry_after(headers.get("Retry-After", "")), url=url, headers={k: v for k, v in headers.items() if k.lower() in shown})
+            pol.block(kg_hosts.block_key(url, status), reason, kg_hosts.parse_retry_after(headers.get("Retry-After", "")), url=url, headers={k: v for k, v in headers.items() if k.lower() in shown})
     except (URLError, TimeoutError, OSError) as exc:
         out(f"status      transport error: {type(exc).__name__}: {getattr(exc, 'reason', exc)}")
         return 1

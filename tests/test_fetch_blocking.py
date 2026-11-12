@@ -126,7 +126,7 @@ def test_403_starts_cooldown_without_retry_or_browser(srv, monkeypatch):
     r2 = T.fetch(srv.base + "/y.pdf", min_interval=0)
     assert r2.deferred and r2.host_problem and "deferred: host is blocking this client" in r2.error
     assert srv.count() == 1                                # nothing requested during the cooldown
-    assert kg_hosts.HOSTS.cooldown(srv.host)["level"] == 1
+    assert kg_hosts.HOSTS.cooldown(srv.host + "/")["level"] == 1
 
 
 @pytest.mark.parametrize("status,headers", [(429, {}), (503, {"Retry-After": "7200"})])
@@ -141,7 +141,7 @@ def test_plain_503_is_retried_and_not_a_block(srv):
     srv.add("/p", b"down", "text/plain", status=503)
     r = T.fetch(srv.base + "/p", min_interval=0, retries=2, backoff=0)
     assert not r.blocked and r.status == 503 and srv.count() == 3
-    assert kg_hosts.HOSTS.cooldown(srv.host) is None
+    assert kg_hosts.HOSTS.cooldown_for(srv.base + "/p") is None
 
 
 def test_404_is_just_an_error(srv):
@@ -198,7 +198,7 @@ def test_opt_in_browser_fallback_respects_cooldown(srv, monkeypatch):
     kg_hosts.configure(None, default_interval=0, persist=False)
     monkeypatch.setattr(kg_ingest, "_fetch_browser", lambda u, t: (_ for _ in ()).throw(RuntimeError("HTTP 403 Forbidden")))
     r = T.fetch(srv.base + "/x.pdf", min_interval=0)                      # both strategies fail -> cooldown
-    assert r.blocked and "browser fallback failed" in r.error and kg_hosts.HOSTS.cooldown(srv.host)
+    assert r.blocked and "browser fallback failed" in r.error and kg_hosts.HOSTS.cooldown(srv.host + "/")
     monkeypatch.setattr(kg_ingest, "_fetch_browser", browser)
     assert T.fetch(srv.base + "/x.pdf", min_interval=0).deferred and len(calls) == 1   # no browser during a cooldown
 
@@ -267,7 +267,7 @@ def test_blocked_host_defers_without_stale_and_keeps_kg(tmp_path, srv, srv2, mon
     assert st["summary"]["docs_created"] == 3 and st["summary"]["errors"] == 1          # the tracker page /idx.html is a plain 404
     assert "tracker URL not found" in " ".join(st["summary"]["error_messages"])
     assert "update_tracking_urls" in " ".join(st["summary"]["error_messages"])
-    assert st["summary"]["fetch_problems"][srv2.host]["gone"] == [srv2.base + "/idx.html"]
+    assert st["summary"]["fetch_problems"][srv2.host + "/"]["gone"] == [srv2.base + "/idx.html"]
     # the host now blocks this client
     srv2.block_all = 403
     before = srv2.count()
@@ -276,8 +276,8 @@ def test_blocked_host_defers_without_stale_and_keeps_kg(tmp_path, srv, srv2, mon
     assert sm["docs_error"] == 0 and sm["errors"] == 0, st["report"]
     assert sm["docs_deferred"] == 2 and sm["docs_unchanged"] == 1
     assert srv2.count() - before == 1                       # ONE blocked request; everything else on that host was deferred
-    assert sm["fetch_problems"][srv2.host]["deferred"] >= 1
-    assert "bot filter" in sm["fetch_problems"][srv2.host]["blocked"]
+    assert sm["fetch_problems"][srv2.host + "/"]["deferred"] >= 1
+    assert "bot filter" in sm["fetch_problems"][srv2.host + "/"]["blocked"]
     assert "### Fetch problems by host" in st["report"]
     for u in ("/a.pdf", "/b.pdf"):
         d = doc_state(s, srv2.base + u)
@@ -414,3 +414,45 @@ def test_lost_kg_is_rebuilt_not_stuck_on_304(tmp_path, srv):
         k.unlink()
     st = kg_agent.run_once(s)
     assert st["summary"]["docs_created"] == 1 and st["summary"]["docs_error"] == 0
+
+
+# ---------------------------------------------------------------------------- scope of a refusal
+
+def test_a_403_is_scoped_to_one_area_of_the_host(srv):
+    """The NRC refused the PDFs under /docs while its HTML pages answered normally: only the area is in a cooldown."""
+    srv.add("/docs/a.pdf", b"x", status=403)
+    srv.add("/reading-rm/page.html", b"<html><title>ok</title></html>", "text/html")
+    assert T.fetch(srv.base + "/docs/a.pdf", min_interval=0).blocked
+    assert T.fetch(srv.base + "/docs/b.pdf", min_interval=0).deferred                 # same area: not requested
+    r = T.fetch(srv.base + "/reading-rm/page.html", min_interval=0)                    # another area of the host still works
+    assert r.ok and not r.host_problem
+    assert kg_hosts.HOSTS.cooldown(srv.host + "/docs") and not kg_hosts.HOSTS.cooldown(srv.host)
+    assert kg_hosts.scope_of("https://www.nrc.gov/docs/ML18/ML18019A922.pdf") == "www.nrc.gov/docs"
+    assert kg_hosts.scope_of("https://example.org/file.pdf") == "example.org/"
+
+
+def test_429_blocks_the_whole_host(srv):
+    srv.add("/docs/a.pdf", b"slow down", "text/plain", status=429)
+    assert T.fetch(srv.base + "/docs/a.pdf", min_interval=0).blocked
+    assert T.fetch(srv.base + "/other/page.html", min_interval=0).deferred
+    assert kg_hosts.HOSTS.cooldown(srv.host)
+
+
+def test_three_refused_areas_block_the_host(srv):
+    srv.block_all = 403
+    for area in ("a", "b", "c"):
+        T.fetch(f"{srv.base}/{area}/x.pdf", min_interval=0)
+    assert kg_hosts.HOSTS.cooldown(srv.host)                                           # the whole host now
+    assert T.fetch(srv.base + "/d/y.html", min_interval=0).deferred
+
+
+def test_agent_stages_html_while_the_pdf_area_is_refused(tmp_path, srv):
+    kg_ingest.set_pdf_engine("basic")
+    srv.add("/docs/a.pdf", b"x", status=403)
+    srv.add("/index/page.html", b"<html><body><h1>Index</h1><p>Some text.</p></body></html>", "text/html")
+    s = make_env(tmp_path, [{"id": 1, "document": "D", "links": [{"text": "p", "url": srv.base + "/docs/a.pdf"}, {"text": "h", "url": srv.base + "/index/page.html"}],
+                             "update_tracking_urls": []}])
+    st = kg_agent.run_once(s)
+    sm = st["summary"]
+    assert sm["docs_created"] == 1 and sm["docs_deferred"] == 1 and sm["docs_error"] == 0 and sm["errors"] == 0, st["report"]
+    assert set(sm["fetch_problems"]) == {srv.host + "/docs"}

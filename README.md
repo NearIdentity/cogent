@@ -213,7 +213,7 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
    eCFR XML. A re-rendered file or a changed footer is not an update. eCFR pages are read from the versioner XML API
    instead of the JavaScript page. A changed document is re-ingested; its previous KG is **archived**; a structured diff
    (modified / new / removed sections, entity counts) is recorded.
-   Requests are polite by construction: an honest user agent, per-host pacing, and a persisted **cooldown** after a 403 / 429 /
+   Requests are polite by construction: an honest user agent, per-host pacing, and a persisted **cooldown** (a 403: the refused area of the host, e.g. `www.nrc.gov/docs`; 429 / 503: the host) after a 403 / 429 /
    503 + `Retry-After` (documents and trackers on that host are *deferred*, keep their previous KG and never become `STALE`).
    See [docs/fetching.md](docs/fetching.md).
 5. **assemble** – the KG of each standard / report whose documents (or links, name, compliance / overlap lists) changed is
