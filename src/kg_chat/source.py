@@ -192,7 +192,7 @@ class KnowledgeSource:
         if not self.has_tables:
             return LookupOutcome()
         try:
-            res = self.conn.call_tool("lookup_values", {"question": question, "k": self.cfg.table_rows})
+            res = self.conn.call_tool("lookup_values", {"question": question, "k": self.cfg.table_rows, "retrieval": self.cfg.table_retrieval})
         except McpAuthError:
             raise                                               # a rejected token is not a degraded answer: the caller must see it
         except McpToolError as exc:

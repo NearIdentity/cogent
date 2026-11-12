@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections import Counter
 from typing import Any, Optional
 
 from langchain_core.documents import Document
@@ -30,6 +31,7 @@ import kg_telemetry as telemetry
 
 from . import render
 from .cache import DiskEmbeddings
+from .keyword import Bm25Index, fuse, has_identifier
 from .llm import UsageCallback, make_chat_model, make_embeddings
 from .mcp_conn import McpError
 from .models import AgentAnswer, ChatReply, ClientConfig, Notice, SourceRef, TableView
@@ -79,6 +81,7 @@ class CogentAgent:
         self.chunks = MarkdownTextSplitter(chunk_size=cfg.chunk_size, chunk_overlap=cfg.chunk_overlap).split_documents(sections)
         progress(f"Embedding {len(self.chunks)} chunk(s) (cached vectors are reused)...")
         self.store = InMemoryVectorStore.from_documents(self.chunks, self.embeddings)
+        self.keywords = Bm25Index(self.chunks)                      # exact codes and identifiers that embeddings blur
         telemetry.set_chat_gauges(chunks=len(self.chunks))
 
         # Structured output: the model's reply is parsed into an AgentAnswer.
@@ -129,6 +132,22 @@ class CogentAgent:
         """Remove [S#] marks that do not match a retrieved excerpt: the model cannot cite what was not retrieved."""
         return _CITE.sub(lambda m: m.group(0) if 1 <= int(m.group(1)) <= n else "", text)
 
+    # ---- retrieval
+    def retrieve(self, query: str) -> list[Document]:
+        """Top-k chunks by vector similarity, BM25 keyword search, or both fused with reciprocal rank fusion (``cfg.retrieval``)."""
+        k, mode = self.cfg.top_k, self.cfg.retrieval
+        vec = self.store.similarity_search(query, k=k * 3 if mode == "hybrid" else k) if mode != "keyword" else []
+        kw = [d for d, _ in self.keywords.search(query, k * 3 if mode == "hybrid" else k)] if mode != "semantic" else []
+        if mode == "semantic":
+            fused = [(d, [0]) for d in vec]
+        elif mode == "keyword":
+            fused = [(d, [1]) for d in kw]
+        else:
+            fused = fuse([vec, kw], k, self.cfg.rrf_k, [1.0, 2.0 if has_identifier(query) else 1.0])         # a question with a code leans on the keyword ranking
+        for src, n in Counter("both" if len(by) == 2 else "vector" if by == [0] else "keyword" for _, by in fused).items():
+            telemetry.record_chat_retrieval(src, n)
+        return [d for d, _ in fused][:k]
+
     # ---- the question
     def ask(self, question: str) -> ChatReply:
         t0 = time.perf_counter()
@@ -147,7 +166,7 @@ class CogentAgent:
         if self.history and self.cfg.history_turns:
             search_query = self._rewrite_chain.invoke({"history": history, "question": question}, config=self._cfg_cb("rewrite", self.cfg.chat_model)).content.strip() or question
 
-        hits = self.store.similarity_search(search_query, k=self.cfg.top_k)
+        hits = self.retrieve(search_query)
         lookup = self.source.lookup(search_query)
         if self.source.has_tables:
             telemetry.record_chat_lookup("error" if lookup.error else "no_match" if lookup.no_match else "rows")

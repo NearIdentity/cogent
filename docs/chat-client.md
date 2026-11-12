@@ -9,7 +9,7 @@
  Markdown sections per heading (tables as Markdown tables, citation metadata)
     │  split (MarkdownTextSplitter) → embed (Ollama) → in-memory vector store      src/kg_chat/agent.py, cache.py
     ▼
- question ─► [rewrite with chat history] ─► top-k chunks  +  lookup_values (table rows, if the server has a table database)
+ question ─► [rewrite with chat history] ─► top-k chunks: vector search + BM25 keyword search, fused  +  lookup_values (table rows, if the server has a table database)
                                                  │
                               chat model (Ollama) → AgentAnswer (answer, found_in_context)
                                                  │
@@ -29,7 +29,7 @@ python src/kg_chat_app.py web --mcp-url https://your-host/mcp          # http://
 python src/kg_chat_app.py chat --mcp-url https://your-host/mcp         # the same agent in the terminal
 ```
 
-`--mcp-url` (or `$COGENT_MCP_URL`) is the designated URL of the server; a bare `https://host` gets `/mcp` appended. Credentials or a query string in the URL are refused; plain `http` to another host prints a warning because the token would travel in clear text. At start-up the client connects, lists the tools (a wrong URL or token stops here with a clear message), reads every entry's graph, builds the index and then serves. Options: `--model`, `--embed-model`, `--ollama-url` (also `$CHAT_MODEL`, `$EMBED_MODEL`, `$OLLAMA_URL`), `--entries standard:22,report:1`, `--top-k`, `--table-rows`, `--cache-dir` (default `chat_cache/`, `none` disables), `--otlp-endpoint`. Web only: `--host`, `--port`, `--allow-remote`, `--env-file`, `--no-login`, `--secure-cookie`, `--session-hours`, `--metrics`.
+`--mcp-url` (or `$COGENT_MCP_URL`) is the designated URL of the server; a bare `https://host` gets `/mcp` appended. Credentials or a query string in the URL are refused; plain `http` to another host prints a warning because the token would travel in clear text. At start-up the client connects, lists the tools (a wrong URL or token stops here with a clear message), reads every entry's graph, builds the index and then serves. Options: `--model`, `--embed-model`, `--ollama-url` (also `$CHAT_MODEL`, `$EMBED_MODEL`, `$OLLAMA_URL`), `--entries standard:22,report:1`, `--retrieval hybrid|semantic|keyword`, `--top-k`, `--table-rows`, `--cache-dir` (default `chat_cache/`, `none` disables), `--otlp-endpoint`. Web only: `--host`, `--port`, `--allow-remote`, `--env-file`, `--no-login`, `--secure-cookie`, `--session-hours`, `--metrics`.
 
 ## What it uses from the server
 
@@ -62,6 +62,16 @@ Added for cogent, because its data is regulatory and carries its own caveats:
 
 The reply is JSON (`answer`, `found_in_context`, `sources`, `tables`, `notices`). The page renders the answer and each table's Markdown with a small renderer that builds DOM nodes with `textContent` only (headings, lists, bold/italic, code, block quotes, links to `http(s)` only, tables): nothing from a document or a table cell can inject HTML or script (tested in a real browser). The terminal client prints the same Markdown. Slash commands show server data without the language model: `/entries [text]`, `/warnings [entry]`, `/lookup <question>`, `/describe <table id>`, `/status`, `/help`.
 
+## Retrieval: vectors and keywords
+
+Embeddings find passages that mean the same, but they blur exact codes: `NEI 18-04` and `NEI 21-07`, `A572` and `A516`, `50.69` and `50.59` look alike to a vector. So every question is answered from **two rankings over the same chunks, fused**:
+
+* **vector search**: the embedding similarity of the (rewritten) question, as in 0xA6E07;
+* **keyword search**: Okapi **BM25** over the chunk texts and their section headings, with an identifier-aware tokenizer that works like the server's own keyword search: case-insensitive, `-`, `/` and `_` count as spaces (`DOE-STD-1104` finds `DOE STD 1104`), a dotted number stays one token (`1.233`, `50.69`), and stop words are dropped from the question (not from the index);
+* **fusion**: reciprocal rank fusion (constant 60). A question that contains a code (a token with a digit) gives the keyword ranking double weight, so a passage that is the only one to mention `A572` is not outvoted by passages that are merely close in meaning to the rest of the question.
+
+`--retrieval hybrid` (default) | `semantic` | `keyword` chooses the method for text. The table search is asked for hybrid retrieval too (`lookup_values` with `retrieval="hybrid"`; config `table_retrieval`), so exact codes in table rows are matched as well. A code that no chunk contains finds nothing by keyword: the answer then rests on the vectors alone, and if they have nothing the model says it could not find it. `cogent_chat_retrieval_hits_total{source}` shows how many chunks came from each method.
+
 ## Index and caches
 
 The index is built once at start-up (as in 0xA6E07) from every entry that has a graph. Graph sections are cached per entry under `--cache-dir` and reused while the entry's `graph_built` time is unchanged; embeddings are cached in SQLite by model and text hash, so a restart embeds only new text. Vectors live in memory: a very large server (tens of thousands of chunks) needs memory accordingly, and `--entries` limits what is indexed. An entry whose graph the server truncates (`max_nodes`) is reported under `/status`.
@@ -80,12 +90,12 @@ The chat client reports its LLM calls with the same `cogent_llm_*` metrics as th
 
 ## Tests
 
-`tests/test_chat_*.py` (62 tests): rendering of every table shape; grounding with fake models; the connection against a **real cogent MCP server over HTTP with a bearer token** (wrong, empty and missing token; wrong path; unreachable server) and tables through a stub table service; caches; the Flask app; the login (`.env` parsing, plain and hashed passwords, CSRF, lock-out, session cookie flags, logout, headers, no password in logs; in a real browser); the command line; the page in headless Chromium (Markdown tables rendered, HTML and `javascript:` links inert); LLM-usage and dashboard consistency. No Ollama is needed.
+`tests/test_chat_*.py` (72 tests): rendering of every table shape; grounding with fake models; the connection against a **real cogent MCP server over HTTP with a bearer token** (wrong, empty and missing token; wrong path; unreachable server) and tables through a stub table service; caches; the Flask app; the login (`.env` parsing, plain and hashed passwords, CSRF, lock-out, session cookie flags, logout, headers, no password in logs; in a real browser); the command line; the page in headless Chromium (Markdown tables rendered, HTML and `javascript:` links inert); LLM-usage and dashboard consistency. No Ollama is needed.
 
 ## Limits and what was not verified
 
 * The live Ollama calls (`ChatOllama`, `OllamaEmbeddings`) were **not** run; the first real run checks that your chat model supports structured output (as in 0xA6E07's README). Token counts from Ollama (`usage_metadata`, `prompt_eval_count`) are used when present.
 * Not run against the real table database (it needs PostgreSQL + pgvector): the table path is tested against a stub shaped like the server's answers. Not run against a large production server: indexing time and memory there are unmeasured.
-* Retrieval is by embedding similarity over graph sections plus the server's table search; there is no keyword search over the graphs, so an exact identifier can be missed by the vectors.
+* Keyword search is BM25 over the chunks the client itself indexed (the same text the vectors see), not the server's `search_graph`: it needs no extra calls, but it only knows chunks of the entries indexed at start-up, and it has no stemming or synonyms (`seismic` does not find `earthquake`; that is the vector search's job). The fusion constants (reciprocal rank fusion 60, keyword weight 2 for questions that contain a code) are untuned guesses. Tested with fake embeddings that cannot find the code; not measured on real questions.
 * The page template `src/templates/index.html` that 0xA6E07's README and Dockerfile refer to is not in that repository (not committed), so this UI was written new following its documented behaviour.
 * There is no container image or Kubernetes manifest for the chat client yet.

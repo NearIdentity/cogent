@@ -194,6 +194,8 @@ timeseries("Chat client LLM calls by outcome", 12, 75, 12, 7,
 
 timeseries("Chat logins by outcome", 0, 82, 12, 7, [{"expr": "sum by (outcome) (increase(cogent_chat_logins_total[15m]))", "legendFormat": "{{outcome}}"}],
            draw="bars", stack=True, fill=70, description="Login attempts of the chat web app: ok, failed, locked (refused while the address is locked out). A run of failed or locked attempts is someone guessing the password.")
+timeseries("Retrieved chunks by method", 12, 82, 12, 7, [{"expr": "sum by (source) (increase(cogent_chat_retrieval_hits_total[15m]))", "legendFormat": "{{source}}"}],
+           draw="bars", stack=True, fill=70, description="Text chunks handed to the model, by the method that found them: vector (embedding similarity), keyword (BM25: exact codes and identifiers) or both. `keyword` alone is what the embeddings alone would have missed.")
 
 dash = {"uid": "cogent-observability", "title": "cogent: agent, MCP server and chat client", "tags": ["cogent", "mcp", "agent", "chat"], "timezone": "browser", "editable": True,
         "graphTooltip": 1, "schemaVersion": 39, "version": 1, "refresh": "10s", "time": {"from": "now-30m", "to": "now"},

@@ -75,6 +75,7 @@ SCHEMA: dict[str, tuple[str, str, Optional[tuple]]] = {
     "cogent_chat_mcp_calls_total": ("counter", "MCP calls made by the conversational agent by tool and outcome (ok | error | auth).", None),
     "cogent_chat_mcp_call_duration_seconds": ("histogram", "Latency of the MCP calls made by the conversational agent.", OP_BUCKETS),
     "cogent_chat_table_lookups_total": ("counter", "Table lookups (lookup_values) of the conversational agent by outcome: rows | no_match | error.", None),
+    "cogent_chat_retrieval_hits_total": ("counter", "Text chunks retrieved for a question by the method that found them: vector | keyword | both.", None),
     "cogent_chat_logins_total": ("counter", "Login attempts of the chat web app by outcome: ok | failed | locked (refused while the address is locked out).", None),
     "cogent_chat_index_chunks": ("gauge", "Text chunks in the conversational agent's vector index.", None),
     "cogent_chat_conversations": ("gauge", "Conversations currently held in memory by the chat web app.", None),
@@ -525,6 +526,12 @@ def record_chat_mcp(tool: str, outcome: str, seconds: float) -> None:
     m = metrics()
     m.inc("cogent_chat_mcp_calls_total", tool=tool, outcome=outcome)
     m.observe("cogent_chat_mcp_call_duration_seconds", seconds, tool=tool)
+
+
+@safe
+def record_chat_retrieval(source: str, n: int = 1) -> None:
+    """source: vector | keyword | both."""
+    metrics().inc("cogent_chat_retrieval_hits_total", float(n), source=source)
 
 
 @safe

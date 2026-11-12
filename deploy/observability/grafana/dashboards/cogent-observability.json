@@ -2692,6 +2692,63 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 50,
+      "type": "timeseries",
+      "title": "Retrieved chunks by method",
+      "description": "Text chunks handed to the model, by the method that found them: vector (embedding similarity), keyword (BM25: exact codes and identifiers) or both. `keyword` alone is what the embeddings alone would have missed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cogent-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cogent-prometheus"
+          },
+          "expr": "sum by (source) (increase(cogent_chat_retrieval_hits_total[15m]))",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "description": "Per-run and live metrics of the cogent update agent, the MCP server and the chat client, with the LLM usage of all three. Source: docs/observability.md."

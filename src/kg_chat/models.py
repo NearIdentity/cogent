@@ -24,6 +24,9 @@ class ClientConfig(BaseModel):
     chunk_overlap: int = Field(150, ge=0)
     top_k: int = Field(6, ge=1, le=30)            # text chunks retrieved per question
     table_rows: int = Field(8, ge=1, le=50)       # table rows asked of the table database per question
+    retrieval: Literal["hybrid", "semantic", "keyword"] = "hybrid"   # text retrieval: vector similarity, BM25 keyword search, or both fused (RRF)
+    table_retrieval: Literal["hybrid", "semantic", "lexical"] = "hybrid"   # how the server searches table rows (lookup_values `retrieval`)
+    rrf_k: int = Field(60, ge=1)                  # reciprocal-rank-fusion constant
     history_turns: int = Field(3, ge=0)           # past Q/A pairs given to the model
     entries: list[str] = Field(default_factory=list)   # restrict to these entries (e.g. ["standard:22"]); empty = every entry that has a graph
     cache_dir: Optional[Path] = None              # where fetched graph sections and embeddings are cached (None: no cache)

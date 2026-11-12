@@ -67,6 +67,7 @@ def add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--cache-dir", type=Path, default=Path("chat_cache"), help="graph sections and embeddings are cached here (default chat_cache/); 'none' disables")
     p.add_argument("--top-k", type=int, default=6, help="text chunks retrieved per question")
     p.add_argument("--table-rows", type=int, default=8, help="table rows requested per question")
+    p.add_argument("--retrieval", choices=["hybrid", "semantic", "keyword"], default="hybrid", help="text retrieval: vector similarity, BM25 keyword search, or both fused (default)")
     p.add_argument("--otlp-endpoint", help="OpenTelemetry OTLP/HTTP endpoint for traces (default $OTEL_EXPORTER_OTLP_ENDPOINT)")
 
 
@@ -76,7 +77,7 @@ def build_config(a: argparse.Namespace) -> ClientConfig:
     cache = None if str(a.cache_dir).lower() == "none" else a.cache_dir
     try:
         return ClientConfig(mcp_url=a.mcp_url, token=SecretStr(read_token(a.token_file)), chat_model=a.model, embed_model=a.embed_model, ollama_url=a.ollama_url,
-                            entries=[e.strip() for e in (a.entries or "").split(",") if e.strip()], cache_dir=cache, top_k=a.top_k, table_rows=a.table_rows)
+                            entries=[e.strip() for e in (a.entries or "").split(",") if e.strip()], cache_dir=cache, top_k=a.top_k, table_rows=a.table_rows, retrieval=a.retrieval)
     except ValidationError as exc:
         raise SystemExit("Error: " + "; ".join(e["msg"] for e in exc.errors()))
 
