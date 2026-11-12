@@ -76,6 +76,8 @@ class AdamsResult:
     error: str = ""
     deferred: bool = False
     raw_keys: list[str] = field(default_factory=list)
+    content: str = field(default="", repr=False)            # the record's text (memory only: never printed, logged or stored)
+    info: dict[str, Any] = field(default_factory=dict)       # title, pages, URL ... for display; DocumentType is shown but never trusted
 
 
 class AdamsClient:
@@ -139,7 +141,14 @@ class AdamsClient:
             fp, fields = fingerprint(payload)
         except ValueError as exc:
             return AdamsResult(status=status, accession=acc, error=str(exc))
-        return AdamsResult(True, status, acc, fp, fields, raw_keys=sorted(payload.keys()) if isinstance(payload, dict) else [])
+        d = payload.get("document", payload)
+        content = d.get("content") or ""
+        if isinstance(content, list):
+            content = "\n".join(str(x) for x in content)
+        info = {k: d.get(k) for k in ("DocumentTitle", "DocumentType", "DocumentDate", "DateAddedTimestamp", "EstimatedPageCount",
+                                      "DocumentSize", "Url", "AuthorName", "DocketNumber") if d.get(k) not in (None, "")}
+        return AdamsResult(True, status, acc, fp, fields, raw_keys=sorted(payload.keys()) if isinstance(payload, dict) else [],
+                           content=str(content), info=info)
 
     def search(self, body: dict) -> tuple[list[dict], str]:
         """POST a search (``body`` as documented in the APS guide); returns (records, error)."""
@@ -152,3 +161,121 @@ class AdamsClient:
 
 def hosts_deferred() -> str:
     return "deferred: host is blocking this client"
+
+
+# ---------------------------------------------------------------------------
+# Verifying a local copy against its ADAMS record
+# ---------------------------------------------------------------------------
+
+import datetime as _dt  # noqa: E402
+
+OVERLAP_MIN = 0.6              # share of the ADAMS text's 4-word phrases that must occur in the file's own text
+DATE_SLACK_DAYS = 2            # a file may not have been written later than this after the record was added to ADAMS
+_MIN_WORDS = 50                # below this a text comparison means nothing
+
+
+def accession_in_name(name: str) -> Optional[str]:
+    m = _ACCESSION.search(name)
+    return m.group(1).upper() if m else None
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _shingles(words: list[str], n: int = 4) -> set[int]:
+    return {hash(tuple(words[i:i + n])) for i in range(0, max(0, len(words) - n + 1))}
+
+
+def text_overlap(adams_text: str, file_text: str) -> Optional[float]:
+    """Share of the ADAMS text's 4-word phrases that also occur in the file's text (None when either is too short to compare).
+    Text extraction differs between ADAMS and a PDF reader, so this is a similarity, not an equality."""
+    a, f = _words(adams_text)[:30000], _words(file_text)
+    if len(a) < _MIN_WORDS or len(f) < _MIN_WORDS:
+        return None
+    sa = _shingles(a)
+    return len(sa & _shingles(f)) / len(sa) if sa else None
+
+
+def _pdf_date(value: str) -> Optional[_dt.datetime]:
+    m = re.search(r"(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?", value or "")
+    if not m:
+        return None
+    y, mo, d, h, mi, se = (int(x) if x else 0 for x in m.groups())
+    try:
+        return _dt.datetime(y, mo or 1, d or 1, h, mi, se, tzinfo=_dt.timezone.utc)
+    except ValueError:
+        return None
+
+
+def _iso(value: Any) -> Optional[_dt.datetime]:
+    try:
+        t = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=_dt.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def file_facts(path) -> dict[str, Any]:
+    """Hash, size, times and (for PDFs) page count, metadata dates and text of a local copy."""
+    from pathlib import Path as _P
+    p = _P(path)
+    data = p.read_bytes()
+    st = p.stat()
+    facts: dict[str, Any] = {"sha256": hashlib.sha256(data).hexdigest(), "size": st.st_size, "mtime": int(st.st_mtime), "text": "", "pdf": {}}
+    if data[:5] == b"%PDF-":
+        try:
+            import pymupdf
+            doc = pymupdf.open(stream=data, filetype="pdf")
+            md = doc.metadata or {}
+            facts["pdf"] = {"pages": doc.page_count, "created": md.get("creationDate") or "", "modified": md.get("modDate") or ""}
+            facts["text"] = "\n".join(pg.get_text() for pg in doc)
+        except Exception as exc:                     # a damaged PDF is itself worth a warning
+            facts["pdf"] = {"error": f"{type(exc).__name__}: {str(exc)[:100]}"}
+    else:
+        try:
+            from bs4 import BeautifulSoup
+            facts["text"] = BeautifulSoup(data, "html.parser").get_text(" ")
+        except Exception:
+            pass
+    return facts
+
+
+def verify_local_copy(path, record: "AdamsResult", previous: Optional[dict] = None) -> dict[str, Any]:
+    """Compare a local copy with its ADAMS record. Returns {ok, failures, notes, sha256, size, mtime, pdf, adams_fp, accession, checked}.
+
+    Checks: the accession in the file name; the text (phrase overlap with ADAMS); the page count (ADAMS gives an estimate); the PDF's
+    own dates against the date the record was added to ADAMS; and, against the previous verification of the same path, a changed
+    content with an unchanged modification time. These are heuristics for catching a wrong or altered file; they are not proof."""
+    from pathlib import Path as _P
+    p = _P(path)
+    facts = file_facts(p)
+    failures: list[str] = []
+    notes: list[str] = []
+    name_acc = accession_in_name(p.name)
+    if name_acc and name_acc != record.accession:
+        failures.append(f"the file name says {name_acc} but the ADAMS record is {record.accession}")
+    ov = text_overlap(record.content, facts["text"])
+    if ov is None:
+        notes.append("text not compared (no text layer, or too little text on either side)")
+    elif ov < OVERLAP_MIN:
+        failures.append(f"only {ov:.0%} of the ADAMS text occurs in the file (at least {OVERLAP_MIN:.0%} expected)")
+    est, pages = record.info.get("EstimatedPageCount"), facts["pdf"].get("pages")
+    try:
+        est_n = int(est) if est is not None else None
+    except (TypeError, ValueError):
+        est_n = None
+    if est_n and pages and abs(pages - est_n) > max(2, 0.2 * est_n):
+        failures.append(f"the file has {pages} pages; ADAMS estimates {est_n}")
+    added = _iso(record.info.get("DateAddedTimestamp"))
+    for label in ("created", "modified"):
+        t = _pdf_date(facts["pdf"].get(label, ""))
+        if t and added and t > added + _dt.timedelta(days=DATE_SLACK_DAYS):
+            failures.append(f"the PDF's {label} date ({t:%Y-%m-%d}) is after the record was added to ADAMS ({added:%Y-%m-%d})")
+    if previous and previous.get("sha256") and previous["sha256"] != facts["sha256"] and previous.get("mtime") == facts["mtime"]:
+        failures.append("the file content changed but its modification time did not")
+    if facts["pdf"].get("error"):
+        failures.append(f"the PDF could not be read ({facts['pdf']['error']})")
+    facts.pop("text")
+    return {**facts, "ok": not failures, "failures": failures, "notes": notes, "adams_fp": record.fp, "accession": record.accession,
+            "checked": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}

@@ -232,7 +232,7 @@ check a tracker against a live page), `fetchcheck <url>` (ONE request: status, f
 `--no-kg-context` (leave the KG neighbourhood out of the embedded text); `--publish-snapshot DIR` writes a bundle for other
 servers after the run (`--snapshot-keep N` bundles are kept, default 5). Common options: `--standards`, `--reports`, `--home` (default
 `kg_agent_home`), `--only standard:22,report:1`, `--extractor rules|ollama|hybrid`, `--model`, `--llm`, `--no-auto-apply`,
-`--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--host-interval HOST=SECONDS`, `--deferred-warn-days N`, `--fetch`,
+`--no-assets`, `--keep-archive N`, `--local-dir`, `--min-interval` (seconds between requests to one host), `--host-interval HOST=SECONDS`, `--deferred-warn-days N`, `--manual-prompt auto|always|never`, `--verify-local warn|strict|off`, `--fetch`,
 `--pdf-engine`, `--ocr*`, `-v`.
 
 ### Extraction recipe (rebuild after a parser change)
@@ -300,7 +300,7 @@ staging/documents/<id>/{state.json,kg.json,assets/}    one per unique URL (asset
 staging/{standards,reports}/<n>/{kg.json,meta.json}    the KG of each entry
 archive/documents/<id>/<ts>_<sha>/   archive/entries/<key>/<ts>/    superseded versions
 local/{standards,reports}/<id>/      purchased copies you drop in (folders are created for paywalled entries)
-state/{trackers,identities,pending,alerts,config_hashes,orphans,hosts,adams_manual}.json       logs/{report.md,runs.jsonl,forced.jsonl}
+state/{trackers,identities,pending,alerts,config_hashes,orphans,hosts,adams_manual,local_verification}.json       logs/{report.md,runs.jsonl,forced.jsonl}
 archive/orphans/<kind>_<id>_<run>.tar.gz    compressed orphaned staging data (forced updates)
 staging/combined/{kg.json,dependents.json,meta.json}    entry-level graph (below)
 tabledb/<docid>/{data_dictionary,relationships,join_evaluation}.*    published by the table agent; logs/{tabledb.jsonl,tabledb_report.md}
@@ -320,6 +320,7 @@ warnings appear at the top of each report section, in the log, and in `state/ale
 * **LOCAL COPY OUTDATED** – the local copy's own title page states an older edition than the latest known one;
 * **EDITION NOT ENDORSED** – the edition on board is not one of the entry's `endorsed_editions` (any entry, paywalled or not);
 * **MANUAL DOWNLOAD NEEDED** – a `"manual": true` link has no file yet; the warning gives the URL to download and the path to save to;
+* **LOCAL COPY DOES NOT MATCH ADAMS** – a local copy named like an accession (`ML….pdf`) differs from its ADAMS record in text, page count, dates or file name, or changed without a new modification time (`--verify-local warn|strict|off`);
 * **MANUAL DOCUMENT CHANGED** – with `NRC_ADAMS_API_KEY`, the ADAMS record of a manual `nrc.gov/docs/ML…` link changed after the file on board was saved; open until you save the new download;
 * **NOT CHECKED FOR DAYS** – documents on a host that keeps refusing the agent have not been checked for `--deferred-warn-days` (default 7) days;
 * (info) *local copy not identified*, *store page changed*, *store page blocked* (the store refused automated requests; the previous KG is kept).
@@ -522,7 +523,7 @@ judge agreement, hallucination rate, failures and retries. `deploy/observability
 python -m pytest tests          # no internet: the agent tests run against tests/mock_site.py (370 tests collected on 2026-11-12; 42 of them need PostgreSQL + pgvector and are skipped without it)
 ```
 
-* `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
+* `test_fetch_blocking.py` (honest user agent, cooldowns and their persistence, deferral without STALE, pacing, interleaving, manual links, `fetchcheck`, store-page and tracker reporting) and `test_manual_prompt.py` (browser-download prompt, verification of local copies against ADAMS), `test_manual_watch.py` (ADAMS watch for manual links, "not checked for days") and `test_adams.py` (accession parsing, fingerprints, mock APS server, change detection, key hygiene) run against local mock servers only; nothing in them touches the real nrc.gov or ADAMS.
 * `test_config.py` checks *invariants* of `config/*.json` (unique ids, parseable entries, well-formed URLs, valid report→standard references, symmetric overlaps, valid
   `version_tracking`) rather than specific entries, so editing the configuration does not break the suite. `COGENT_CONFIG_DIR=<dir>` checks another pair of files;
   `COGENT_STRICT_CONFIG=1` turns dangling report→standard references from warnings into failures.

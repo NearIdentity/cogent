@@ -38,6 +38,39 @@ Download the file in your browser and save it in the entry's local-copy folder (
 
 Deferred documents are not `STALE`, so a permanent block would be silent. If documents of an entry on a blocked host have not been checked for `--deferred-warn-days` days (default 7; counted from the last successful check, or from the first block), the warning **NOT CHECKED FOR DAYS** appears in the report, the log and `get_warnings`. Practical answers: `"manual": true` links with the ADAMS watch, or asking the host to allow-list the agent's user agent.
 
+## When a download is refused: the browser route (instead of forcing `manual`)
+
+You do not have to mark links `"manual": true` for the agent to be useful when a host refuses it.
+
+* **At a terminal** (`--manual-prompt auto`, the default; `always` / `never` override), after a refused download the agent shows the document and asks whether to open it in your browser:
+  ```
+  The automated download failed: https://www.nrc.gov/docs/ML1801/ML18019A922.pdf
+    reason: blocked by a bot filter (HTTP 403 from host)
+    ADAMS record (read through the API; the type is shown but never trusted):
+      accession        ML18019A922
+      title            ...
+      document date / added to ADAMS / pages (estimate) / author / docket
+    full URL:  https://www.nrc.gov/docs/ML1801/ML18019A922.pdf
+    save as:   kg_agent_home/local/standards/18/ML18019A922.pdf
+  Open the URL in your browser and save the file there? [y]es / [n]o / [a]ll remaining / [s]kip all:
+  ```
+  The ADAMS record is read first (needs `NRC_ADAMS_API_KEY`; without it the form says it was not checked). On `y` the URL is opened in your default browser, the agent waits for you to save the file, checks it against the ADAMS record, and ingests it in the same run. From then on the link counts as satisfied by the saved file (same file name as the URL's last segment): it is not requested again, and it is watched through ADAMS like a manual link.
+* **Unattended** (cron, systemd, `kg_agent.py daemon`, `kg_daemon.py`): never prompts. The report gets a section "Could not be downloaded automatically" with each URL and the path to save it to.
+
+## Verifying local copies against ADAMS (`--verify-local warn|strict|off`)
+
+A local copy whose file name is an accession number (`ML18019A922.pdf`, wherever it came from: your browser, a copy, the prompt above) is compared with its ADAMS record on every run (one API request per accession; needs the key). The file's SHA-256, size, modification time, PDF page count and PDF dates are stored with the verdict in `state/local_verification.json`; an unchanged file whose record is unchanged is not re-checked. The checks:
+
+| check | fails when |
+|---|---|
+| file name | it names a different accession than the record |
+| text | fewer than 60 % of the 4-word phrases of the ADAMS text occur in the file's text (a similarity: ADAMS and a PDF reader extract differently); skipped for scans and very short texts |
+| pages | the page count differs from the ADAMS estimate by more than 2 pages and 20 % |
+| dates | the PDF's creation or modification date is more than 2 days after the record was added to ADAMS |
+| tampering | the content changed since the last verification but the modification time did not |
+
+A failure raises the warning **LOCAL COPY DOES NOT MATCH ADAMS** (details: the failed checks, the accession, the file hash). In `warn` mode (default) the file is still ingested; in `strict` mode it is not. These are heuristics for catching a wrong or altered file (including a planted one); they are not proof of authenticity, and a document whose ADAMS text is missing is only checked by name, pages and dates. The thresholds are untested against real NRC documents.
+
 ## `fetchcheck`: one request, no polling
 
 ```bash

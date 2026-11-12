@@ -205,7 +205,7 @@ class Alert(BaseModel):
     """A condition a human should act on (persisted until it is resolved)."""
 
     kind: Literal["no_local_copy", "new_edition_for_purchase", "local_copy_outdated", "edition_not_endorsed",
-                  "local_copy_unidentified", "store_page_changed", "store_page_blocked", "manual_download_needed", "manual_document_changed", "deferred_too_long"]
+                  "local_copy_unidentified", "store_page_changed", "store_page_blocked", "manual_download_needed", "manual_document_changed", "deferred_too_long", "local_copy_mismatch"]
     entry: str
     identity: str = ""
     severity: Literal["warning", "info"] = "warning"

@@ -38,6 +38,7 @@ import shutil
 import tarfile
 import sys
 import time
+import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any, Optional, TypedDict
@@ -80,6 +81,8 @@ class Settings(BaseModel):
     only: list[str] = Field(default_factory=list)   # restrict to entries, e.g. ["standard:22"]
     keep_archive: int = 0               # versions kept per document (0 = keep all)
     host_intervals: dict[str, float] = Field(default_factory=dict)   # seconds between requests per host (overrides the built-in defaults, e.g. www.nrc.gov = 4)
+    manual_prompt: str = "auto"         # on a failed download, offer a browser download: auto (only at a terminal) | always | never
+    verify_local: str = "warn"          # compare local copies of ADAMS documents with their ADAMS record: warn | strict (do not ingest a mismatch) | off
     deferred_warn_days: int = 7         # warn when documents on a blocked host have not been checked for this many days
     stale_after: int = 3                # consecutive failures before a URL is flagged stale
     local_dir: Optional[Path] = None    # purchased/local copies of paywalled documents (default <home>/local)
@@ -166,6 +169,10 @@ class Runtime:
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
         self.adams = kg_adams.AdamsClient.from_env()   # None without $NRC_ADAMS_API_KEY: change detection through ADAMS is then off
         self.ctx.adams = self.adams
+        self.prompt_state = "ask"                 # ask | all | skip (the answers given at the manual-download prompt)
+        self.blocked_actions: list[DocAction] = []
+        self.verification: dict[str, dict] = {}   # local copy path -> verify_local_copy result (this run)
+        self.adams_cache: dict[str, Any] = {}     # accession -> AdamsResult (one API request per accession and run)
         self.manual_changes: list[dict] = []      # manual NRC links whose ADAMS record changed (see adams_watch_manual)
         self.hosts_report: dict[str, dict] = {}   # per-host fetch problems of this run
 
@@ -223,24 +230,149 @@ def local_files(rt: Runtime, e: DocEntry) -> list[Path]:
 
 def entry_sources(rt: Runtime, e: DocEntry) -> list[tuple[str, str]]:
     """(url, label) of everything that feeds an entry's KG: its links plus local copies."""
-    out = [(l.url, l.text or e.name) for l in e.links if not l.manual]
-    out += [(f"file://{f.resolve()}", f"{e.name} (local copy: {f.name})") for f in local_files(rt, e)]
+    files = local_files(rt, e)
+    out = [(l.url, l.text or e.name) for l in e.links if not l.manual and not _local_match(l, files)]    # a manual link, or one the user already saved, is not requested
+    out += [(f"file://{f.resolve()}", f"{e.name} (local copy: {f.name})") for f in files]
     return out
+
+
+def _local_match(link: Any, files: list[Path]) -> bool:
+    """Has the user already saved this link's file? (same file name as the URL's last path segment)"""
+    name = unquote(Path(urlparse(link.url).path).name).lower()
+    return bool(name) and any(f.name.lower() == name for f in files)
 
 
 def manual_items(rt: Runtime, e: DocEntry) -> list[dict[str, Any]]:
     """For each ``"manual": true`` link of an entry: the URL to download in a browser, the path to save it to, and whether it is there."""
-    manual = [l for l in e.links if l.manual]
+    files = local_files(rt, e)
+    manual = [l for l in e.links if l.manual or _local_match(l, files)]
     if not manual:
         return []
-    files = local_files(rt, e)
     base = Path(e.local_copy).expanduser() if e.local_copy else rt.p.local / f"{e.kind}s" / str(e.id)
     glob = any(c in base.name for c in "*?[")
     out = []
     for l in manual:
-        name = unquote(Path(urlparse(l.url).path).name) or "download.html"
-        target = base if (e.local_copy and not glob and not base.is_dir() and base.suffix) else (base.parent if glob else base) / name
-        out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or (len(manual) == 1 and bool(files))})
+        target = default_save_path(rt, e, l.url)
+        out.append({"url": l.url, "save_to": str(target), "present": target.is_file() or _local_match(l, files) or (len(manual) == 1 and l.manual and bool(files))})
+    return out
+
+
+def default_save_path(rt: Runtime, e: DocEntry, url: str) -> Path:
+    """Where a file downloaded by hand from ``url`` must be saved for ``e``: its local-copy folder (or file), named like the URL's file."""
+    base = Path(e.local_copy).expanduser() if e.local_copy else rt.p.local / f"{e.kind}s" / str(e.id)
+    glob = any(c in base.name for c in "*?[")
+    name = unquote(Path(urlparse(url).path).name) or "download.html"
+    return base if (e.local_copy and not glob and not base.is_dir() and base.suffix) else (base.parent if glob else base) / name
+
+
+_INPUT = input                      # replaced in tests
+_OPEN = webbrowser.open             # replaced in tests
+
+
+def _prompting(rt: Runtime) -> bool:
+    m = rt.s.manual_prompt
+    if m == "never" or rt.dry or getattr(rt, "prompt_state", "ask") == "skip":
+        return False
+    return True if m == "always" else bool(sys.stdin.isatty() and sys.stdout.isatty())
+
+
+def adams_record(rt: Runtime, acc: str):
+    """The ADAMS record of an accession number (one API request per accession and run), or None without a key."""
+    if not rt.adams:
+        return None
+    if acc not in rt.adams_cache:
+        rt.adams_cache[acc] = rt.adams.get_document(acc)
+    return rt.adams_cache[acc]
+
+
+def _show_form(rt: Runtime, url: str, target: Path, reason: str, ar: Any) -> None:
+    print(f"\nThe automated download failed: {url}\n  reason: {reason}")
+    if ar is not None and ar.ok:
+        i = ar.info
+        print("  ADAMS record (read through the API; the type is shown but never trusted):")
+        for label, key in (("accession", None), ("title", "DocumentTitle"), ("document date", "DocumentDate"), ("added to ADAMS", "DateAddedTimestamp"),
+                           ("type", "DocumentType"), ("pages (estimate)", "EstimatedPageCount"), ("author", "AuthorName"), ("docket", "DocketNumber")):
+            val = ar.accession if key is None else i.get(key)
+            if val not in (None, ""):
+                print(f"    {label:17}{val}")
+    elif ar is not None:
+        print(f"  ADAMS: not checked ({ar.error})")
+    else:
+        print("  ADAMS: not checked (no NRC_ADAMS_API_KEY, or not an NRC document)")
+    print(f"  full URL:  {url}\n  save as:   {target}")
+
+
+def prompt_manual_download(rt: Runtime, url: str, keys: list[str]) -> Optional[Path]:
+    """After a refused download at a terminal: show the ADAMS record, offer to open the URL in a browser, wait for the saved file and
+    verify it. Returns the saved file, or None."""
+    e = next((x for x in rt.entries if x.key == keys[0]), None)
+    if e is None:
+        return None
+    target = default_save_path(rt, e, url)
+    acc = kg_adams.accession_from_url(url)
+    ar = adams_record(rt, acc) if acc else None
+    reason = (next((a.detail for a in getattr(rt, "blocked_actions", []) if a.url == url), "") or "refused by the host")
+    _show_form(rt, url, target, reason, ar)
+    if getattr(rt, "prompt_state", "ask") != "all":
+        ans = _INPUT("Open the URL in your browser and save the file there? [y]es / [n]o / [a]ll remaining / [s]kip all: ").strip().lower()
+        if ans.startswith("s"):
+            rt.prompt_state = "skip"
+            return None
+        if ans.startswith("a"):
+            rt.prompt_state = "all"
+        elif not ans.startswith("y"):
+            return None
+    try:
+        _OPEN(url)
+    except Exception:
+        pass
+    print(f"  Save the file as {target}")
+    for _ in range(3):
+        back = _INPUT("  Press Enter when it is saved (or type 'skip'): ").strip().lower()
+        if back.startswith("s"):
+            return None
+        if target.is_file():
+            break
+        print(f"  Not found: {target}")
+    else:
+        return None
+    if ar is not None and ar.ok:
+        res = kg_adams.verify_local_copy(target, ar, None)
+        rt.verification[str(target.resolve())] = {"entry": keys[0], **res}
+        book = read_json(rt.p.state / "local_verification.json", {})
+        book[str(target.resolve())] = res
+        rt.write_json(rt.p.state / "local_verification.json", book)
+        print("  Matches the ADAMS record." if res["ok"] else "  WARNING, does not match the ADAMS record: " + "; ".join(res["failures"]))
+    return target
+
+
+def verify_local_files(rt: Runtime) -> dict[str, dict]:
+    """Compare local copies named like an ADAMS accession (``ML….pdf``) with their ADAMS record (needs $NRC_ADAMS_API_KEY). The file's hash,
+    size, times and PDF metadata are stored in ``state/local_verification.json``; a changed file is verified again. A mismatch is a warning
+    (``local_copy_mismatch``), and with ``verify_local = strict`` the file is not ingested."""
+    if rt.s.verify_local == "off" or not rt.adams:
+        return {}
+    path = rt.p.state / "local_verification.json"
+    book: dict[str, dict] = read_json(path, {})
+    out: dict[str, dict] = {}
+    for e in rt.entries:
+        if not rt.selected(e):
+            continue
+        for f in local_files(rt, e):
+            acc = kg_adams.accession_in_name(f.name)
+            key = str(f.resolve())
+            if not acc or key in out:
+                continue
+            ar = adams_record(rt, acc)
+            if ar is None or not ar.ok:
+                log.info("local copy %s not verified: %s", f.name, ar.error if ar else "no ADAMS key")
+                continue
+            prev = book.get(key)
+            sha = hashlib.sha256(f.read_bytes()).hexdigest()
+            res = prev if (prev and prev.get("sha256") == sha and prev.get("adams_fp") == ar.fp) else kg_adams.verify_local_copy(f, ar, prev)
+            book[key] = res
+            out[key] = {"entry": e.key, **res}
+    rt.write_json(path, book)
     return out
 
 
@@ -520,6 +652,7 @@ def make_nodes(rt: Runtime):
             first = next(iter(variants))
             if first[0]:
                 rt.scopes.setdefault(url, first)
+        rt.verification = verify_local_files(rt)
         for url in kg_hosts.interleave(list(urls), kg_hosts.host_of):
             keys = urls[url]
             with telemetry.op("sync_doc", **{"http.url": url.split("?")[0][:200], "cogent.entries": ",".join(keys)}) as dop:
@@ -530,6 +663,16 @@ def make_nodes(rt: Runtime):
                     act = DocAction(url=url, entries=keys, action="error", detail=f"{type(exc).__name__}: {exc}")
                 if act.action == "error":
                     dop.error(act.detail)
+            if act.host_blocked and not url.startswith("file://"):
+                rt.blocked_actions.append(act)
+                if _prompting(rt):                           # offer the browser route: ADAMS record, URL, save path
+                    try:
+                        saved = prompt_manual_download(rt, url, keys)
+                        if saved:
+                            act = _sync_one(rt, f"file://{saved.resolve()}", keys, f"{labels[url]} (local copy: {saved.name})")
+                            act.detail += "; downloaded by hand after the automated download was refused"
+                    except (EOFError, KeyboardInterrupt):
+                        rt.prompt_state = "skip"
             if s.force:
                 act.forced = True
                 _stamp_forced(rt, act)
@@ -1040,6 +1183,9 @@ def _sync_one(rt: Runtime, url: str, keys: list[str], label: str) -> DocAction:
         path = Path(unquote(urlparse(url).path))
         if not path.is_file():
             return DocAction(url=url, entries=keys, action="error", detail=f"local copy missing: {path}")
+        bad = rt.verification.get(str(path.resolve()))
+        if bad and not bad["ok"] and s.verify_local == "strict":            # does not match its ADAMS record: not ingested
+            return DocAction(url=url, entries=keys, action="skipped", detail="local copy does not match its ADAMS record: " + "; ".join(bad["failures"]))
         fetch_url, r = str(path), T.FetchResult(url, 200, path.read_bytes(), final_url=str(path), via="local")
     else:
         done, fetch_url, r = _acquire_remote(rt, url, keys, st, ddir, kg_path, now, behind)
@@ -1386,6 +1532,13 @@ def compute_alerts(rt: Runtime, state: AgentState) -> list[Alert]:
             if a["action"] == "updated" and e.key in a["entries"] and not a["url"].startswith("file://"):
                 out.append(Alert(kind="store_page_changed", entry=e.key, identity=a["url"], severity="info", message=(
                     f"{e.key}: the store/landing page changed ({a['url']}); check it for a new edition, errata or a price/availability change.")))
+    for path_, res in rt.verification.items():                # local copies that do not match their ADAMS record
+        if not res["ok"]:
+            out.append(Alert(kind="local_copy_mismatch", entry=res["entry"], identity=Path(path_).name,
+                             details={"path": path_, "failures": res["failures"], "accession": res["accession"], "sha256": res["sha256"]},
+                             message=(f"{res['entry']}: the local copy {path_} does not match ADAMS record {res['accession']}: "
+                                      + "; ".join(res["failures"]) + ". It may be the wrong or an altered file; get a fresh copy "
+                                      + ("(it was not ingested)." if rt.s.verify_local == "strict" else "(it was ingested; the graph may be wrong)."))))
     for ch in rt.manual_changes:                             # a manual NRC document changed in ADAMS: the user must download it again
         out.append(Alert(kind="manual_document_changed", entry=ch["entry"], identity=ch["url"], details=ch, message=(
             f"{ch['entry']}: ADAMS record {ch['accession']} changed since {ch['detected'][:10]} (the copy on board predates it). "
@@ -1611,6 +1764,16 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
             L.append(f"| {h} | {_md(d.get('blocked') or '-', 60)} | {d.get('deferred', 0)} | {d.get('requests', 0)} | {d.get('cooldown_until') or '-'} | {_md(other or '-', 60)} |")
         L.append("\nDeferred documents keep their previous KG and do not count towards STALE. Nothing is requested from a host "
                  "in a cooldown; download such files in a browser and use `\"manual\": true` links, or wait for the cooldown to end.\n")
+    blocked = [a for a in state.get("doc_actions", []) if a.get("host_blocked")]
+    if blocked:
+        L.append("### Could not be downloaded automatically\n")
+        L.append("| document | save a browser download as | entries |\n|---|---|---|")
+        by_key = {x.key: x for x in rt.entries}
+        for a in blocked:
+            ent = by_key.get(a["entries"][0])
+            L.append(f"| {_md(a['url'], 110)} | {_md(default_save_path(rt, ent, a['url']) if ent else '-', 100)} | {_md(', '.join(a['entries']), 40)} |")
+        L.append("\nRun the agent at a terminal to be shown the ADAMS record of each document and offered the browser download "
+                 "(`--manual-prompt`). A file saved there is checked against its ADAMS record (`--verify-local`).\n")
     al = state.get("alerts", [])
     if al:
         L.append("### Warnings and notes\n")
@@ -1618,7 +1781,8 @@ def render_report(rt: Runtime, state: AgentState, summary: dict, narrative: Opti
                   "local_copy_outdated": "LOCAL COPY OUTDATED", "local_copy_unidentified": "local copy not identified",
                   "store_page_changed": "store page changed", "edition_not_endorsed": "EDITION NOT ENDORSED",
                   "store_page_blocked": "store page blocked", "manual_download_needed": "MANUAL DOWNLOAD NEEDED",
-                  "manual_document_changed": "MANUAL DOCUMENT CHANGED", "deferred_too_long": "NOT CHECKED FOR DAYS"}
+                  "manual_document_changed": "MANUAL DOCUMENT CHANGED", "deferred_too_long": "NOT CHECKED FOR DAYS",
+                  "local_copy_mismatch": "LOCAL COPY DOES NOT MATCH ADAMS"}
         for a in sorted(al, key=lambda a: (a["severity"] != "warning", a["kind"], a["entry"])):
             tag = "**WARNING**" if a["severity"] == "warning" else "note"
             age = "NEW" if a["is_new"] else f"open since {a['first_seen'][:10]}, {a['runs']} runs"
@@ -1987,6 +2151,10 @@ def main(argv: Optional[list[str]] = None) -> None:
     common.add_argument("--ollama-host")
     common.add_argument("--llm", help="Ollama model used only to narrate the report")
     common.add_argument("--min-interval", type=float, default=1.0, help="default seconds between requests to one host (www.nrc.gov: 4, adams-api.nrc.gov: 2 unless --host-interval says otherwise)")
+    common.add_argument("--manual-prompt", choices=["auto", "always", "never"], default="auto", help="after a refused download, offer to open the URL in a browser "
+                        "(shows the ADAMS record first); auto: only at a terminal, never for the daemon")
+    common.add_argument("--verify-local", choices=["warn", "strict", "off"], default="warn", help="compare local copies named ML… with their ADAMS record (needs "
+                        "NRC_ADAMS_API_KEY); strict: do not ingest a mismatch")
     common.add_argument("--deferred-warn-days", type=int, default=7, help="warn when documents on a blocked host have not been checked for this many days")
     common.add_argument("--host-interval", action="append", default=[], metavar="HOST=SECONDS", help="seconds between requests to HOST (repeatable)")
     common.add_argument("--no-auto-apply", action="store_true", help="never edit the configuration; list as pending")
@@ -2062,6 +2230,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                  auto_apply=not a.no_auto_apply, assets=not a.no_assets, keep_archive=a.keep_archive,
                  local_dir=Path(a.local_dir) if a.local_dir else None,
                  host_intervals=_parse_intervals(a.host_interval), deferred_warn_days=a.deferred_warn_days,
+                 manual_prompt="never" if a.cmd == "daemon" else a.manual_prompt, verify_local=a.verify_local,
                  only=[x for x in (a.only or "").split(",") if x], dry_run=getattr(a, "dry_run", False),
                  force=getattr(a, "force", False), prune=not getattr(a, "no_prune", False), recipe_refresh=not getattr(a, "no_recipe_refresh", False),
                  publish_snapshot=getattr(a, "publish_snapshot", None), otlp_endpoint=getattr(a, "otlp_endpoint", None),

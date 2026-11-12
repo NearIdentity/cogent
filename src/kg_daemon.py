@@ -239,7 +239,7 @@ def run_command(cmd: list[str], *, timeout: float, stop: Callable[[], bool], gra
     "" / "timeout" / "stopped". The group gets SIGTERM, then SIGKILL after ``grace`` seconds."""
     out = open(out_path, "ab") if out_path else subprocess.DEVNULL
     try:
-        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
                                 env={**os.environ, **(env or {})})
         t0, reason, termed_at = time.monotonic(), "", None
         while proc.poll() is None:
