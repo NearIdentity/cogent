@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,8 @@ from urllib.request import Request, urlopen
 import networkx as nx
 from bs4 import BeautifulSoup
 
+import kg_adams
+import kg_hosts as hosts
 import kg_telemetry as telemetry
 from kg_models import DocEntry, Finding, TrackerState, utcnow
 
@@ -43,16 +46,16 @@ log = logging.getLogger("kg_agent.tools")
 # Fetching
 # --------------------------------------------------------------------------
 
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-      "Chrome/124.0.0.0 Safari/537.36")
-BLOCKED = {401, 403, 406}          # statuses that usually mean "bot filter" -> try a browser
-_last_hit: dict[str, float] = {}
+def __getattr__(name: str):            # `UA` kept for old callers: always the honest, current user agent
+    if name == "UA":
+        return hosts.user_agent()
+    raise AttributeError(name)
 
 
 @dataclass
 class FetchResult:
     url: str
-    status: int = 0                # 200, 304, other HTTP status, 0 = transport error
+    status: int = 0                # 200, 304, other HTTP status, 0 = transport error (or deferred)
     data: bytes = b""
     etag: str = ""
     last_modified: str = ""
@@ -60,6 +63,10 @@ class FetchResult:
     final_url: str = ""
     error: str = ""
     via: str = "http"
+    adams_fp: str = ""             # set by the agent: ADAMS fingerprint of the record this download belongs to
+    blocked: bool = False          # the host answered 403 / 429 / 503+Retry-After: it is now in a cooldown
+    deferred: bool = False         # not requested at all: the host is in a cooldown
+    headers: dict = field(default_factory=dict)     # response headers (error responses: the ones that identify a filter)
 
     @property
     def ok(self) -> bool:
@@ -69,43 +76,72 @@ class FetchResult:
     def not_modified(self) -> bool:
         return self.status == 304
 
+    @property
+    def host_problem(self) -> bool:
+        """The host is blocking this client: not a fault of the document, so it must not count towards STALE."""
+        return self.blocked or self.deferred
 
-def _polite(url: str, min_interval: float) -> None:
-    host = urlparse(url).netloc
-    wait = _last_hit.get(host, 0.0) + min_interval - time.monotonic()
-    if wait > 0:
-        time.sleep(wait)
-    _last_hit[host] = time.monotonic()
+
+DEFERRED_MSG = "deferred: host is blocking this client"
+_FILTER_HEADERS = ("server", "via", "retry-after", "x-reference-error", "x-cache", "cf-ray", "x-akamai-request-id")
+
+
+def _browser_allowed(explicit: Optional[bool]) -> bool:
+    if explicit is not None:
+        return explicit
+    return os.environ.get("KG_BROWSER_FALLBACK", "").lower() in ("1", "true", "yes")
 
 
 def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45.0,
           retries: int = 2, backoff: float = 2.0, min_interval: float = 1.0,
-          browser_fallback: bool = True, accept: str = "*/*") -> FetchResult:
-    """GET ``url`` conditionally. 304 -> ``not_modified``. Transient errors are
-    retried; bot-filter responses fall back to headless Chromium (see kg_ingest)."""
-    headers = {"User-Agent": UA, "Accept": accept, "Accept-Language": "en-US,en;q=0.9"}
+          browser_fallback: Optional[bool] = None, accept: str = "*/*") -> FetchResult:
+    """GET ``url`` conditionally. 304 -> ``not_modified``. Transient errors are retried.
+
+    The client identifies itself honestly (see ``kg_hosts.user_agent``). A host in a cooldown is
+    not contacted (``deferred``). A 403 / 429 / 503+Retry-After starts a cooldown for the host and
+    is never retried. A headless browser is used only when opted in (``browser_fallback=True`` or
+    ``$KG_BROWSER_FALLBACK=1``), at most once per request and never during a cooldown."""
+    headers = {"User-Agent": hosts.user_agent(), "Accept": accept}
     if etag:
         headers["If-None-Match"] = etag
     if last_modified:
         headers["If-Modified-Since"] = last_modified
+    host = hosts.host_of(url)
+    pol = hosts.HOSTS
+    cd = pol.cooldown_for(url)
+    if cd:
+        pol.defer(cd["key"], url)
+        return FetchResult(url, 0, error=DEFERRED_MSG, deferred=True)
     res = FetchResult(url)
     with telemetry.span("http.fetch", **{"http.url": url.split("?")[0][:200], "http.request.conditional": bool(etag or last_modified)}) as sp:
         for attempt in range(retries + 1):
-            _polite(url, min_interval)
+            pol.pace(host, min_interval)
             try:
                 with urlopen(Request(url, headers=headers), timeout=timeout) as r:
                     sp.set_attribute("http.response.status_code", 200)
+                    pol.success(url)
                     return FetchResult(url, 200, r.read(), r.headers.get("ETag", ""),
                                        r.headers.get("Last-Modified", ""),
                                        r.headers.get("Content-Type", ""), r.geturl())
             except HTTPError as exc:
                 sp.set_attribute("http.response.status_code", exc.code)
                 if exc.code == 304:
+                    pol.success(url)
                     return FetchResult(url, 304, etag=etag, last_modified=last_modified, final_url=url)
-                res = FetchResult(url, exc.code, error=f"HTTP {exc.code} {exc.reason}")
-                if exc.code in BLOCKED and browser_fallback:
-                    return _browser_fetch(url, res)
-                if exc.code < 500 and exc.code != 429:
+                hdrs = {k: v for k, v in exc.headers.items() if k.lower() in _FILTER_HEADERS} if exc.headers else {}
+                reason = hosts.block_reason(exc.code, hdrs)
+                if reason:
+                    res = FetchResult(url, exc.code, error=reason, blocked=True, headers=hdrs)
+                    if exc.code == 403 and _browser_allowed(browser_fallback):
+                        got = _browser_fetch(url, res)
+                        if got.ok:
+                            return got
+                        res.error = got.error
+                    pol.block(hosts.block_key(url, exc.code), reason, hosts.parse_retry_after(hdrs.get("Retry-After") or hdrs.get("retry-after", "")),
+                              url=url, headers=hdrs)
+                    return res
+                res = FetchResult(url, exc.code, error=f"HTTP {exc.code} {exc.reason}", headers=hdrs)
+                if exc.code < 500:
                     return res
             except (URLError, TimeoutError, ConnectionError, OSError) as exc:
                 res = FetchResult(url, 0, error=f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}")
@@ -119,13 +155,15 @@ def fetch(url: str, etag: str = "", last_modified: str = "", timeout: float = 45
 
 
 def _browser_fetch(url: str, previous: FetchResult) -> FetchResult:
+    """Opt-in only (``$KG_BROWSER_FALLBACK=1``): one headless-Chromium attempt, honest user agent."""
     try:
         import kg_ingest
         data = kg_ingest._fetch_browser(url, 60.0)
         return FetchResult(url, 200, data, final_url=url, via="browser")
     except Exception as exc:  # Playwright missing, site refuses browsers too, ...
-        previous.error += f"; browser fallback failed: {str(exc)[:160]}"
-        return previous
+        out = FetchResult(url, previous.status, error=previous.error + f"; browser fallback failed: {str(exc)[:160]}",
+                          blocked=True, headers=previous.headers)
+        return out
 
 
 # --------------------------------------------------------------------------
@@ -456,13 +494,15 @@ class TrackerOutcome:
     summary: str = ""
     findings: list[Finding] = field(default_factory=list)
     error: str = ""
+    deferred: bool = False       # the host is blocking this client: not an error of this page, not counted towards STALE
 
 
 @dataclass
 class TrackerContext:
     min_interval: float = 1.0
-    browser_fallback: bool = True
+    browser_fallback: Optional[bool] = None    # None: only when $KG_BROWSER_FALLBACK=1
     force: bool = False                      # forced update: no conditional requests, re-read every page
+    adams: Any = None                        # kg_adams.AdamsClient or None: change detection for nrc.gov/docs/ML... trackers
     ident_state: dict[str, dict[str, dict]] = field(default_factory=dict)  # entry key -> label -> {edition,...}
 
 
@@ -501,6 +541,19 @@ class Tracker:
         st.tracker, st.last_checked = self.name, utcnow()
         return st
 
+    def _fetch_failed(self, url: str, prev: Optional[TrackerState], r: "FetchResult") -> TrackerOutcome:
+        """Outcome for a failed download: a host that blocks us defers the page (previous state kept, no STALE
+        count); a 404/410 says the configured URL is gone."""
+        if r.host_problem:
+            st = prev.model_copy(deep=True) if prev else TrackerState(url=url, tracker=self.name)
+            return TrackerOutcome(st, error=r.error, deferred=True)
+        msg = r.error or f"HTTP {r.status}"
+        if r.status in (404, 410):
+            msg = (f"tracker URL not found (HTTP {r.status}): it may be gone (update `update_tracking_urls`), or the host may hide it "
+                   f"from this client; open it in a browser or run `kg_agent.py fetchcheck`")
+        hosts.HOSTS.note(hosts.scope_of(url), "gone" if r.status in (404, 410) else "errors", url)
+        return self._error(url, prev, msg)
+
     def _error(self, url: str, prev: Optional[TrackerState], msg: str) -> TrackerOutcome:
         st = self._new_state(url, prev)
         st.consecutive_errors += 1
@@ -521,7 +574,7 @@ class EcfrVersionsTracker(Tracker):
     def check(self, url, prev, watchers, ctx):
         r = fetch(url, min_interval=ctx.min_interval, browser_fallback=False, accept="application/json")
         if not r.ok:
-            return self._error(url, prev, r.error or f"HTTP {r.status}")
+            return self._fetch_failed(url, prev, r)
         try:
             versions = json.loads(r.data).get("content_versions", [])
             dates = [v.get("issue_date") or v.get("amendment_date") or v.get("date") for v in versions]
@@ -573,7 +626,7 @@ class FederalRegisterTracker(Tracker):
         api = f"{u.scheme}://{u.netloc}/api/v1/documents.json?{urlencode(q)}"
         r = fetch(api, min_interval=ctx.min_interval, browser_fallback=False, accept="application/json")
         if not r.ok:
-            return self._error(url, prev, r.error or f"HTTP {r.status}")
+            return self._fetch_failed(url, prev, r)
         try:
             docs = json.loads(r.data).get("results", [])
         except (ValueError, AttributeError) as exc:
@@ -618,6 +671,18 @@ class PageIdentityTracker(Tracker):
 
     def check(self, url, prev, watchers, ctx):
         use_prev = bool(prev) and not ctx.force            # a forced update never sends If-None-Match / If-Modified-Since
+        adams_fp = ""
+        acc = kg_adams.accession_from_url(url) if ctx.adams else None
+        if acc:                                             # ADAMS record first: unchanged -> the document host is not contacted
+            ar = ctx.adams.get_document(acc)
+            if ar.ok:
+                adams_fp = ar.fp
+                if use_prev and prev.adams_fp == ar.fp and prev.page_sha:
+                    st = self._new_state(url, prev)
+                    st.consecutive_errors, st.last_error = 0, ""
+                    return TrackerOutcome(st, summary=f"ADAMS record {acc} unchanged")
+            else:
+                log.info("ADAMS check for tracker %s skipped: %s", acc, ar.error)
         r = fetch(url, prev.etag if use_prev else "", prev.last_modified if use_prev else "",
                   min_interval=ctx.min_interval, browser_fallback=ctx.browser_fallback)
         if r.not_modified:
@@ -625,10 +690,11 @@ class PageIdentityTracker(Tracker):
             st.consecutive_errors, st.last_error = 0, ""
             return TrackerOutcome(st)
         if not r.ok:
-            return self._error(url, prev, r.error or f"HTTP {r.status}")
+            return self._fetch_failed(url, prev, r)
         st = self._new_state(url, prev)
         st.consecutive_errors, st.last_error = 0, ""
         st.etag, st.last_modified = r.etag, r.last_modified
+        st.adams_fp = adams_fp or st.adams_fp
         kind = sniff_kind(r.data, r.content_type, url)
         if kind != "html":
             sha = _sha(r.data)

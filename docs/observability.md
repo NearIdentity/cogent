@@ -26,6 +26,7 @@ docker compose -f deploy/observability/docker-compose.observability.yml --profil
 | `agent.step <node>` | each LangGraph node of the workflow | `cogent.step`, outcome |
 | `agent.op <name>` | `track_url`, `sync_doc`, `assemble_entry`, `tabledb_build`, `tabledb_load_table`, `join_inference` | `cogent.op`, entry/table/url, `outcome`, error text |
 | `http.fetch` | every conditional download | URL (query string removed), whether it was conditional, status |
+| | | A host (or area of a host) in a cooldown is not requested at all, so it produces no `http.fetch` span; a 403 / 429 / 503+`Retry-After` span ends with that status and is never retried (see [fetching.md](fetching.md)). |
 | `llm.chat`, `embed` | every Ollama chat / embedding call | `gen_ai.system`, `gen_ai.request.model`, `gen_ai.operation.name`, token counts, retries |
 | `joins.evaluate` | LLM join suggestion + judge for one document | table count, hallucinated/judge counters |
 | `mcp.tool <name>` | every MCP tool call | `mcp.tool.name`, `cogent.ref`, outcome; exceptions are recorded |
@@ -50,7 +51,7 @@ The daemon passes its trace to the agent it starts through the environment varia
 | **Auto-applied vs human-reviewed** | `cogent_agent_findings_total{outcome}` with `auto_applied` (the agent applied the change), `needs_review` (it left the finding for a person), `human_resolved` (a person resolved a finding that was waiting). |
 | **Judge agreement** | `cogent_join_judge_agreement_ratio` (share of candidates on which all judge runs agreed; only counted when the judge ran at least twice), `cogent_join_judge_verdicts_total{verdict}`, `cogent_join_judge_candidates_total`, `cogent_join_llm_vs_deterministic_total{result}` (does the judge confirm what the heuristics found). |
 | **Hallucination rate** | `cogent_llm_outputs_total{kind,grounded}` and `cogent_llm_hallucination_ratio{kind}`. See the definition below. |
-| **Failures and retries** | `cogent_agent_failures_total{stage}`, `cogent_agent_retries_total{component}`, `cogent_agent_operations_total{op,outcome}`, `cogent_agent_runs_total{outcome}`. Stages: fetch, llm, embed, tabledb, daemon_run ... |
+| **Failures and retries** | `cogent_agent_failures_total{stage}`, `cogent_agent_retries_total{component}`, `cogent_agent_operations_total{op,outcome}`, `cogent_agent_runs_total{outcome}`. Stages: fetch, llm, embed, tabledb, daemon_run .... Documents or trackers deferred because their host is blocking the client are *not* counted as failures (they are `skipped`); the run summary lists them as `docs_deferred` and `fetch_problems`. |
 | **Last run (gauges)** | `cogent_agent_last_run_success` (1 = no errors), `cogent_agent_last_run_timestamp_seconds`, `cogent_agent_last_run_duration_seconds`, `cogent_agent_last_run_errors`, `cogent_agent_last_run_findings{outcome}`, `cogent_agent_last_run_tokens{direction}`, `cogent_agent_last_run_cost_usd`. Each run also appends one line to `<home>/logs/metrics.jsonl`. |
 | MCP server | `cogent_mcp_tool_calls_total{tool,outcome}`, HTTP request counters, rate-limited requests, graph-cache and embedder gauges |
 

@@ -75,3 +75,7 @@ re-downloads every document each time. A one-off forced run next to a daemon is 
 To force one scheduled run, pass the flag through the daemon, `kg_daemon.py start … -- --force`, and restart it without it afterwards.
 Forced re-reads are logged in `<home>/logs/forced.jsonl` and reported in `logs/report.md`.
 A forced run also purges stale asset files and archives orphaned staging data (tar.gz under `archive/orphans/`, tracked in `state/orphans.json`); `--no-prune` turns that off.
+
+## Blocked hosts and retries
+
+A host (for a 403: the refused area of it, such as `www.nrc.gov/docs`) that answers 403 / 429 / 503+`Retry-After` is put in a cooldown of hours that is stored in `<home>/state/hosts.json` and honoured by every later run, whichever scheduler starts it. Documents in that area are deferred (the run still exits 0, the previous KGs are kept, nothing becomes `STALE`), so the daemon's `--retries` and a systemd `Restart=on-failure` neither fire nor help: retrying earlier would only repeat requests the host has refused. Do not add a loop that re-runs the agent to "wait out" a block. Unattended runs never prompt for a browser download (`kg_daemon.py` starts the agent with no stdin, and `--manual-prompt auto` prompts only at a terminal); the report lists what could not be downloaded, and the warning "NOT CHECKED FOR DAYS" appears after `--deferred-warn-days` days. See [fetching.md](fetching.md).

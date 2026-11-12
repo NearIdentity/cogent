@@ -41,6 +41,11 @@ ALERT_NOTES = {
     "local_copy_unidentified": "The edition of the on-board copy could not be read from its text.",
     "edition_not_endorsed": "The edition on board is not one that the endorsing regulatory guide accepts; check which edition applies before relying on it.",
     "store_page_changed": "The store/landing page changed since the last check; a new edition or errata may exist.",
+    "store_page_blocked": "The store/landing page refused automated requests, so it could not be checked; the graph is unchanged and a new edition or errata may exist.",
+    "local_copy_mismatch": "A local copy does not match its ADAMS record (text, page count, dates or file name); it may be the wrong or an altered file, so do not rely on the graph built from it until it is checked.",
+    "manual_document_changed": "A manually downloaded document changed in ADAMS since the copy on board was saved; the graph may rest on a superseded version until the new file is placed.",
+    "deferred_too_long": "The source host has been refusing the agent for days, so this entry's documents have not been checked; the graph may be out of date.",
+    "manual_download_needed": "A document marked for manual download has not been placed in the local-copy folder yet, so it is not on board.",
 }
 
 

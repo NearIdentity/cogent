@@ -16,7 +16,7 @@ The MCP server serves the knowledge graphs that the update agent has staged, plu
 | Group | Tools | Notes |
 |---|---|---|
 | **Orientation** | `get_overview`, `list_entries` | counts, version-status histogram, open warnings, last agent run |
-| **Metadata** | `get_entry_metadata`, `get_warnings`, `get_disclaimers` | capture times, latest vs on-board edition, alerts, disclaimers |
+| **Metadata** | `get_entry_metadata`, `get_warnings`, `get_disclaimers` | capture times, latest vs on-board edition, alerts (including `deferred_too_long` and `local_copy_mismatch`, see [docs/fetching.md](../docs/fetching.md)), disclaimers |
 | **Graph navigation** | `graph_summary`, `get_outline`, `search_graph`, `get_node`, `get_neighbors`, `get_subgraph`, `get_table`, `export_graph` | `ref` is an entry key such as `standard:22`, a 16-hex document id, or `combined` |
 | **Cross-entry impact** | `get_dependents` | which reports depend on a standard and the reverse; curated vs inferred relations (data from `src/kg_combine.py`) |
 | **Figures and tables** | `list_assets`, `get_figure`, `get_table_csv` | extracted figures (PNG) and tables (CSV); paywall watermark and policy apply |
