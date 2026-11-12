@@ -16,9 +16,9 @@ Diagnosis: nrc.gov's CDN refuses clients it takes for bots (403 with `x-referenc
 * **Reporting:** "blocked by a bot filter (HTTP 403 from host)"; 404/410 on trackers says to update `update_tracking_urls`; per-host "Fetch problems" section and `fetch_problems` / `docs_deferred` in the summary; info alerts are logged as INFO; a 403 on a paywalled store page is the info alert `store_page_blocked`, not an error; one image warning per host and run.
 * **ADAMS Public Search adapter** (`src/kg_adams.py`, `NRC_ADAMS_API_KEY`): change detection for `nrc.gov/docs/ML...` links from the record's date added, document date and a content hash; the API text is not used for graphs. `kg_agent.py adamscheck ML...` prints a redacted summary. One request every 2 s; requests are counted in the summary.
 * ADAMS change detection also covers `update_tracking_urls` entries that are `nrc.gov/docs/ML…` PDFs (entries 19 and 21 of `config/standards.json`); `TrackerState.adams_fp`.
-* 404/410 on a tracker now says "not found" and that the host may be hiding the URL from this client (energy.gov URLs open in a browser but returned 404 to the agent).
+* 404/410 on a tracker now says "not found" and that the host may be hiding the URL from this client (a first reading of the energy.gov 404 as client blocking was wrong; see the next item).
 * New tests: `tests/test_fetch_blocking.py`, `tests/test_adams.py` (mock servers only).
-* Not changed: the energy.gov URLs of entries 11 to 13 (404; the correct URL is unknown).
+* Configuration: removed the dead tracker `https://www.energy.gov/ehss/nuclear-and-facility-safety-directives` (404 in Firefox as well, not a block) from `update_tracking_urls` and the `update_tracking` notes of entries 11, 12 and 13; their links and the active/archived directives-library trackers were checked with `fetchcheck` and work.
 * **Not verified:** nothing was run against the live nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org (see `docs/fetching.md`, "What was not verified").
 
 ## PR #9 and #10 (2026-10-27): test round 6 and its review

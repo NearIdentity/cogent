@@ -2,7 +2,7 @@
 
 ## 1. Features developed
 
-**Problem.** `python3 src/kg_agent.py run --tables` produced many HTTP 403 errors on www.nrc.gov (and on publisher store pages), plus 404s on energy.gov trackers and noisy log lines. The agent posed as Chrome, retried, then escalated to headless Chromium after a 403; the NRC's CDN (403 with `x-reference-error`) blocks non-browser clients, and the block outlasted the run.
+**Problem.** `python3 src/kg_agent.py run --tables` produced many HTTP 403 errors on www.nrc.gov (and on publisher store pages), plus 404s on a dead energy.gov tracker (purged) and noisy log lines. The agent posed as Chrome, retried, then escalated to headless Chromium after a 403; the NRC's CDN (403 with `x-reference-error`) blocks non-browser clients, and the block outlasted the run.
 
 **Phase 1: polite fetching** (`src/kg_hosts.py` new; `kg_tools.py`, `kg_ingest.py`, `kg_agent.py`, `kg_models.py`)
 * Honest user agent `cogent-kg-agent/<version>`, overridable with `KG_USER_AGENT` (now honoured by `kg_tools.fetch`, which ignored it). No browser disguise, no `Referer`, no automation-hiding Chromium flag.
@@ -43,7 +43,7 @@
 | `store_page_blocked` as an info alert | A refused store page is expected and loses nothing; the user asked for it not to be a run error. |
 | `FetchResult` gained `blocked` / `deferred`; `fetch` signature kept | Existing callers keep working; `browser_fallback` default changed from True to None (env opt-in). |
 | Mock-server tests, synthetic APS fixture | No network and no NRC text committed. |
-| energy.gov config left alone | Guessing a URL would silently track the wrong page. |
+| Dead energy.gov tracker purged from entries 11–13 | `fetchcheck` showed a real origin 404 (also 404 in Firefox), while the entries' links and the two directives-library trackers return 200. Removing, not guessing a replacement, since the libraries cover the same orders. |
 
 ## 3. Synopsis of the interactive discussion
 
@@ -56,7 +56,7 @@
 7. **Playwright Firefox** also got 403, so the browser-fallback idea was dropped.
 8. **Sanctioned route.** The user found the ADAMS Public Search API. We reviewed the PyPI package `adamsnrc` (not adopted), the uploaded APS guide PDF, key setup (use the primary key; stored in a mode-600 curl config, never pasted), and the user ran `GetDocument` steps locally (HTTP 200, no usage limits). I analysed the real response shape (keys only) for the adapter and fixture.
 9. **Plan presented** (Phase 1 politeness, Phase 2 ADAMS). User decisions: no text-only graphs but change detection is useful; one request every 2 s; "Approved to go ahead with Phases 1 and 2." Left unanswered: nrc.gov default interval (I chose 4 s) and a per-URL minimum re-check age (not added).
-11. **Follow-up:** asked whether `config/*.json` needs changes for ADAMS (no: links already carry the accession; the key comes from the environment; only the two PDF trackers were not covered). The user asked to extend ADAMS to them and noted that the energy.gov URLs of entries 11–13 open in Firefox, so the 404 may be the host hiding them from the agent; the config stays unchanged, the 404 wording now says so, and `fetchcheck` is the way to check.
+11. **Follow-up:** asked whether `config/*.json` needs changes for ADAMS (no: links already carry the accession; the key comes from the environment; only the two PDF trackers were not covered). The user asked to extend ADAMS to them and noted that the energy.gov URLs of entries 11–13 open in Firefox, so the 404 may be the host hiding them from the agent; `fetchcheck` (extended with final URL and title) showed the entry 11 PDF link, the directives libraries and the entry 12 link return 200, and the `ehss/nuclear-and-facility-safety-directives` tracker is a real 404 (also in Firefox). The user decided to purge it from entries 11–13.
 10. **Implementation, tests, push** (`d272764`). Then the user asked for documentation updates in all `.md` files and this summary; I updated README, `docs/observability.md`, `docs/scheduling.md`, `CHANGELOG.md`, `docs/fetching.md`, and the MCP alert notes in code.
 
 Standing rules observed: no PR opened; secrets kept out of output and the repository; commit trailers added; results reported as measured, with live behaviour marked unverified.

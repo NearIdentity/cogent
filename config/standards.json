@@ -526,11 +526,10 @@
         }
       ],
       "format_of_data": "PDF (DOE order; 420.1C link also PDF, inferred from the directives portal)",
-      "update_tracking": "Active vs archived orders: https://www.energy.gov/management/active-directives-library and https://www.energy.gov/management/archived-directives-library; safety directives page: https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking": "Active vs archived orders: https://www.energy.gov/management/active-directives-library and https://www.energy.gov/management/archived-directives-library",
       "update_tracking_urls": [
         "https://www.energy.gov/management/active-directives-library",
-        "https://www.energy.gov/management/archived-directives-library",
-        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+        "https://www.energy.gov/management/archived-directives-library"
       ],
       "version_tracking": {
         "status": "current",
@@ -587,11 +586,10 @@
         }
       ],
       "format_of_data": "PDF (inferred; directives portal)",
-      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library, https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library",
       "update_tracking_urls": [
         "https://www.energy.gov/management/active-directives-library",
-        "https://www.energy.gov/management/archived-directives-library",
-        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+        "https://www.energy.gov/management/archived-directives-library"
       ],
       "version_tracking": {
         "status": "current",
@@ -632,11 +630,10 @@
         }
       ],
       "format_of_data": "PDF (inferred; directives portal)",
-      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library, https://www.energy.gov/ehss/nuclear-and-facility-safety-directives",
+      "update_tracking": "https://www.energy.gov/management/active-directives-library, https://www.energy.gov/management/archived-directives-library",
       "update_tracking_urls": [
         "https://www.energy.gov/management/active-directives-library",
-        "https://www.energy.gov/management/archived-directives-library",
-        "https://www.energy.gov/ehss/nuclear-and-facility-safety-directives"
+        "https://www.energy.gov/management/archived-directives-library"
       ],
       "version_tracking": {
         "status": "current",
