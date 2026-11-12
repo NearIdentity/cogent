@@ -208,7 +208,7 @@ init → track → apply → sync_docs → assemble → versions → alerts → 
 3. **apply** – a `new_edition` finding with a link and confidence ≥ 0.8 rewrites the entry's link (URL and text) and the
    edition in its name, and every other entry that shared the old URL (e.g. reports). Lower-confidence findings go to
    "Pending (needs human review)" and are retried on later runs. `--no-auto-apply` never edits the configuration.
-4. **sync_docs** – each unique document URL (or local copy) is fetched conditionally (ETag / Last-Modified; for `nrc.gov/docs/ML…` links with `NRC_ADAMS_API_KEY` set, the ADAMS record is checked first) and
+4. **sync_docs** – each unique document URL (or local copy) is fetched conditionally (ETag / Last-Modified; for `nrc.gov/docs/ML…` links, and for PDF trackers of that form, with `NRC_ADAMS_API_KEY` set, the ADAMS record is checked first) and
    fingerprinted by *content*: PDF text (page images for scans), visible HTML text without volatile page furniture,
    eCFR XML. A re-rendered file or a changed footer is not an update. eCFR pages are read from the versioner XML API
    instead of the JavaScript page. A changed document is re-ingested; its previous KG is **archived**; a structured diff

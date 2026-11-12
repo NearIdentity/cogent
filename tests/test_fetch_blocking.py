@@ -265,7 +265,7 @@ def test_blocked_host_defers_without_stale_and_keeps_kg(tmp_path, srv, srv2, mon
     s = make_env(tmp_path, std)
     st = kg_agent.run_once(s)
     assert st["summary"]["docs_created"] == 3 and st["summary"]["errors"] == 1          # the tracker page /idx.html is a plain 404
-    assert "tracker URL no longer exists" in " ".join(st["summary"]["error_messages"])
+    assert "tracker URL not found" in " ".join(st["summary"]["error_messages"])
     assert "update_tracking_urls" in " ".join(st["summary"]["error_messages"])
     assert st["summary"]["fetch_problems"][srv2.host]["gone"] == [srv2.base + "/idx.html"]
     # the host now blocks this client
@@ -379,4 +379,4 @@ def test_fetchcheck_one_request_and_report(tmp_path, srv):
 def test_fetchcheck_404_verdict(tmp_path, srv):
     lines = []
     kg_agent.fetchcheck(make_env(tmp_path, []), srv.base + "/gone", out=lines.append)
-    assert "no longer exists" in "\n".join(lines)
+    assert "not found" in "\n".join(lines) and "hide it from this client" in "\n".join(lines)

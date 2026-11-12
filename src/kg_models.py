@@ -130,6 +130,7 @@ class TrackerState(BaseModel):
     last_checked: str = ""
     last_changed: str = ""
     page_sha: str = ""
+    adams_fp: str = ""                         # ADAMS fingerprint of the tracked record (nrc.gov/docs/ML... trackers)
     etag: str = ""
     last_modified: str = ""
     data: dict[str, Any] = Field(default_factory=dict)

@@ -12,11 +12,12 @@
 * Per-host pacing with jitter and `--host-interval HOST=SECONDS` (defaults: www.nrc.gov 4 s, adams-api.nrc.gov 2 s, otherwise `--min-interval`); work interleaved round-robin across hosts.
 * `"manual": true` links: never requested; the report lists the URL to download and the path to save to (alert `manual_download_needed`).
 * `kg_agent.py fetchcheck URL`: one request, prints status, filter headers, body snippet, user agent, verdict.
-* Reporting: "blocked by a bot filter (HTTP 403 from host)"; tracker 404/410 says to update `update_tracking_urls`; per-host "Fetch problems" section and `fetch_problems` / `docs_deferred` in the summary; info alerts logged at INFO; a 403 on a paywalled store page is the info alert `store_page_blocked`, not an error; one image warning per host and run.
+* Reporting: "blocked by a bot filter (HTTP 403 from host)"; tracker 404/410 says "not found" (gone, or hidden from this client) and points to `update_tracking_urls`, a browser and `fetchcheck`; per-host "Fetch problems" section and `fetch_problems` / `docs_deferred` in the summary; info alerts logged at INFO; a 403 on a paywalled store page is the info alert `store_page_blocked`, not an error; one image warning per host and run.
 
 **Phase 2: ADAMS Public Search adapter** (`src/kg_adams.py`)
 * `get_document` / `search` against the APS API with `NRC_ADAMS_API_KEY` (header `Ocp-Apim-Subscription-Key`); accession parsing for both `ML` forms.
 * Change detection only: fingerprint = accession, date added, document date, hash of content. Unchanged means nrc.gov is not contacted. API failure falls back to the normal fetch. Without the key it is off.
+* Also applied to `update_tracking_urls` that are ML PDFs (entries 19 and 21): an unchanged record skips the tracker's request (`TrackerState.adams_fp`).
 * `kg_agent.py adamscheck ML…`: one request, redacted summary. Requests counted in the summary (`adams_requests`).
 
 **Tests and docs.** `tests/test_fetch_blocking.py` (19) and `tests/test_adams.py` (10), mock servers only. New `docs/fetching.md`; README, `docs/observability.md`, `docs/scheduling.md`, `CHANGELOG.md`, MCP alert notes (`kg_store.ALERT_NOTES`) updated.
@@ -55,6 +56,7 @@
 7. **Playwright Firefox** also got 403, so the browser-fallback idea was dropped.
 8. **Sanctioned route.** The user found the ADAMS Public Search API. We reviewed the PyPI package `adamsnrc` (not adopted), the uploaded APS guide PDF, key setup (use the primary key; stored in a mode-600 curl config, never pasted), and the user ran `GetDocument` steps locally (HTTP 200, no usage limits). I analysed the real response shape (keys only) for the adapter and fixture.
 9. **Plan presented** (Phase 1 politeness, Phase 2 ADAMS). User decisions: no text-only graphs but change detection is useful; one request every 2 s; "Approved to go ahead with Phases 1 and 2." Left unanswered: nrc.gov default interval (I chose 4 s) and a per-URL minimum re-check age (not added).
+11. **Follow-up:** asked whether `config/*.json` needs changes for ADAMS (no: links already carry the accession; the key comes from the environment; only the two PDF trackers were not covered). The user asked to extend ADAMS to them and noted that the energy.gov URLs of entries 11–13 open in Firefox, so the 404 may be the host hiding them from the agent; the config stays unchanged, the 404 wording now says so, and `fetchcheck` is the way to check.
 10. **Implementation, tests, push** (`d272764`). Then the user asked for documentation updates in all `.md` files and this summary; I updated README, `docs/observability.md`, `docs/scheduling.md`, `CHANGELOG.md`, `docs/fetching.md`, and the MCP alert notes in code.
 
 Standing rules observed: no PR opened; secrets kept out of output and the repository; commit trailers added; results reported as measured, with live behaviour marked unverified.

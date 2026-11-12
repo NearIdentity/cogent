@@ -15,6 +15,8 @@ Diagnosis: nrc.gov's CDN refuses clients it takes for bots (403 with `x-referenc
 * **`kg_agent.py fetchcheck URL`**: one request, prints status, filter headers, body snippet, user agent.
 * **Reporting:** "blocked by a bot filter (HTTP 403 from host)"; 404/410 on trackers says to update `update_tracking_urls`; per-host "Fetch problems" section and `fetch_problems` / `docs_deferred` in the summary; info alerts are logged as INFO; a 403 on a paywalled store page is the info alert `store_page_blocked`, not an error; one image warning per host and run.
 * **ADAMS Public Search adapter** (`src/kg_adams.py`, `NRC_ADAMS_API_KEY`): change detection for `nrc.gov/docs/ML...` links from the record's date added, document date and a content hash; the API text is not used for graphs. `kg_agent.py adamscheck ML...` prints a redacted summary. One request every 2 s; requests are counted in the summary.
+* ADAMS change detection also covers `update_tracking_urls` entries that are `nrc.gov/docs/ML…` PDFs (entries 19 and 21 of `config/standards.json`); `TrackerState.adams_fp`.
+* 404/410 on a tracker now says "not found" and that the host may be hiding the URL from this client (energy.gov URLs open in a browser but returned 404 to the agent).
 * New tests: `tests/test_fetch_blocking.py`, `tests/test_adams.py` (mock servers only).
 * Not changed: the energy.gov URLs of entries 11 to 13 (404; the correct URL is unknown).
 * **Not verified:** nothing was run against the live nrc.gov, adams-api.nrc.gov, ascelibrary.org or webstore.ansi.org (see `docs/fetching.md`, "What was not verified").

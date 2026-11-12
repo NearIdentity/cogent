@@ -35,6 +35,7 @@ from urllib.request import Request, urlopen
 import networkx as nx
 from bs4 import BeautifulSoup
 
+import kg_adams
 import kg_hosts as hosts
 import kg_telemetry as telemetry
 from kg_models import DocEntry, Finding, TrackerState, utcnow
@@ -501,6 +502,7 @@ class TrackerContext:
     min_interval: float = 1.0
     browser_fallback: Optional[bool] = None    # None: only when $KG_BROWSER_FALLBACK=1
     force: bool = False                      # forced update: no conditional requests, re-read every page
+    adams: Any = None                        # kg_adams.AdamsClient or None: change detection for nrc.gov/docs/ML... trackers
     ident_state: dict[str, dict[str, dict]] = field(default_factory=dict)  # entry key -> label -> {edition,...}
 
 
@@ -547,7 +549,8 @@ class Tracker:
             return TrackerOutcome(st, error=r.error, deferred=True)
         msg = r.error or f"HTTP {r.status}"
         if r.status in (404, 410):
-            msg = f"tracker URL no longer exists (HTTP {r.status}): update `update_tracking_urls` in the configuration"
+            msg = (f"tracker URL not found (HTTP {r.status}): it may be gone (update `update_tracking_urls`), or the host may hide it "
+                   f"from this client; open it in a browser or run `kg_agent.py fetchcheck`")
         hosts.HOSTS.note(hosts.host_of(url), "gone" if r.status in (404, 410) else "errors", url)
         return self._error(url, prev, msg)
 
@@ -668,6 +671,18 @@ class PageIdentityTracker(Tracker):
 
     def check(self, url, prev, watchers, ctx):
         use_prev = bool(prev) and not ctx.force            # a forced update never sends If-None-Match / If-Modified-Since
+        adams_fp = ""
+        acc = kg_adams.accession_from_url(url) if ctx.adams else None
+        if acc:                                             # ADAMS record first: unchanged -> the document host is not contacted
+            ar = ctx.adams.get_document(acc)
+            if ar.ok:
+                adams_fp = ar.fp
+                if use_prev and prev.adams_fp == ar.fp and prev.page_sha:
+                    st = self._new_state(url, prev)
+                    st.consecutive_errors, st.last_error = 0, ""
+                    return TrackerOutcome(st, summary=f"ADAMS record {acc} unchanged")
+            else:
+                log.info("ADAMS check for tracker %s skipped: %s", acc, ar.error)
         r = fetch(url, prev.etag if use_prev else "", prev.last_modified if use_prev else "",
                   min_interval=ctx.min_interval, browser_fallback=ctx.browser_fallback)
         if r.not_modified:
@@ -679,6 +694,7 @@ class PageIdentityTracker(Tracker):
         st = self._new_state(url, prev)
         st.consecutive_errors, st.last_error = 0, ""
         st.etag, st.last_modified = r.etag, r.last_modified
+        st.adams_fp = adams_fp or st.adams_fp
         kind = sniff_kind(r.data, r.content_type, url)
         if kind != "html":
             sha = _sha(r.data)

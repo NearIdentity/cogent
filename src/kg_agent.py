@@ -164,6 +164,7 @@ class Runtime:
         self.config_errors: list[str] = []
         self.dependents: dict[str, Any] = {}      # from the combined graph (kg_combine)
         self.adams = kg_adams.AdamsClient.from_env()   # None without $NRC_ADAMS_API_KEY: change detection through ADAMS is then off
+        self.ctx.adams = self.adams
         self.hosts_report: dict[str, dict] = {}   # per-host fetch problems of this run
 
     # -- persistence helpers (no-ops in dry-run) --------------------------------
@@ -1876,7 +1877,7 @@ def fetchcheck(s: Settings, url: str, ignore_cooldown: bool = False, out=print) 
     if reason:
         out(f"verdict     {reason}; the host is now in a cooldown (state/hosts.json)")
     elif status in (404, 410):
-        out("verdict     the URL no longer exists: update the configuration")
+        out("verdict     not found: the URL may be gone, or the host may hide it from this client; compare with a browser before changing the configuration")
     return 0 if status < 400 else 1
 
 

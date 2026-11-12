@@ -18,7 +18,7 @@ README ("The update agent", "Paywalled documents", environment variables), `docs
 ## Reporting
 
 * The run summary has `fetch_problems` and `docs_deferred`; `logs/report.md` gets a section "Fetch problems by host" (problem, number deferred, requests made, cooldown end, URLs that no longer exist).
-* A 403 reads "blocked by a bot filter (HTTP 403 from host)". A 404 or 410 on a tracker reads "tracker URL no longer exists (HTTP 404): update `update_tracking_urls` in the configuration".
+* A 403 reads "blocked by a bot filter (HTTP 403 from host)". A 404 or 410 on a tracker reads "tracker URL not found (HTTP 404): it may be gone (update `update_tracking_urls`), or the host may hide it from this client; open it in a browser or run `kg_agent.py fetchcheck`". Some hosts answer 404 to clients they dislike, so a 404 is not proof that a URL is dead.
 * Alerts are logged at their own severity (info alerts are no longer WARNING lines).
 * A 403 on a store page of a paywalled document (`ascelibrary.org`, `webstore.ansi.org`, ...) is the info alert `store_page_blocked`, not a run error: the previous KG is kept and the alert asks you to look at the page in a browser.
 
@@ -45,7 +45,7 @@ Makes **one** request and prints the client used, the status, the headers that i
 For `nrc.gov/docs/ML....pdf` links, the agent can ask the sanctioned ADAMS Public Search API whether the record changed instead of requesting the PDF.
 
 1. Register for a key at the NRC's ADAMS API page and keep it **out of the repository**: `export NRC_ADAMS_API_KEY=...` in the shell or service environment that runs the agent (or a git-ignored env file). The key is sent in the `Ocp-Apim-Subscription-Key` header and is never logged, printed, written to reports or stored in state.
-2. With the key set, each ML link costs one API request (`GET /aps/api/search/{accession}`, one every 2 s). The fingerprint is `AccessionNumber | DateAddedTimestamp | DocumentDate | hash of content`. Same as last time: the document is "unchanged (ADAMS record ... unchanged)" and www.nrc.gov is not contacted. Different, or the API fails: the PDF is fetched as usual.
+2. With the key set, each ML link, and each `update_tracking_urls` entry that is an ML PDF, costs one API request (`GET /aps/api/search/{accession}`, one every 2 s). The fingerprint is `AccessionNumber | DateAddedTimestamp | DocumentDate | hash of content`. Same as last time: the document is "unchanged (ADAMS record ... unchanged)" and www.nrc.gov is not contacted. Different, or the API fails: the PDF is fetched as usual.
 3. The API text is not used to build graphs (the PDF stays the source) and `DocumentType` is not trusted. Both response shapes (the record itself, or an envelope with `document`) are accepted; the undocumented `DocumentSize` field is ignored. Requests are counted in the summary (`adams_requests`).
 4. `python3 src/kg_agent.py adamscheck ML18019A922` makes one request and prints a redacted summary (top-level keys, fingerprint fields, never the key or the text).
 

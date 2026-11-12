@@ -242,3 +242,28 @@ def test_adamscheck_prints_redacted_summary(tmp_path, monkeypatch, aps):
     text = "\n".join(lines)
     assert "ML18019A922" in text and "DateAddedTimestamp" in text and "fingerprint" in text and "top-level" in text
     assert KEY not in text and "SECRET-BODY-TEXT" not in text
+
+
+def test_adams_change_detection_for_pdf_trackers(tmp_path, monkeypatch, aps):
+    srv = Server()
+    try:
+        srv.add("/docs/ML99990A002.pdf", make_pdf("Guide", "Tracked PDF, version one."))
+        aps.records["ML99990A002"] = record("ML99990A002")
+        kg_ingest.set_pdf_engine("basic")
+        monkeypatch.setenv("NRC_ADAMS_API_KEY", KEY)
+        monkeypatch.setenv("NRC_ADAMS_BASE", aps.base)
+        monkeypatch.setattr(kg_adams, "_DOCS_HOSTS", (srv.host,))
+        s = make_env(tmp_path, [{"id": 4, "document": "Tracker only", "links": [], "update_tracking_urls": [f"{srv.base}/docs/ML99990A002.pdf"]}])
+        st = kg_agent.run_once(s)                                         # baseline: PDF fetched once
+        assert srv.count() == 1 and not st["tracker_log"][0]["changed"] and st["summary"]["errors"] == 0
+        st = kg_agent.run_once(s)                                         # same record: the document host is not contacted
+        assert srv.count() == 1 and "ADAMS record ML99990A002 unchanged" in st["tracker_log"][0]["summary"]
+        assert st["summary"]["adams_requests"] == 1
+        aps.records["ML99990A002"] = record("ML99990A002", date="2026-02-02", content="Revised.")
+        srv.add("/docs/ML99990A002.pdf", make_pdf("Guide", "Tracked PDF, version two, different."))
+        st = kg_agent.run_once(s)                                         # record changed: PDF fetched, change reported
+        assert srv.count() == 2 and st["tracker_log"][0]["changed"]
+        ts = json.loads((s.home / "state" / "trackers.json").read_text())[f"{srv.base}/docs/ML99990A002.pdf"]
+        assert ts["adams_fp"].startswith("ML99990A002|") and KEY not in json.dumps(ts)
+    finally:
+        srv.close()
