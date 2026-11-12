@@ -14,6 +14,7 @@ Some hosts (www.nrc.gov behind its CDN, publisher and standards stores) answer *
 
 ## Reporting
 
+* In the table "Could not be downloaded automatically" the URL and the save path are always printed in full (they are what you open and type); other report columns are shortened.
 * The run summary has `fetch_problems` and `docs_deferred`; `logs/report.md` gets a section "Fetch problems by host" (host or area, problem, number deferred, requests made, cooldown end, URLs that no longer exist) and, when documents were refused, "Could not be downloaded automatically" (URL and the path to save a browser download to).
 * A 403 reads "blocked by a bot filter (HTTP 403 from host)". A 404 or 410 on a tracker reads "tracker URL not found (HTTP 404): it may be gone (update `update_tracking_urls`), or the host may hide it from this client; open it in a browser or run `kg_agent.py fetchcheck`". Some hosts answer 404 to clients they dislike, so a 404 is not proof that a URL is dead.
 * Alerts are logged at their own severity (info alerts are no longer WARNING lines).
